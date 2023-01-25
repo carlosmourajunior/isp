@@ -6,6 +6,8 @@ Aplicação para auxiliar ISP de pequeno porte a ter um melhor controle de sua r
 
     # Python
     # Django
+    # Postgres
+    # Docker
     # Bootstrap
 
 # Objetivo
