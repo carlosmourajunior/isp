@@ -1,0 +1,6 @@
+asgiref==3.6.0
+Django==4.0.8
+sqlparse==0.4.3
+psycopg2-binary==2.9.3
+netmiko==4.1.2
+django-bootstrap5==22.2
