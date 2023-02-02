@@ -1,6 +1,6 @@
 # import netmiko library
 from netmiko import ConnectHandler
-from olt.models import OltUsers
+from olt.models import ONU, OltUsers
 
 class olt_connector():
 
@@ -21,6 +21,14 @@ class olt_connector():
 
     def disconnect(self, net_connect):
         net_connect.disconnect()
+    
+    def get_onu_detail(self, item):
+        net_connect = self.connect()
+        ont_details = f'show vlan bridge-port-fdb {item}/14/1'
+        output_details = net_connect.send_command(ont_details)
+        self.disconnect(net_connect)
+
+        return output_details
 
     def update_port_ocupation(self):
 
@@ -44,11 +52,18 @@ class olt_connector():
         self.disconnect(net_connect)
     
     def get_itens_to_remove(self, slot, pon):
+        old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
+        old_values.delete()
         net_connect = self.connect()
-
         command = f"show equipment ont status pon 1/1/{slot}/{pon}"
         output = net_connect.send_command(command)
-        removeble_list = []
+        self.update_values(output)
+        self.disconnect(net_connect)
+        
+        return output
+    
+
+    def update_values(self, output):
         for line in iter(output.splitlines()):
             if "down" in line:
                 new_list = []
@@ -57,8 +72,7 @@ class olt_connector():
                 line_aux = [x for x in line_aux if x != '']
                 for item in line_aux:
                     if count == 1:
-                        ont_details = f'show vlan bridge-port-fdb {item}/14/1'
-                        output_details = net_connect.send_command(ont_details)
+                        output_details = self.get_onu_detail(item)
                         found = False
                         for detail_line in iter(output_details.splitlines()):
                             if "learned" in detail_line:
@@ -71,11 +85,15 @@ class olt_connector():
                             new_list.append(mac)
                     new_list.append(item)
                     count += 1
-                removeble_list.append(new_list)
-        self.disconnect(net_connect)
-        
-        return removeble_list
-    
+                new_onu = ONU()
+                new_onu.pon = new_list[0]
+                new_onu.mac = new_list[1]
+                new_onu.position = new_list[2].split("/")[-1]
+                new_onu.serial = new_list[3]
+                new_onu.oper_state = new_list[4]
+                new_onu.pppoe = new_list[7]
+                new_onu.descricao = new_list[8]
+                new_onu.save()
 
     def remove_onu(self, porta):
        print(f"{porta}") 

@@ -10,6 +10,7 @@
         <div class="container">
             <h1 class="display-3">Nokia Users List</h1>
         </div>
+      </p>
     </div>
 
     <div class="container">
@@ -20,7 +21,7 @@
                   <tr>
                     <th scope="col">Porta</th>
                     <th scope="col">MAC</th>
-                    <th scope="col">ONT</th>
+                    <!-- <th scope="col">ONT</th>
                     <th scope="col">Serial</th>
                     <th scope="col">Oper State</th>
                     <th scope="col">Sinal RX</th>
@@ -28,20 +29,15 @@
                     <th scope="col">PPPoE</th>
                     <th scope="col">Descrição</th>
                     <th scope="col">Hostname</th>
-                    <th scope="col">Ações</th>
+                    <th scope="col">Ações</th> -->
                   </tr>
                 </thead>
                 <tbody>
                     {% for line in removable_list %}
                     <tr>
-                        {% for item in line %}
-                            <!-- {% if forloop.counter == 0 %} -->
-                            {% define 1 as porta %}
-                            <!-- {% endif %} -->
-                            <td>{{item}}</td>                            
-                        {% endfor %}
+                        <td>{{line}}</td>                            
                         <td>
-                            <button type="button" class="btn btn-Danger" data-toggle="modal" data-target="#exampleModal">
+                            <button type="button" class="btn btn-Danger" data-toggle="modal" data-target="#delete_modal">
                                 <i class="fa fa-trash"></i></button></td>
                         </tr>
                     {% endfor %}
@@ -50,26 +46,25 @@
         </div>
         <hr>
     </div> <!-- /container -->
-
-    <div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
-        <div class="modal-dialog" role="document">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h5 class="modal-title" id="exampleModalLabel">Excluir ONU?</h5>
-              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                <span aria-hidden="true">&times;</span>
-              </button>
-            </div>
-            <div class="modal-body">
-              Tem certeza que deseja remover essa ONU do sistema?
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
-              <a href="{% url 'olt:remover' porta=1 %}"><button type="button" class="btn btn-Danger">Remover</button></a>
-            </div>
+    <div class="modal fade" id="delete_modal" tabindex="-1" role="dialog" aria-labelledby="delete_modal" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="delete_modal">Excluir ONU?</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            Tem certeza que deseja remover essa ONU do sistema?
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+            <a href="#"><button type="button" class="btn btn-Danger">Remover</button></a>
           </div>
         </div>
       </div>
+    </div>
 </main>
 
 <footer class="container">

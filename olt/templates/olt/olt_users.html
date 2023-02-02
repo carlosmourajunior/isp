@@ -9,7 +9,7 @@
         <div class="container">
             <h1 class="display-3">Nokia Users List</h1>
             <p>
-                <a href="{% url 'olt:update' %}">
+                <a href="{% url 'olt:update_users' %}">
                     <button type="button" class="btn btn-Danger">Atualizar</i></button>
                 </a>
             </p>
@@ -19,6 +19,43 @@
     <div class="container">
         <!-- Example row of columns -->
         <div class="row">
+            <h3>Placas da OLT</h3>
+            <table class="table table-striped table-dark">
+                <thead>
+                  <tr>
+                    <th scope="col">Slot</th>
+                    <th scope="col">Observações</th>
+                    <th scope="col">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                        <td>
+                        Slot 1
+                        </td>
+                        <td>ssss</td>
+                        <td>
+                        <button type="button" class="btn btn-Danger" data-toggle="modal" data-target="#reset_slot_modal" data-slot="1">Reiniciar a placa</button>
+                        </td>
+                        
+                    </tr>
+                    <tr>
+                      <td>
+                        Slot 1
+                      </td>
+                      <td>
+                        kkkk
+                     </td>
+                        <td>
+                          <button type="button" class="btn btn-Danger" data-toggle="modal" data-target="#reset_slot_modal" data-slot="2">Reiniciar a placa</button>
+                        </td>
+                        
+                    </tr>
+                </tbody>
+              </table>
+        </div>
+        <div class="row">
+            <h3>Portas</h3>
             <table class="table table-striped table-dark">
                 <thead>
                   <tr>
@@ -38,14 +75,31 @@
                     {% endfor %}
                 </tbody>
               </table>
-
-
            
         </div>
 
         <hr>
 
     </div> <!-- /container -->
+    <div class="modal fade" id="reset_slot_modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="exampleModalLabel">Excluir ONU?</h5>
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+              Tem certeza que deseja remover essa ONU do sistema?
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+              <button type="button" class="btn btn-Danger">Remover</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
 </main>
 
