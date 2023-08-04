@@ -12,10 +12,11 @@ class OltUsers(models.Model):
     port = models.IntegerField(verbose_name="Porta", validators=[MinValueValidator(1), MaxValueValidator(16)])
 
     users_connected = models.IntegerField(verbose_name="Usuários Aprovisionados")
+    last_updated = models.DateTimeField(verbose_name="Última Atualização")
 
     class Meta:
-        verbose_name = ("Ocupação da OLT")
-        verbose_name_plural = ("Ocupação da OLT")
+        verbose_name = ("Porta")
+        verbose_name_plural = ("Portas")
 
     def __str__(self):
         return f"1/1/{self.slot}/{self.port}"
@@ -38,4 +39,14 @@ class ONU(models.Model):
         return f"{ self.serial }"
         
 
+class PlacaOnu(models.Model):
 
+    chassi = models.CharField(verbose_name="Chassi", max_length=20, default="1/1/1")
+    position = models.IntegerField(verbose_name="Posição do Slot", validators=[MinValueValidator(1), MaxValueValidator(2)])
+
+    class Meta:
+        verbose_name = "Placa"
+        verbose_name_plural = ("Placas")
+    
+    def __str__(self) -> str:
+        return f"{self.chassi}/{self.position}"

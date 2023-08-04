@@ -1,6 +1,8 @@
 # import netmiko library
+from datetime import datetime
 from netmiko import ConnectHandler
 from olt.models import ONU, OltUsers
+import pandas as pd 
 
 class olt_connector():
 
@@ -30,6 +32,19 @@ class olt_connector():
 
         return output_details
 
+    def reset_placa_onu(self, queryset):
+        pass
+        # net_connect = self.connect()
+        # placa = f"/{queryset.first().chassi}/{queryset.first().position}"
+        # ont_details = f'show equipment slot lt:{placa} detail'.strip()
+        # print(ont_details)
+        # output_details = net_connect.send_command(ont_details)
+        # print(output_details)
+        # self.disconnect(net_connect)
+        # print(output_details)
+        # return output_details
+
+
     def update_port_ocupation(self):
 
         net_connect = self.connect()
@@ -46,6 +61,7 @@ class olt_connector():
                         new_olt_user.slot = slot
                         new_olt_user.port = pon
                         new_olt_user.users_connected = int(line.split(":")[1])
+                        new_olt_user.last_updated = datetime.now()
                         new_olt_user.save()
                         print(f"1/1/{slot}/{pon} - {line}")  
         
@@ -64,8 +80,10 @@ class olt_connector():
     
 
     def update_values(self, output):
+        print(output)
+        df = pd.DataFrame()
         for line in iter(output.splitlines()):
-            if "down" in line:
+            if "down" in line or "up" in line:
                 new_list = []
                 line_aux = line.split("  ")
                 count = 0
@@ -89,21 +107,23 @@ class olt_connector():
                 new_onu.pon = new_list[0]
                 new_onu.mac = new_list[1]
                 new_onu.position = new_list[2].split("/")[-1]
-                new_onu.serial = new_list[3]
-                new_onu.oper_state = new_list[4]
+                new_onu.serial = new_list[3].split(" ")[0]
+                new_onu.oper_state = new_list[3].split(" ")[1]
                 new_onu.pppoe = new_list[7]
                 new_onu.descricao = new_list[8]
                 new_onu.save()
 
-    def remove_onu(self, porta):
-       print(f"{porta}") 
+    def remove_onu(self, queryset):
+       pass
+        # ont_id = f"{queryset.first().pon}/{queryset.first().position}"
         # net_connect = self.connect()
-        # command = f"configure equipment ont interface {ont_id} admin-state down"
+        # # command = f"configure equipment ont interface {ont_id} admin-state down"
+        # # print(command)
+        # # net_connect.send_command(command)
+        # command = f"configure equipment ont no interface {ont_id}"
+        # print(command)
         # net_connect.send_command(command)
-        # command = f"configure equipment ont interface {ont_id} admin-state down"
-        # net_connect.send_command(command)
-        # self.disconnect(net_connect)
-                
+        # self.disconnect(net_connect)              
 
 
 
