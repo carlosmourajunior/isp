@@ -28,8 +28,11 @@ class ONU(models.Model):
     mac = models.CharField(verbose_name="MAC", max_length=200)
     serial = models.CharField(verbose_name="Serial", max_length=30)
     oper_state = models.CharField(verbose_name="Status", max_length=30)
-    pppoe = models.CharField(verbose_name="PPPoE", max_length=200)
-    descricao = models.CharField(verbose_name="Descrição", max_length=300)
+    admin_state = models.CharField(verbose_name="Status", max_length=30, default="up", null=True, blank=True)
+    olt_rx_sig = models.CharField(verbose_name="OLT RX Signal", max_length=200, default="0", null=True, blank=True)
+    ont_olt = models.CharField(verbose_name="Distancia", max_length=200, default="0", null=True, blank=True)
+    desc1 = models.CharField(verbose_name="Descrição_1", max_length=200)
+    desc2 = models.CharField(verbose_name="Descrição_2", max_length=300)
 
     class Meta:
         verbose_name = "ONU"

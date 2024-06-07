@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css"
         integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
 
     <!-- JS, Popper.js, and jQuery -->
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
@@ -21,6 +21,21 @@
         crossorigin="anonymous"></script>
 
     </head>
+
+    <script>
+        // Show the loader when a button is clicked
+        document.querySelectorAll('button').forEach(function(button) {
+            button.addEventListener('click', function() {
+                document.getElementById('loader').style.display = 'block';
+            });
+        });
+      
+        // Hide the loader when the page has finished loading
+        window.addEventListener('load', function() {
+            document.getElementById('loader').style.display = 'none';
+        });
+      </script>
+      
 <body>
     <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
         <a class="navbar-brand" href="#">Via01</a>
@@ -28,7 +43,11 @@
             aria-controls="navbarsExampleDefault" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
         </button>
-    
+        
+        <div id="loader" style="display: none;">
+            <img src="path_to_your_loader_image.gif" alt="Loading..." />
+        </div>
+  
         <div class="collapse navbar-collapse" id="navbarsExampleDefault">
             <ul class="navbar-nav mr-auto">
                 <li class="nav-item active">
@@ -38,14 +57,27 @@
                     <a class="nav-link dropdown-toggle" href="#" id="dropdown01" data-toggle="dropdown" aria-haspopup="true"
                         aria-expanded="false">OLT</a>
                     <div class="dropdown-menu" aria-labelledby="dropdown01">
-                        <a class="dropdown-item" href="update_users">Atualizar Ocupação</a>
-                        <a class="dropdown-item" href="#">Listar portas da OLT</a>
-                        <a class="dropdown-item" href="#">Verificar Portas Cheias</a>
+                        <a class="dropdown-item" href="{% url 'olt:update_users' %}">Atualizar Ocupação</a>
+                    </div>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="dropdown01" data-toggle="dropdown" aria-haspopup="true"
+                        aria-expanded="false">ONU</a>
+                    <div class="dropdown-menu" aria-labelledby="dropdown01">
+                        <a class="dropdown-item" href="{% url 'olt:update_onus_all' %}">Atualizar Todas</a>
+                        <a class="dropdown-item" href="{% url 'olt:get_duplicated' %}">Buscar Duplicados</a>
+                    </div>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="dropdown01" data-toggle="dropdown" aria-haspopup="true"
+                        aria-expanded="false">IXC</a>
+                    <div class="dropdown-menu" aria-labelledby="dropdown01">
+                        <a class="dropdown-item" href="{% url 'olt:search_ixc' %}">Buscar Clientes Fibra</a>
                     </div>
                 </li>
             </ul>
-            <form class="form-inline my-2 my-lg-0">
-                <input class="form-control mr-sm-2" type="text" placeholder="Search" aria-label="Search">
+            <form class="form-inline my-2 my-lg-0" action="{% url 'olt:search_view' %}">
+                <input class="form-control mr-sm-2" type="text" placeholder="Search" aria-label="Search" name="q">
                 <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
             </form>
         </div>

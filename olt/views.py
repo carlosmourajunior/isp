@@ -1,10 +1,10 @@
+import base64
 from django.http import HttpResponse
 from django.template import loader
 from olt.utils import olt_connector
 from django.shortcuts import render
-
-
 from olt.models import ONU, OltUsers
+import requests
 
 def home(request):
     olt_users_list = OltUsers.objects.order_by('-users_connected')
@@ -26,7 +26,7 @@ def critical_users_list(request):
 
 def update_users(request):
     connector = olt_connector()
-    connector.update_port_ocupation()
+    connector.update_port_ocupation(read_timeout=600, expect_string='typ:isadmin>#')
     olt_users_list = OltUsers.objects.order_by('-users_connected')
     template = loader.get_template('olt/home.html')
     context = {
@@ -39,7 +39,7 @@ def remove_onu(request):
 
 def update_onus(request, slot, port):
     connector = olt_connector()
-    olt_users_list = connector.get_itens_to_remove(slot, port)
+    olt_users_list = connector.get_itens_to_port(slot, port)
     template = loader.get_template('olt/home.html')
     context = {
         'olt_users_list': olt_users_list,
@@ -56,25 +56,133 @@ def removable_users_list(request, slot, port):
     }
     return HttpResponse(template.render(context, request))
 
-def delete_user(request, slot, port):
-    pon = f"1/1/{slot}/{port}"
+def delete(request, slot, port, position):
+    pon = f"1/1/{slot}/{port}/{position}"
     # ONU.objects.filter(pon=pon, onu=onu).delete()
     # removable_list = ONU.objects.filter(pon=pon)
     # template = loader.get_template('olt/removable_list.html')
     # context = {
     #     'removable_list': removable_list,
     # }
-    print(f"Slot: {slot} Port: {port}")
-    return HttpResponse({'status': 'ok'}, content_type='application/json')
+    print(f"configure equipment ont interface 1/1/{slot}/{port}/{position} admin-state down")
+    print(f"configure equipment no interface 1/1/{slot}/{port}/{position}")
 
+    response = update_values(request, port, slot)
+
+    return response
+    
 
 def remover_ont(request, porta):
     connector = olt_connector()
     connector.remove_onu(porta)
     porta = porta.split("/")
-    removable_list = connector.get_itens_to_remove(1, 16)
+    removable_list = connector.get_itens_to_port(1, 16)
     template = loader.get_template('olt/removable_list.html')
     context = {
         'removable_list': removable_list,
     }
     return HttpResponse(template.render(context, request))
+
+
+def get_itens_to_port(request, slot, port):
+    connector = olt_connector()
+    old_values = connector.get_itens_to_port(slot, port)
+    template = loader.get_template('olt/duplicates.html')
+    context = {
+        'duplicates': old_values,
+        'slot': slot,
+        'port': port,
+    }
+    return HttpResponse(template.render(context, request))
+
+def update_values(request, port, slot):
+
+    order_by = request.GET.get('sort', 'position')
+
+    connector = olt_connector()
+    connector.update_port(slot, port)
+    values = connector.get_itens_to_port(slot, port, order_by=order_by)
+    template = loader.get_template('olt/duplicates.html')
+    context = {
+        'duplicates': values,
+        'slot': slot,
+        'port': port,
+    }
+    return HttpResponse(template.render(context, request))
+
+
+def update_onus_all(request):
+    connector = olt_connector()
+    connector.update_all_ports()
+    olt_users_list = OltUsers.objects.order_by('-users_connected')
+    template = loader.get_template('olt/home.html')
+    context = {
+        'olt_users_list': olt_users_list,
+    }
+    return HttpResponse(template.render(context, request))
+
+
+def get_duplicated(request):
+    onus = ONU.objects.all().order_by('serial')
+    duplicates = []
+    for onu in onus:
+        serial_count = ONU.objects.filter(serial=onu.serial).count()
+        print(serial_count)
+        if serial_count > 1:
+            duplicates.append(onu)
+    template = loader.get_template('olt/duplicates.html')
+    context = {
+        'duplicates': duplicates,
+    }
+    return HttpResponse(template.render(context, request))
+
+
+def search_view(request):
+
+    removable_list = []
+    query = request.GET.get('q', '')
+    print("Search query: " + query)
+
+    if query:
+        serial = ONU.objects.filter(serial__icontains=query)
+        print(serial)
+        mac = ONU.objects.filter(mac__icontains=query)
+        print(mac)
+        desc1 = ONU.objects.filter(desc1__icontains=query)
+        print(desc1)
+    
+        removable_list = serial.union(mac).union(desc1)
+
+
+    # Your search logic here
+
+    return render(request, 'olt/duplicates.html', {'query': query , 'duplicates': removable_list})
+
+def search_ixc(request):
+
+    host = 'ixc.via01.com.br'
+    url = f"https://{host}/webservice/v1/radpop_radio_cliente_fibra"
+    token = "1:e1d85d1920bad8a5fa64a8e5b10eb397d25d22436d2c528ce4e1afec217f5815".encode('utf-8')
+
+    payload = {
+        'qtype': 'radpop_radio_cliente_fibra.id',
+        'query': '0',
+        'oper': '>',
+        'page': '',
+        'rp': '20',
+        'sortname': 'radpop_radio_cliente_fibra.id',
+        'sortorder': 'asc'
+    }
+
+    headers = {
+        'ixcsoft': 'listar',
+        'Authorization': 'Basic {}'.format(base64.b64encode(token).decode('utf-8')),
+        'Content-Type': 'application/json'
+    }
+
+    response = requests.post(url, data=payload, headers=headers)
+
+    num_records = len(response['registros'])
+    print(f'There are {num_records} records in this JSON file.')    
+
+    print(response.text)
