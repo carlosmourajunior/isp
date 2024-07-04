@@ -21,7 +21,7 @@
         crossorigin="anonymous"></script>
 
     </head>
-
+    {% load static %}
     <script>
         // Show the loader when a button is clicked
         document.querySelectorAll('button').forEach(function(button) {
@@ -45,7 +45,7 @@
         </button>
         
         <div id="loader" style="display: none;">
-            <img src="path_to_your_loader_image.gif" alt="Loading..." />
+            <img src="{% static 'img/loader.png' %}" alt="Loading...">
         </div>
   
         <div class="collapse navbar-collapse" id="navbarsExampleDefault">
@@ -72,7 +72,8 @@
                     <a class="nav-link dropdown-toggle" href="#" id="dropdown01" data-toggle="dropdown" aria-haspopup="true"
                         aria-expanded="false">IXC</a>
                     <div class="dropdown-menu" aria-labelledby="dropdown01">
-                        <a class="dropdown-item" href="{% url 'olt:search_ixc' %}">Buscar Clientes Fibra</a>
+                        <a class="dropdown-item" href="{% url 'olt:listar_clientes' %}">Clientes Fibra</a>
+                        <a class="dropdown-item" href="{% url 'olt:search_ixc' %}">Atualizar Clientes Fibra</a>
                     </div>
                 </li>
             </ul>

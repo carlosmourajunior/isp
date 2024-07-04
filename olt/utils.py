@@ -1,9 +1,8 @@
 # import netmiko library
 from datetime import datetime
+import time
 from netmiko import ConnectHandler
-from olt.models import ONU, OltUsers
-import pandas as pd 
-import re
+from olt.models import ONU, ClienteFibraIxc, OltUsers
 import re
 
 class olt_connector():
@@ -14,6 +13,8 @@ class olt_connector():
             'host': '192.168.133.10',
             'username': 'isadmin',
             'password': 'ANS#150',
+            'verbose': False,
+            'global_delay_factor': 2,
         }
 
     def connect(self):
@@ -94,10 +95,18 @@ class olt_connector():
         self.disconnect(net_connect)
 
     def update_values(self, output):
-       
+
         data_dict = self.create_dict_from_result(output)
         for data in data_dict:
+            
             new_onu = ONU()
+            try:
+                has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
+                if has_cliente:
+                    new_onu.cliente_fibra = True
+            except:
+                pass
+            
             new_onu.pon = data['pon']
             new_onu.position = data['position']
             new_onu.serial = data['sernum']
@@ -111,17 +120,22 @@ class olt_connector():
             print(data)
 
                 
-    def remove_onu(self, queryset):
-       pass
+    def remove_onu(self, pon):
+       
         # ont_id = f"{queryset.first().pon}/{queryset.first().position}"
-        # net_connect = self.connect()
-        # # command = f"configure equipment ont interface {ont_id} admin-state down"
-        # # print(command)
-        # # net_connect.send_command(command)
-        # command = f"configure equipment ont no interface {ont_id}"
-        # print(command)
-        # net_connect.send_command(command)
-        # self.disconnect(net_connect)           
+        net_connect = self.connect()
+        command = f"configure equipment ont interface {pon} admin-state down\n"
+        print(command)
+        net_connect.write_channel(command)
+        time.sleep(2)  # Aguarda um pouco para o comando ser processado
+        output = net_connect.read_channel()
+        print(output)
+        command = f"configure equipment ont no interface {pon}\n"
+        net_connect.write_channel(command)
+        time.sleep(2)  # Aguarda um pouco para o comando ser processado
+        output = net_connect.read_channel()
+        print(output)
+        self.disconnect(net_connect)           
     
     def update_all_mac_address(self):
         net_connect = self.connect()

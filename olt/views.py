@@ -1,9 +1,10 @@
 import base64
+import json
 from django.http import HttpResponse
 from django.template import loader
 from olt.utils import olt_connector
 from django.shortcuts import render
-from olt.models import ONU, OltUsers
+from olt.models import ONU, ClienteFibraIxc, OltUsers
 import requests
 
 def home(request):
@@ -64,6 +65,8 @@ def delete(request, slot, port, position):
     # context = {
     #     'removable_list': removable_list,
     # }
+    conector = olt_connector()
+    conector.remove_onu(pon)
     print(f"configure equipment ont interface 1/1/{slot}/{port}/{position} admin-state down")
     print(f"configure equipment no interface 1/1/{slot}/{port}/{position}")
 
@@ -127,7 +130,6 @@ def get_duplicated(request):
     duplicates = []
     for onu in onus:
         serial_count = ONU.objects.filter(serial=onu.serial).count()
-        print(serial_count)
         if serial_count > 1:
             duplicates.append(onu)
     template = loader.get_template('olt/duplicates.html')
@@ -153,12 +155,62 @@ def search_view(request):
     
         removable_list = serial.union(mac).union(desc1)
 
-
-    # Your search logic here
-
     return render(request, 'olt/duplicates.html', {'query': query , 'duplicates': removable_list})
 
+def listar_clientes(request):
+
+    clientes = ClienteFibraIxc.objects.all()
+    template = loader.get_template('olt/clientes_fibra.html')
+    context = {
+        'clientes': clientes,
+    }
+    return HttpResponse(template.render(context, request))
+
+def update_clientes():
+    clientes = ClienteFibraIxc.objects.all()
+    for client in clientes:
+        onu = ONU.objects.filter(serial__icontains=client.mac, desc1__icontains=client.nome)
+        if onu.exists():
+            onu = onu.first()
+            onu.cliente_fibra = True
+            onu.save()
+            print(f'Cliente {client.nome} marcado como cliente de fibra.')
+
 def search_ixc(request):
+
+    response = search_ixc_page(request, 1)
+    data = response.json()
+
+    num_records = len(data['registros'])
+    print(f'There are {num_records} records in this JSON file.')    
+    total_de_paginas = int(data['total'])/100
+    print(f'Total de páginas: {total_de_paginas}')
+
+    # print(response.json())
+    ClienteFibraIxc.objects.all().delete()
+    for page in range(1, int(total_de_paginas+1)):
+        response = search_ixc_page(request, page)
+        data = response.json()
+        print(f'Página {page} de {total_de_paginas}')
+        
+        for registro in data['registros']:
+            ClienteFibraIxc.objects.create(
+                mac=registro['mac'], 
+                nome=registro['nome'],
+            )
+
+    update_clientes()
+
+    clientes = ClienteFibraIxc.objects.all()
+
+    template = loader.get_template('olt/clientes_fibra.html')
+    context = {
+        'clientes': clientes,
+    }
+    return HttpResponse(template.render(context, request))
+
+
+def search_ixc_page(request, page):
 
     host = 'ixc.via01.com.br'
     url = f"https://{host}/webservice/v1/radpop_radio_cliente_fibra"
@@ -166,23 +218,21 @@ def search_ixc(request):
 
     payload = {
         'qtype': 'radpop_radio_cliente_fibra.id',
-        'query': '0',
+        'query': '',
         'oper': '>',
-        'page': '',
-        'rp': '20',
+        'page': page,
+        'rp': '100',
         'sortname': 'radpop_radio_cliente_fibra.id',
         'sortorder': 'asc'
     }
 
     headers = {
         'ixcsoft': 'listar',
-        'Authorization': 'Basic {}'.format(base64.b64encode(token).decode('utf-8')),
+        'Authorization': 'Basic {}'.
+        format(base64.b64encode(token).decode('utf-8')),
         'Content-Type': 'application/json'
     }
 
-    response = requests.post(url, data=payload, headers=headers)
+    response = requests.post(url, data=json.dumps(payload), headers=headers)
 
-    num_records = len(response['registros'])
-    print(f'There are {num_records} records in this JSON file.')    
-
-    print(response.text)
+    return response

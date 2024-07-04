@@ -16,4 +16,5 @@ urlpatterns = [
     path('delete/<int:slot>/<int:port>/<int:position>/', views.delete, name='delete'),
     path('search/', views.search_view, name='search_view'),
     path('search_ixc/', views.search_ixc, name='search_ixc'),
+    path('listar_clientes/', views.listar_clientes, name='listar_clientes'),
 ]

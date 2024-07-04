@@ -30,6 +30,7 @@
                   <th scope="col"><a href="?sort=serial">Serial</a></th>
                   <th scope="col"><a href="?sort=oper_state">Oper State</a></th>
                   <th scope="col"><a href="?sort=olt_rx_sig">Signal RX</a></th>
+                  <th scope="col"><a href="?sort=cliente_fibra">Cliente Fibra</a></th>
                   <th scope="col"><a href="?sort=desc1">PPPoE</a></th>
                   <th scope="col"><a href="?sort=desc2">Descrição</a></th>
                   <th scope="col">Ações</th>
@@ -43,6 +44,7 @@
                   <td>{{line.serial}}</td>
                   <td>{{line.oper_state}}</td>
                   <td>{{line.olt_rx_sig}}</td>
+                  <td>{{line.cliente_fibra}}</td>
                   <td>{{line.desc1}}</td>
                   <td>{{line.desc2}}</td>
                   <td>
@@ -95,7 +97,7 @@
             console.log("Port: " + port);
     
             // Generate the URL for the delete view
-            var url = "{% url 'olt:delete' slot=1 port=2 position=3 %}".replace('1', slot).replace('2', port).replace('3', position);
+            var url = "{% url 'olt:delete' slot=198 port=199 position=200 %}".replace('198', slot).replace('199', port).replace('200', position);
     
             // Print the generated URL
             console.log("URL: " + url);

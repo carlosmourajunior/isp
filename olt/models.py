@@ -33,6 +33,7 @@ class ONU(models.Model):
     ont_olt = models.CharField(verbose_name="Distancia", max_length=200, default="0", null=True, blank=True)
     desc1 = models.CharField(verbose_name="Descrição_1", max_length=200)
     desc2 = models.CharField(verbose_name="Descrição_2", max_length=300)
+    cliente_fibra = models.BooleanField(verbose_name="Cliente Fibra", default=False)    
 
     class Meta:
         verbose_name = "ONU"
@@ -53,3 +54,16 @@ class PlacaOnu(models.Model):
     
     def __str__(self) -> str:
         return f"{self.chassi}/{self.position}"
+    
+class ClienteFibraIxc(models.Model):
+
+    mac = models.CharField(max_length=255)
+    nome = models.CharField(max_length=255)
+
+    class Meta:
+        verbose_name = "Cliente Fibra"
+        verbose_name_plural = ("Clientes Fibra")
+    
+    def __str__(self) -> str:
+        return f"{self.nome}"
+    
