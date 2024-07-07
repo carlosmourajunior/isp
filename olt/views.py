@@ -7,8 +7,9 @@ from django.shortcuts import render, redirect
 from olt.models import ONU, ClienteFibraIxc, OltUsers
 import requests
 from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.decorators import login_required
 
-
+@login_required
 def home(request):
     olt_users_list = OltUsers.objects.order_by('-users_connected')
     template = loader.get_template('olt/home.html')
