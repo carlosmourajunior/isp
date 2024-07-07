@@ -1,4 +1,6 @@
 from django.urls import path
+from django.contrib.auth import views as auth_views
+
 
 from olt import views
 
@@ -17,4 +19,7 @@ urlpatterns = [
     path('search/', views.search_view, name='search_view'),
     path('search_ixc/', views.search_ixc, name='search_ixc'),
     path('listar_clientes/', views.listar_clientes, name='listar_clientes'),
+    path('accounts/login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
+    path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/'), name='logout'),
+    path('accounts/register/', views.register, name='register'),
 ]
