@@ -3,10 +3,13 @@ import json
 from django.http import HttpResponse
 from django.template import loader
 from olt.utils import olt_connector
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from olt.models import ONU, ClienteFibraIxc, OltUsers
 import requests
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.decorators import login_required
 
+@login_required
 def home(request):
     olt_users_list = OltUsers.objects.order_by('-users_connected')
     template = loader.get_template('olt/home.html')
@@ -240,3 +243,14 @@ def search_ixc_page(request, page):
     response = requests.post(url, data=json.dumps(payload), headers=headers)
 
     return response
+
+
+def register(request):
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('login')
+    else:
+        form = UserCreationForm()
+    return render(request, 'register.html', {'form': form})
