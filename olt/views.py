@@ -8,6 +8,8 @@ from olt.models import ONU, ClienteFibraIxc, OltUsers
 import requests
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
+from librouteros import connect
+from librouteros.query import Key
 
 @login_required
 def home(request):
@@ -254,3 +256,34 @@ def register(request):
     else:
         form = UserCreationForm()
     return render(request, 'register.html', {'form': form})
+
+
+def mikrotik_info(request):
+    
+    try:
+        # Conectar ao Mikrotik
+        api = connect(
+            username='admin',
+            password='ibanezGAX()90',
+            host='172.17.0.2',
+            port=8728,
+            timeout=60  # Aumentar o tempo limite de conexão para 60 segundos
+        )
+
+        # Buscar informações do Mikrotik
+        system_resource = api.path('system', 'resource')
+        resource_info = system_resource.get()
+
+        # Extrair dados relevantes
+        mikrotik_data = {
+            'hostname': resource_info[0].get('identity', 'N/A'),
+            'ip_address': '172.17.0.2',  # IP do Mikrotik
+            'uptime': resource_info[0].get('uptime', 'N/A'),
+            'version': resource_info[0].get('version', 'N/A'),
+            # Adicione mais informações conforme necessário
+        }
+        
+        return render(request, 'olt/mikrotik_info.html', {'mikrotik_data': mikrotik_data})
+    except Exception as e:
+        print(str(e))
+        return render(request, 'olt/mikrotik_info.html', {'error': str(e)})

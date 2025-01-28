@@ -22,4 +22,6 @@ urlpatterns = [
     path('accounts/login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/'), name='logout'),
     path('accounts/register/', views.register, name='register'),
+    path('mikrotik_info/', views.mikrotik_info, name='mikrotik_info'),  # Nova URL para a view mikrotik_info
+
 ]

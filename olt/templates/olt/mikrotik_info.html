@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block title %} Informações do Mikrotik {% endblock %}
+
+{% block content %}
+<main role="main">
+    <div class="container">
+        <h1 class="display-3">Informações do Mikrotik</h1>
+        <table class="table table-striped table-dark">
+            <thead>
+                <tr>
+                    <th scope="col">Propriedade</th>
+                    <th scope="col">Valor</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Hostname</td>
+                    <td>{{ mikrotik_data.hostname }}</td>
+                </tr>
+                <tr>
+                    <td>Endereço IP</td>
+                    <td>{{ mikrotik_data.ip_address }}</td>
+                </tr>
+                <tr>
+                    <td>Uptime</td>
+                    <td>{{ mikrotik_data.uptime }}</td>
+                </tr>
+                <tr>
+                    <td>Versão</td>
+                    <td>{{ mikrotik_data.version }}</td>
+                </tr>
+                <!-- Adicione mais linhas conforme necessário -->
+            </tbody>
+        </table>
+    </div>
+</main>
+{% endblock %}
