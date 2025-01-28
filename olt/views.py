@@ -152,8 +152,12 @@ def search_view(request):
         print(mac)
         desc1 = ONU.objects.filter(desc1__icontains=query)
         print(desc1)
+        desc2 = ONU.objects.filter(desc2__icontains=query)
+        print(desc1)
+        mac = ONU.objects.filter(mac__icontains=query)
+        print(desc1)
     
-        removable_list = serial.union(mac).union(desc1)
+        removable_list = serial.union(mac).union(desc1).union(desc2).union(mac)
 
     return render(request, 'olt/duplicates.html', {'query': query , 'duplicates': removable_list})
 

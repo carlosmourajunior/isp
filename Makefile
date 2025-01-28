@@ -61,7 +61,7 @@ sh: show_env
 # recreate_db: show_env _drop_db _create_db
 
 createsuperuser: show_env
-	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py shell -c "from web.user.models import User; User.objects.create_superuser('root@root.com.br', 'root', name='root'); print('Superuser created: root@root.com.br:root')"
+	docker-compose ${DOCKER_COMPOSE_FILE} exec isp_web_1 ${PYTHON_EXEC} ./manage.py shell -c "from olt.user.models import User; User.objects.create_superuser('root@root.com.br', 'root', name='root'); print('Superuser created: root@root.com.br:root')"
 
 # fixtures: show_env
 # 	docker-compose ${DOCKER_COMPOSE_FILE} exec web pytest --fixtures
@@ -76,8 +76,8 @@ createsuperuser: show_env
 # 	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py collectstatic --no-input
 
 makemigrations: show_env
-	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py makemigrations ${ARGS}
-	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
+	docker-compose ${DOCKER_COMPOSE_FILE} exec isp_web_1 ${PYTHON_EXEC} manage.py makemigrations ${ARGS}
+	docker-compose ${DOCKER_COMPOSE_FILE} exec isp_web_1 ${PYTHON_EXEC} manage.py migrate
 
 
 # makemigrations__merge: show_env
@@ -85,13 +85,13 @@ makemigrations: show_env
 #   docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
 
 migrate: show_env
-	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
+	docker-compose ${DOCKER_COMPOSE_FILE} exec isp_web_1 ${PYTHON_EXEC} manage.py migrate
 
 # pip_install: show_env
 # 	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} -m pip install -r requirements.txt
 
 manage: show_env
-	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py ${ARGS}
+	docker-compose ${DOCKER_COMPOSE_FILE} exec isp_web_1 ${PYTHON_EXEC} manage.py ${ARGS}
 
 # test-watch: show_env
 # 	docker-compose ${DOCKER_COMPOSE_FILE} exec web pytest --testmon "${ARGS}"
@@ -132,7 +132,7 @@ chown_project:
 # 	docker-compose ${DOCKER_COMPOSE_FILE} exec db sh -c "PGPASSWORD=${POSTGRES_PASSWORD} psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -f /db/backup.sql"
 
 shell_plus:
-	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py shell_plus
+	docker-compose ${DOCKER_COMPOSE_FILE} exec isp_web_1 ${PYTHON_EXEC} ./manage.py shell_plus
 
 # kafka_consumer: show_env
 # 	docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py kafka_consumer

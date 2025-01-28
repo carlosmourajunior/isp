@@ -83,7 +83,8 @@ class olt_connector():
     def update_all_ports(self):
         for slot in range(3):
             for pon in range(17):
-                self.update_port(slot, pon)
+                # self.update_port(slot, pon)
+                self.get_mac_values()
 
     def update_port(self, slot, pon):
         old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
@@ -93,6 +94,24 @@ class olt_connector():
         output = net_connect.send_command(command)
         self.update_values(output)
         self.disconnect(net_connect)
+    
+    def get_mac_values(self):
+        net_connect = self.connect()
+        command = "environment inhibit-alarms"
+        net_connect.write_channel(command)
+        time.sleep(2)  # Aguarda um pouco para o comando ser processado
+        command = "show vlan bridge-port-fdb"
+        output = net_connect.send_command(command, read_timeout=1200)
+        self.update_mac(output)
+        self.disconnect(net_connect)
+    
+    def update_mac(self, output):
+        data_dict = self.create_mac_dict(output)
+        for data in data_dict:
+            onu = ONU.objects.filter(pon=data['pon'], position=data['position']).first()
+            if onu:
+                onu.mac = data['mac_address']
+                onu.save()
 
     def update_values(self, output):
 
@@ -136,50 +155,10 @@ class olt_connector():
         output = net_connect.read_channel()
         print(output)
         self.disconnect(net_connect)           
+
+    def create_mac_dict(self, data):
+        print("create_mac_dict")
     
-    def update_all_mac_address(self):
-        net_connect = self.connect()
-        command = "show vlan bridge-port-fdb"
-        output = net_connect.send_command(command)
-        self.update_values(output)
-        self.disconnect(net_connect)
-
-
-    def create_mac_dict(self):
-
-        data = '''
-            1/1/1/1/52/14/1      200              e0:1f:ed:0e:d5:e1 200              learned 00:00:00:00:00:00
-            1/1/1/1/54/14/1      200              e0:1f:ed:0f:eb:01 200              learned 00:00:00:00:00:00
-            1/1/1/1/55/14/1      200              dc:d9:ae:f4:0c:51 200              learned 00:00:00:00:00:00
-            1/1/1/1/56/14/1      200              78:17:35:ae:5e:ca 200              learned 00:00:00:00:00:00
-            1/1/1/1/57/14/1      200              e0:1f:ed:17:7e:31 200              learned 00:00:00:00:00:00
-            1/1/1/1/58/1/1       200              d8:38:0d:4d:4c:41 200              learned 00:00:00:00:00:00
-            1/1/1/1/59/1/1       200              d8:38:0d:5b:4a:51 200              learned 00:00:00:00:00:00
-            1/1/1/1/60/14/1      200              04:25:e0:eb:b8:04 200              learned 00:00:00:00:00:00
-            1/1/1/1/61/14/1      200              78:91:e9:0d:ad:5c 200              learned 00:00:00:00:00:00
-            1/1/1/1/63/14/1      200              cc:c2:e0:92:65:4c 200              learned 00:00:00:00:00:00
-            1/1/1/1/64/1/1       200              c0:c9:e3:eb:0c:ad 200              learned 00:00:00:00:00:00
-            1/1/1/1/65/1/1       200              e8:48:b8:34:b1:ed 200              learned 00:00:00:00:00:00
-            1/1/1/1/66/1/1       200              e4:c3:2a:c9:4d:05 200              learned 00:00:00:00:00:00
-            1/1/1/1/67/14/1      200              cc:c2:e0:9a:9c:67 200              learned 00:00:00:00:00:00
-            1/1/1/1/68/14/1      200              e0:1f:ed:0f:e4:e1 200              learned 00:00:00:00:00:00
-            1/1/1/1/69/14/1      200              e0:1f:ed:0f:e1:41 200              learned 00:00:00:00:00:00
-            1/1/1/1/73/14/1      200              e0:1f:ed:11:4d:01 200              learned 00:00:00:00:00:00
-            1/1/1/1/74/14/1      200              e0:1f:ed:0d:fc:81 200              learned 00:00:00:00:00:00
-            1/1/1/1/75/1/1       200              d8:38:0d:4e:3a:a1 200              learned 00:00:00:00:00:00
-            1/1/1/1/77/1/1       200              48:a9:8a:ac:92:f4 200              learned 00:00:00:00:00:00
-            1/1/1/1/78/1/1       200              98:da:c4:21:bc:57 200              learned 00:00:00:00:00:00
-            1/1/1/1/79/14/1      200              04:25:e0:93:22:64 200              learned 00:00:00:00:00:00
-            1/1/1/1/80/14/1      200              04:25:e0:93:26:c4 200              learned 00:00:00:00:00:00
-            1/1/1/1/81/14/1      200              04:25:e0:90:74:e4 200              learned 00:00:00:00:00:00
-            1/1/1/1/83/14/1      200              cc:c2:e0:95:64:50 200              learned 00:00:00:00:00:00
-            1/1/1/1/84/14/1      200              cc:c2:e0:95:d2:c0 200              learned 00:00:00:00:00:00
-            1/1/1/1/85/14/1      200              cc:c2:e0:3b:77:87 200              learned 00:00:00:00:00:00
-            1/1/1/1/86/14/1      200              e0:1f:ed:0f:5c:e1 200              learned 00:00:00:00:00:00
-            1/1/1/1/89/14/1      200              cc:c2:e0:95:35:7c 200              learned 00:00:00:00:00:00
-
-        '''
-
        # Define the regex pattern
         pattern = r"(\d+/\d+/\d+/\d+/\d+/\d+/\d+)\s+(\d+)\s+([a-f0-9:]+)\s+(\d+)\s+(\w+)\s+([0-9:]+)"
 
@@ -192,16 +171,23 @@ class olt_connector():
         # Iterate over each match
         for match in matches:
             # Add the match to the dictionary
+            pon_value = match[0]
+            parts = pon_value.split('/')
+            first_five_parts = parts[:4]
+            pon_first_five = '/'.join(first_five_parts)
             data_dict[match[0]] = {
-                'status': match[1],
+                'pon': pon_first_five,
+                'position': parts[-3] if len(parts) > 3 else None,
                 'mac_address': match[2],
                 'status_2': match[3],
                 'learned': match[4],
                 'time': match[5]
             }
 
-        # Print the dictionary
         print(data_dict)
+        return data_dict
+        # Print the dictionary
+        
 
 
     def create_dict_from_result(self, data):
