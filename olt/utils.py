@@ -4,17 +4,22 @@ import time
 from netmiko import ConnectHandler
 from olt.models import ONU, ClienteFibraIxc, OltUsers
 import re
+from dotenv import load_dotenv
+import os
+
+# Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 class olt_connector():
 
     def __init__(self):
         self.nokia = {
-            'device_type': 'alcatel_aos',
-            'host': '192.168.133.10',
-            'username': 'isadmin',
-            'password': 'ANS#150',
-            'verbose': False,
-            'global_delay_factor': 2,
+            'device_type': os.getenv('NOKIA_DEVICE_TYPE'),
+            'host': os.getenv('NOKIA_HOST'),
+            'username': os.getenv('NOKIA_USERNAME'),
+            'password': os.getenv('NOKIA_PASSWORD'),
+            'verbose': os.getenv('NOKIA_VERBOSE') == 'True',
+            'global_delay_factor': int(os.getenv('NOKIA_GLOBAL_DELAY_FACTOR')),
         }
 
     def connect(self):

@@ -10,6 +10,11 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
 from librouteros import connect
 from librouteros.query import Key
+from dotenv import load_dotenv
+import os
+
+# Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 @login_required
 def home(request):
@@ -221,9 +226,9 @@ def search_ixc(request):
 
 def search_ixc_page(request, page):
 
-    host = 'ixc.via01.com.br'
+    host = os.getenv('IXC_HOST')
     url = f"https://{host}/webservice/v1/radpop_radio_cliente_fibra"
-    token = "1:e1d85d1920bad8a5fa64a8e5b10eb397d25d22436d2c528ce4e1afec217f5815".encode('utf-8')
+    token = os.getenv('IXC_TOKEN').encode('utf-8')
 
     payload = {
         'qtype': 'radpop_radio_cliente_fibra.id',
@@ -263,11 +268,11 @@ def mikrotik_info(request):
     try:
         # Conectar ao Mikrotik
         api = connect(
-            username='admin',
-            password='ibanezGAX()90',
-            host='172.17.0.2',
-            port=8728,
-            timeout=60  # Aumentar o tempo limite de conexão para 60 segundos
+            username=os.getenv('MIKROTIK_USERNAME'),
+            password=os.getenv('MIKROTIK_PASSWORD'),
+            host=os.getenv('MIKROTIK_HOST'),
+            port=int(os.getenv('MIKROTIK_PORT')),
+            timeout=int(os.getenv('MIKROTIK_TIMEOUT'))
         )
 
         # Buscar informações do Mikrotik
@@ -277,7 +282,7 @@ def mikrotik_info(request):
         # Extrair dados relevantes
         mikrotik_data = {
             'hostname': resource_info[0].get('identity', 'N/A'),
-            'ip_address': '172.17.0.2',  # IP do Mikrotik
+            'ip_address': os.getenv('MIKROTIK_HOST'),  # IP do Mikrotik
             'uptime': resource_info[0].get('uptime', 'N/A'),
             'version': resource_info[0].get('version', 'N/A'),
             # Adicione mais informações conforme necessário
