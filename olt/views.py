@@ -50,6 +50,17 @@ def update_users(request):
     }
     return HttpResponse(template.render(context, request))
 
+def update_mac_values(request):
+    connector = olt_connector()
+    connector.get_mac_values()
+    olt_users_list = OltUsers.objects.order_by('-users_connected')
+    template = loader.get_template('olt/home.html')
+    context = {
+        'olt_users_list': olt_users_list,
+    }
+    return HttpResponse(template.render(context, request))
+
+
 def remove_onu(request):
     print(f'{request}')
 
