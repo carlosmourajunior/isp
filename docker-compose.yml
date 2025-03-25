@@ -10,8 +10,8 @@ services:
       - 8000:8000
     depends_on:
       - db
-    environment:
-      - NOKIA_GLOBAL_DELAY_FACTOR=2
+    env_file:
+      - .env
   db:
     image: postgres:13
     volumes:
