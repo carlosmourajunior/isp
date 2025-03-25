@@ -23,5 +23,8 @@ urlpatterns = [
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/'), name='logout'),
     path('accounts/register/', views.register, name='register'),
     path('mikrotik_info/', views.mikrotik_info, name='mikrotik_info'),  # Nova URL para a view mikrotik_info
+    # path('enable_nats/', views.enable_nats, name='enable_nats'),
+    # path('disable_nats/', views.disable_nats, name='disable_nats'),
+
 
 ]

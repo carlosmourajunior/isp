@@ -1,38 +1,40 @@
-from librouteros import connect
-from librouteros.query import Key
-from dotenv import load_dotenv
-import os
+from routeros_api import RouterOsApiPool
 
-# Carregar variáveis de ambiente do arquivo .env
-load_dotenv()
+# Configurações de conexão
+mikrotik_ip = '170.78.163.241'
+username = 'carlos'
+password = 'ibanezGAX()90'
 
-def test_mikrotik_connection():
+# Conectando ao MikroTik
+api_pool = RouterOsApiPool(mikrotik_ip, username=username, password=password, plaintext_login=True)
+api = api_pool.get_api()
+
+# Executando o comando ping com parâmetros convertidos para bytes
+ping_params = {
+    'address': '8.8.8.8'.encode('utf-8'),
+    'src-address': '170.78.163.251'.encode('utf-8'),
+    'count': '10'.encode('utf-8')
+}
+
+response = api.get_binary_resource('/').call('ping', ping_params)
+
+# Exibindo o resultado
+for reply in response:
     try:
-        # Conectar ao Mikrotik
-        api = connect(
-            username=os.getenv('MIKROTIK_USERNAME'),
-            password=os.getenv('MIKROTIK_PASSWORD'),
-            host=os.getenv('MIKROTIK_HOST'),
-            port=int(os.getenv('MIKROTIK_PORT')),
-            timeout=int(os.getenv('MIKROTIK_TIMEOUT'))
-        )
-
-        # Buscar informações do Mikrotik
-        system_resource = api.path('system', 'resource')
-        resource_info = system_resource.get()
-
-        # Extrair dados relevantes
-        mikrotik_data = {
-            'hostname': resource_info[0].get('identity', 'N/A'),
-            'ip_address': os.getenv('MIKROTIK_HOST'),  # IP do Mikrotik
-            'uptime': resource_info[0].get('uptime', 'N/A'),
-            'version': resource_info[0].get('version', 'N/A'),
-            # Adicione mais informações conforme necessário
-        }
-
-        print(mikrotik_data)
+        # Decodifica valores binários
+        seq = reply.get(b'seq', b'0').decode('utf-8')
+        time = reply.get(b'time', b'0').decode('utf-8')
+        print(f"seq={seq} time={time}ms")
     except Exception as e:
-        print(f"Erro ao conectar ao Mikrotik: {e}")
+        print(f"Erro ao decodificar resposta: {e}")
 
-if __name__ == "__main__":
-    test_mikrotik_connection()
+# Buscando todas as regras de NAT ativas
+nat_rules = api.get_resource('/ip/firewall/nat').get()
+
+# Exibindo as regras de NAT
+print("\nRegras de NAT ativas:")
+for rule in nat_rules:
+    print(rule)
+
+# Fechando a conexão
+api_pool.disconnect()

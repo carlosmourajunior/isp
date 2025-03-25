@@ -6,6 +6,8 @@ from olt.models import ONU, ClienteFibraIxc, OltUsers
 import re
 from dotenv import load_dotenv
 import os
+from librouteros import connect
+from librouteros.exceptions import LibRouterosError
 
 # Carregar variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -88,8 +90,8 @@ class olt_connector():
     def update_all_ports(self):
         for slot in range(3):
             for pon in range(17):
-                # self.update_port(slot, pon)
-                self.get_mac_values()
+                self.update_port(slot, pon)
+                # self.get_mac_values()
 
     def update_port(self, slot, pon):
         old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
@@ -111,12 +113,41 @@ class olt_connector():
         self.disconnect(net_connect)
     
     def update_mac(self, output):
-        data_dict = self.create_mac_dict(output)
-        for data in data_dict:
-            onu = ONU.objects.filter(pon=data['pon'], position=data['position']).first()
-            if onu:
-                onu.mac = data['mac_address']
-                onu.save()
+        try:
+            if not output:
+                return
+                
+            lines = output.strip().split('\n')
+            for line in lines:
+                try:
+                    # Handle line format: "key1: value1, key2: value2"
+                    data = {}
+                    parts = line.split(',')
+                    
+                    for part in parts:
+                        if ':' not in part:
+                            continue
+                        key_value = part.split(':', 1)  # Split on first : only
+                        if len(key_value) == 2:
+                            key, value = key_value
+                            data[key.strip()] = value.strip()
+                    
+                    if 'pon' in data and 'position' in data:
+                        onu = ONU.objects.filter(
+                            pon=data['pon'],
+                            position=data['position']
+                        ).first()
+                        
+                        if onu and 'mac' in data:
+                            onu.mac = data['mac']
+                            onu.save()
+                            
+                except ValueError as ve:
+                    print(f"Error parsing line '{line}': {str(ve)}")
+                    continue
+                    
+        except Exception as e:
+            print(f"Error updating MAC: {str(e)}")
 
     def update_values(self, output):
 
@@ -258,7 +289,27 @@ class olt_connector():
         return data_list
         
 
-       
+def connect_to_mikrotik(hostname, username, password, port):
+    try:
+        # Conecta ao MikroTik via API
+        api = connect(
+            host=hostname,
+            username=username,
+            password=password,
+            port=port,
+        )
+        print("Conexão estabelecida com sucesso!")
+        return api
+    except LibRouterosError as e:
+        print(f"Erro ao conectar ao MikroTik: {e}")
+        return None
 
-
+def get_nat_rules(api):
+    try:
+        # Executa o comando para listar as regras de NAT
+        nat_rules = api(cmd='/ip/firewall/nat/print')
+        return nat_rules
+    except LibRouterosError as e:
+        print(f"Erro ao buscar regras de NAT: {e}")
+        return None
 

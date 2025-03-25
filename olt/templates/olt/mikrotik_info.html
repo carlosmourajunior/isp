@@ -3,36 +3,100 @@
 {% block title %} Informações do Mikrotik {% endblock %}
 
 {% block content %}
-<main role="main">
+<main role="main" style="margin-top: 70px;"> <!-- Adiciona um espaçamento superior -->
     <div class="container">
         <h1 class="display-3">Informações do Mikrotik</h1>
+        <h2>Regras de NAT</h2>
+        <div class="btn-group mb-3" role="group" aria-label="Filtros">
+            <button type="button" class="btn btn-primary" onclick="filterTable('corporativa')">Mostrar Corporativa</button>
+            <button type="button" class="btn btn-secondary" onclick="filterTable('turbo-net')">Mostrar Turbo-net</button>
+            <button type="button" class="btn btn-info" onclick="filterTable('')">Mostrar Todos</button>
+        </div>
+        <div class="btn-group mb-3" role="group" aria-label="Ações">
+            <button type="button" class="btn btn-success" onclick="enableNATs('IXCSoft', 'bloqueio')">Habilitar Emergencial e Corporativa</button>
+            <button type="button" class="btn btn-warning" onclick="enableNATs('IXCSoft', 'bloqueio')">Habilitar Emergencial e Turbo-net</button>
+            <button type="button" class="btn btn-danger" onclick="disableNATs('IXCSoft')">Desabilitar Emergencial</button>
+        </div>
         <table class="table table-striped table-dark">
             <thead>
                 <tr>
-                    <th scope="col">Propriedade</th>
-                    <th scope="col">Valor</th>
+                    <th scope="col">Comentário</th>
+                    <th scope="col">IP de Origem</th>
+                    <th scope="col">To-Address</th>
+                    <th scope="col">Resultado do Ping</th>
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td>Hostname</td>
-                    <td>{{ mikrotik_data.hostname }}</td>
+                {% for rule in mikrotik_data.nat_rules %}
+                <tr {% if rule.mark_red %}class="table-danger"{% endif %} data-comment="{{ rule.comment }}">
+                    <td>{{ rule.comment }}</td>
+                    <td>{{ rule.src_address }}</td>
+                    <td>{{ rule.to_address }}</td>
+                    <td>{% if rule.ping_result %}{{ rule.ping_result }}{% else %}-{% endif %}</td>
                 </tr>
-                <tr>
-                    <td>Endereço IP</td>
-                    <td>{{ mikrotik_data.ip_address }}</td>
-                </tr>
-                <tr>
-                    <td>Uptime</td>
-                    <td>{{ mikrotik_data.uptime }}</td>
-                </tr>
-                <tr>
-                    <td>Versão</td>
-                    <td>{{ mikrotik_data.version }}</td>
-                </tr>
-                <!-- Adicione mais linhas conforme necessário -->
+                {% endfor %}
             </tbody>
         </table>
     </div>
 </main>
+
+<script>
+function filterTable(filter) {
+    var rows = document.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        var comment = row.getAttribute('data-comment').toLowerCase();
+        if (filter === '' || comment.includes(filter)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function enableNATs(keyword1, keyword2) {
+    fetch('/enable_nats/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ keyword1: keyword1, keyword2: keyword2 })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('NATs habilitados com sucesso!');
+        } else {
+            alert('Erro ao habilitar NATs.');
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro ao habilitar NATs.');
+    });
+}
+
+function disableNATs(keyword) {
+    fetch('/disable_nats/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ keyword: keyword })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('NATs desabilitados com sucesso!');
+        } else {
+            alert('Erro ao desabilitar NATs.');
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro ao desabilitar NATs.');
+    });
+}
+</script>
 {% endblock %}

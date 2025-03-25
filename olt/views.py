@@ -2,7 +2,7 @@ import base64
 import json
 from django.http import HttpResponse
 from django.template import loader
-from olt.utils import olt_connector
+from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector
 from django.shortcuts import render, redirect
 from olt.models import ONU, ClienteFibraIxc, OltUsers
 import requests
@@ -12,6 +12,11 @@ from librouteros import connect
 from librouteros.query import Key
 from dotenv import load_dotenv
 import os
+import subprocess
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from routeros_api import RouterOsApiPool
+
 
 # Carregar variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -224,6 +229,7 @@ def search_ixc(request):
     return HttpResponse(template.render(context, request))
 
 
+
 def search_ixc_page(request, page):
 
     host = os.getenv('IXC_HOST')
@@ -263,32 +269,200 @@ def register(request):
     return render(request, 'register.html', {'form': form})
 
 
+def decode_value(value):
+    if isinstance(value, bytes):
+        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
+        for encoding in encodings:
+            try:
+                return value.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return value.decode('utf-8', errors='replace')
+    return value
+
+
+def test_ping(api, address, count=15, src_address=None):
+    try:
+        print(f"Testando ping de {src_address} para {address}...")
+        
+        # Executando o comando ping com parâmetros convertidos para bytes
+        ping_params = {
+            'address': '8.8.8.8'.encode('utf-8'),
+            'src-address': src_address.encode('utf-8'),
+            'count': '10'.encode('utf-8')
+        }
+
+        ping_results = api.get_binary_resource('/').call('ping', ping_params)
+        # print(f"Resultado do ping: {ping_results}")
+        # Get last result for final statistics
+        if ping_results:
+            final_result = ping_results[-1]  # Get last ping response
+            print(f"Resultado final do ping: {final_result}")
+            # Extract and decode values
+            packets_sent = int(decode_value(final_result.get('sent', '0')))
+            packets_received = int(decode_value(final_result.get('received', '0')))
+            packets_lost = int(decode_value(final_result.get('packet-loss', '0')))
+            avg_rtt = decode_value(final_result.get('avg-rtt', '0ms')).replace('ms','')
+            
+            result_str = f"\nEstatísticas do Ping:\n"
+            result_str += f"Pacotes: Enviados = {packets_sent}, "
+            result_str += f"Recebidos = {packets_received}, "
+            result_str += f"Perdidos = {packets_lost}\n"
+            result_str += f"Tempo médio de ida e volta = {avg_rtt}ms\n"
+            
+            return result_str
+        
+    except Exception as e:
+        return f"Erro no ping: {str(e)}"
+
+
+@login_required
 def mikrotik_info(request):
+    # Buscar valores do .env
+    hostname = os.getenv('MIKROTIK_HOST')
+    username = os.getenv('MIKROTIK_USERNAME')
+    password = os.getenv('MIKROTIK_PASSWORD')
+    port = int(os.getenv('MIKROTIK_PORT'))
+    timeout = int(os.getenv('MIKROTIK_TIMEOUT'))
     
     try:
-        # Conectar ao Mikrotik
-        api = connect(
-            username=os.getenv('MIKROTIK_USERNAME'),
-            password=os.getenv('MIKROTIK_PASSWORD'),
-            host=os.getenv('MIKROTIK_HOST'),
-            port=int(os.getenv('MIKROTIK_PORT')),
-            timeout=int(os.getenv('MIKROTIK_TIMEOUT'))
-        )
+        # Conectar ao Mikrotik usando RouterOsApiPool
+        api_pool = RouterOsApiPool(hostname, username=username, password=password, plaintext_login=True)
+        api = api_pool.get_api()
+        nat_rules_data = []
+        print('Conexão estabelecida com sucesso!')
+        # Obtém as regras de NAT
+        nat_resource = api.get_binary_resource('/ip/firewall/nat')
+        nat_rules = nat_resource.call('print')
 
-        # Buscar informações do Mikrotik
-        system_resource = api.path('system', 'resource')
-        resource_info = system_resource.get()
+        print('Obtendo regras de NAT...')
+        if nat_rules:
+            print('Regras de NAT obtidas com sucesso!')
+            for rule in nat_rules:
+                
+                relevant_info = {}
+                for key in ['chain', 'action', 'src-address', 'dst-address', 'comment', 'to-addresses', 'disabled']:
+                    try:
+                        value = rule.get(key, b'N/A')
+                        relevant_info[key] = decode_value(value)
+                    except Exception as e:
+                        relevant_info[key] = f"N/A"
+                if str(relevant_info.get('action')) == 'src-nat' and str(relevant_info.get('disabled')) != 'true':
+
+                    comment = relevant_info.get('comment', 'Não especificado')
+                    src_address = relevant_info.get('src-address', 'Não especificado')
+                    to_address = relevant_info.get('to-addresses', 'Não especificado')
+                    
+                    # Verifica as condições para marcar a linha como vermelho
+                    mark_red = False
+                    if (to_address.startswith('170') and 'corporativa' in comment.lower()) or \
+                        (to_address.startswith('177') and 'turbonet' in comment.lower()):
+                        mark_red = True
+                    
+                    # Testar conectividade com ping
+                    print(f'Testando ping de {src_address} para {to_address}...')
+                    ping_result = test_ping(api, '8.8.8.8', count=5, src_address=to_address)
+
+                    # Adiciona os detalhes da regra à lista
+                    nat_rules_data.append({
+                        'comment': comment,
+                        'src_address': src_address,
+                        'to_address': to_address,
+                        'mark_red': mark_red,
+                        'ping_result': ping_result if ping_result else 'N/A'
+                    })
+        
+        # Fecha a conexão
+        api_pool.disconnect()
+
+        # Ordenar a lista de regras de NAT por to_address
+        nat_rules_data.sort(key=lambda x: x['to_address'])
 
         # Extrair dados relevantes
         mikrotik_data = {
-            'hostname': resource_info[0].get('identity', 'N/A'),
-            'ip_address': os.getenv('MIKROTIK_HOST'),  # IP do Mikrotik
-            'uptime': resource_info[0].get('uptime', 'N/A'),
-            'version': resource_info[0].get('version', 'N/A'),
-            # Adicione mais informações conforme necessário
+            'hostname': hostname,
+            'ip_address': hostname,  # IP do Mikrotik
+            'nat_rules': nat_rules_data
         }
         
         return render(request, 'olt/mikrotik_info.html', {'mikrotik_data': mikrotik_data})
     except Exception as e:
         print(str(e))
         return render(request, 'olt/mikrotik_info.html', {'error': str(e)})
+    
+
+# @csrf_exempt
+# def enable_nats(request):
+#     if request.method == 'POST':
+#         data = json.loads(request.body)
+#         keyword1 = data.get('keyword1')
+#         keyword2 = data.get('keyword2')
+
+#         # Buscar valores do .env
+#         hostname = os.getenv('MIKROTIK_HOST')
+#         username = os.getenv('MIKROTIK_USERNAME')
+#         password = os.getenv('MIKROTIK_PASSWORD')
+#         port = int(os.getenv('MIKROTIK_PORT'))
+#         timeout = int(os.getenv('MIKROTIK_TIMEOUT'))
+
+#         try:
+#             api = connect_to_mikrotik(hostname, username, password, port)
+
+#             if api:
+#                 # Obtém as regras de NAT
+#                 nat_rules = get_nat_rules(api)
+
+#                 if nat_rules:
+#                     for rule in nat_rules:
+#                         comment = rule.get('comment', '').lower()
+#                         if keyword1 in comment and keyword2 in comment:
+#                             # Habilitar a regra de NAT
+#                             api(cmd='/ip/firewall/nat/enable', numbers=rule['.id'])
+
+#                 # Fecha a conexão
+#                 api.close()
+
+#             return JsonResponse({'success': True})
+#         except Exception as e:
+#             print(str(e))
+#             return JsonResponse({'success': False, 'error': str(e)})
+
+#     return JsonResponse({'success': False, 'error': 'Método não permitido'})
+
+
+# @csrf_exempt
+# def disable_nats(request):
+#     if request.method == 'POST':
+#         data = json.loads(request.body)
+#         keyword = data.get('keyword')
+
+#         # Buscar valores do .env
+#         hostname = os.getenv('MIKROTIK_HOST')
+#         username = os.getenv('MIKROTIK_USERNAME')
+#         password = os.getenv('MIKROTIK_PASSWORD')
+#         port = int(os.getenv('MIKROTIK_PORT'))
+#         timeout = int(os.getenv('MIKROTIK_TIMEOUT'))
+
+#         try:
+#             api = connect_to_mikrotik(hostname, username, password, port)
+
+#             if api:
+#                 # Obtém as regras de NAT
+#                 nat_rules = get_nat_rules(api)
+
+#                 if nat_rules:
+#                     for rule in nat_rules:
+#                         comment = rule.get('comment', '').lower()
+#                         if keyword in comment:
+#                             # Desabilitar a regra de NAT
+#                             api(cmd='/ip/firewall/nat/disable', numbers=rule['.id'])
+
+#                 # Fecha a conexão
+#                 api.close()
+
+#             return JsonResponse({'success': True})
+#         except Exception as e:
+#             print(str(e))
+#             return JsonResponse({'success': False, 'error': str(e)})
+
+#     return JsonResponse({'success': False, 'error': 'Método não permitido'})
