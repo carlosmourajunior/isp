@@ -12,6 +12,19 @@ from librouteros.exceptions import LibRouterosError
 # Carregar variáveis de ambiente do arquivo .env
 load_dotenv()
 
+def extract_olt_info(line):
+    """Extract PON, port, and MAC from OLT output line."""
+    pattern = r'(\d+/\d+/\d+/\d+)/(\d+)/\d+\s+\d+\s+([0-9a-f:]+)'
+    match = re.search(pattern, line, re.IGNORECASE)
+    
+    if match:
+        return {
+            'pon': match.group(1),
+            'port': match.group(2),
+            'mac': match.group(3)
+        }
+    return None
+
 class olt_connector():
 
     def __init__(self):
@@ -91,7 +104,7 @@ class olt_connector():
         for slot in range(3):
             for pon in range(17):
                 self.update_port(slot, pon)
-                # self.get_mac_values()
+            # self.get_mac_values()
 
     def update_port(self, slot, pon):
         old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
@@ -116,38 +129,35 @@ class olt_connector():
         try:
             if not output:
                 return
-                
             lines = output.strip().split('\n')
             for line in lines:
+                print(f"Processing line: {line}")
                 try:
-                    # Handle line format: "key1: value1, key2: value2"
-                    data = {}
-                    parts = line.split(',')
-                    
-                    for part in parts:
-                        if ':' not in part:
-                            continue
-                        key_value = part.split(':', 1)  # Split on first : only
-                        if len(key_value) == 2:
-                            key, value = key_value
-                            data[key.strip()] = value.strip()
-                    
-                    if 'pon' in data and 'position' in data:
-                        onu = ONU.objects.filter(
-                            pon=data['pon'],
-                            position=data['position']
-                        ).first()
-                        
-                        if onu and 'mac' in data:
-                            onu.mac = data['mac']
-                            onu.save()
+                    data = extract_olt_info(line)
+                    print(f"Data: {data}")
+
+                    parts =  data['pon'].split('/')
+                    pon = '/'.join(parts[:3])  # Take first 4 parts
+                    position = parts[-1]  # Take last part      
+        
+                    onu = ONU.objects.filter(
+                        pon=f"1/{pon}",
+                        position=position
+                    ).first()
+
+                    if onu:
+                        onu.mac = data['mac']
+                        onu.save()
+                        print(f"Updated MAC for ONU {onu}")
+                    else:
+                        print(f"ONU not found for PON {pon} and position {position}")
                             
-                except ValueError as ve:
+                except Exception as ve:
                     print(f"Error parsing line '{line}': {str(ve)}")
                     continue
                     
         except Exception as e:
-            print(f"Error updating MAC: {str(e)}")
+            print(f"Error updating MAC: {e}")
 
     def update_values(self, output):
 
