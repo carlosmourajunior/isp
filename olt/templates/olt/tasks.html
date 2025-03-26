@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Tarefas{% endblock %}
+
+{% block content %}
+<div class="container" style="margin-top: 80px;">
+    <h2>Status das Tarefas</h2>
+    <div class="float-right mb-3">
+        <small class="text-muted">Atualização automática a cada 5 segundos</small>
+    </div>
+    
+    {% if message %}
+    <div class="alert alert-info">
+        {{ message }}
+    </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Tarefas em Execução</h4>
+        </div>
+        <div class="card-body">
+            {% if running_jobs %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Tarefa</th>
+                            <th>Status</th>
+                            <th>Usuário</th>
+                            <th>Menu</th>
+                            <th>Iniciado em</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in running_jobs %}
+                        <tr>
+                            <td>{{ job.id }}</td>
+                            <td>{{ job.func_name }}</td>
+                            <td><span class="badge {% if job.status == 'finished' %}bg-success{% elif job.status == 'failed' %}bg-danger{% elif job.status == 'queued' %}bg-warning{% else %}bg-primary{% endif %}">{{ job.status }}</span></td>
+                            <td>{{ job.user }}</td>
+                            <td>{{ job.menu_item }}</td>
+                            <td>{{ job.started_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>Nenhuma tarefa em execução.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Tarefas Concluídas</h4>
+        </div>
+        <div class="card-body">
+            {% if finished_jobs %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Usuário</th>
+                            <th>Menu</th>
+                            <th>Iniciado em</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in finished_jobs %}
+                        <tr>
+                            <td>{{ job.id }}</td>
+                            <td>{{ job.user }}</td>
+                            <td>{{ job.menu_item }}</td>
+                            <td>{{ job.started_at }}</td>
+                            <td><span class="badge bg-success">Concluída</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>Nenhuma tarefa concluída.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h4>Tarefas com Erro</h4>
+        </div>
+        <div class="card-body">
+            {% if failed_jobs %}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Usuário</th>
+                            <th>Menu</th>
+                            <th>Iniciado em</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in failed_jobs %}
+                        <tr>
+                            <td>{{ job.id }}</td>
+                            <td>{{ job.user }}</td>
+                            <td>{{ job.menu_item }}</td>
+                            <td>{{ job.started_at }}</td>
+                            <td><span class="badge bg-danger">Erro</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>Nenhuma tarefa com erro.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+.bg-success {
+    background-color: #28a745!important;
+    color: white;
+}
+.bg-danger {
+    background-color: #dc3545!important;
+    color: white;
+}
+.bg-primary {
+    background-color: #007bff!important;
+    color: white;
+}
+.bg-warning {
+    background-color: #ffc107!important;
+    color: black;
+}
+.badge {
+    font-size: 90%;
+    padding: 0.4em 0.6em;
+}
+</style>
+
+<script>
+// Atualiza a página a cada 5 segundos
+setTimeout(function() {
+    window.location.reload();
+}, 5000);
+</script>
+{% endblock %}
