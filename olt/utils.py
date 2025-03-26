@@ -160,8 +160,13 @@ class olt_connector():
             print(f"Error updating MAC: {e}")
 
     def update_values(self, output):
+        
+        data_dict = {}
+        try:
+            data_dict = self.create_dict_from_result(output)
+        except:
+            pass
 
-        data_dict = self.create_dict_from_result(output)
         for data in data_dict:
             
             new_onu = ONU()

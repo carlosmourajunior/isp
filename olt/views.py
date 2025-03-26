@@ -16,6 +16,9 @@ import subprocess
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 from routeros_api import RouterOsApiPool
+import django_rq
+from django_rq import get_queue
+from .tasks import update_all_onus, update_port_onus, update_users_task, update_mac_values_task
 
 
 # Carregar variáveis de ambiente do arquivo .env
@@ -41,24 +44,24 @@ def critical_users_list(request):
 
 
 def update_users(request):
-    connector = olt_connector()
-    connector.update_port_ocupation(read_timeout=600, expect_string='typ:isadmin>#')
-    olt_users_list = OltUsers.objects.order_by('-users_connected')
-    template = loader.get_template('olt/home.html')
-    context = {
-        'olt_users_list': olt_users_list,
-    }
-    return HttpResponse(template.render(context, request))
+    # Queue the task with metadata
+    job = update_users_task.delay(
+        user=request.user.username,
+        menu_item='Atualizar Ocupação'
+    )
+    request.session['task_message'] = 'Atualização de usuários iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['job_id'] = job.id
+    return redirect('olt:view_tasks')
 
 def update_mac_values(request):
-    connector = olt_connector()
-    connector.get_mac_values()
-    olt_users_list = OltUsers.objects.order_by('-users_connected')
-    template = loader.get_template('olt/home.html')
-    context = {
-        'olt_users_list': olt_users_list,
-    }
-    return HttpResponse(template.render(context, request))
+    # Queue the task with metadata
+    job = update_mac_values_task.delay(
+        user=request.user.username,
+        menu_item='Atualizar MAC Address'
+    )
+    request.session['task_message'] = 'Atualização de MAC Address iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['job_id'] = job.id
+    return redirect('olt:view_tasks')
 
 
 def remove_onu(request):
@@ -125,30 +128,27 @@ def get_itens_to_port(request, slot, port):
     return HttpResponse(template.render(context, request))
 
 def update_values(request, port, slot):
-
     order_by = request.GET.get('sort', 'position')
-
-    connector = olt_connector()
-    connector.update_port(slot, port)
-    values = connector.get_itens_to_port(slot, port, order_by=order_by)
-    template = loader.get_template('olt/duplicates.html')
-    context = {
-        'duplicates': values,
-        'slot': slot,
-        'port': port,
-    }
-    return HttpResponse(template.render(context, request))
+    # Queue the task with metadata
+    job = update_port_onus.delay(
+        slot, port,
+        user=request.user.username,
+        menu_item=f'Atualizar ONUs da Porta {slot}/{port}'
+    )
+    request.session['task_message'] = f'Atualização de ONUs para porta {slot}/{port} iniciada.'
+    request.session['job_id'] = job.id
+    return redirect('olt:view_tasks')
 
 
 def update_onus_all(request):
-    connector = olt_connector()
-    connector.update_all_ports()
-    olt_users_list = OltUsers.objects.order_by('-users_connected')
-    template = loader.get_template('olt/home.html')
-    context = {
-        'olt_users_list': olt_users_list,
-    }
-    return HttpResponse(template.render(context, request))
+    # Queue the task with metadata
+    job = update_all_onus.delay(
+        user=request.user.username,
+        menu_item='ONU Atualizar Todas'
+    )
+    request.session['task_message'] = 'Atualização de ONUs iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['job_id'] = job.id
+    return redirect('olt:view_tasks')
 
 
 def get_duplicated(request):
@@ -402,78 +402,80 @@ def mikrotik_info(request):
         return render(request, 'olt/mikrotik_info.html', {'error': str(e)})
     
 
-# @csrf_exempt
-# def enable_nats(request):
-#     if request.method == 'POST':
-#         data = json.loads(request.body)
-#         keyword1 = data.get('keyword1')
-#         keyword2 = data.get('keyword2')
-
-#         # Buscar valores do .env
-#         hostname = os.getenv('MIKROTIK_HOST')
-#         username = os.getenv('MIKROTIK_USERNAME')
-#         password = os.getenv('MIKROTIK_PASSWORD')
-#         port = int(os.getenv('MIKROTIK_PORT'))
-#         timeout = int(os.getenv('MIKROTIK_TIMEOUT'))
-
-#         try:
-#             api = connect_to_mikrotik(hostname, username, password, port)
-
-#             if api:
-#                 # Obtém as regras de NAT
-#                 nat_rules = get_nat_rules(api)
-
-#                 if nat_rules:
-#                     for rule in nat_rules:
-#                         comment = rule.get('comment', '').lower()
-#                         if keyword1 in comment and keyword2 in comment:
-#                             # Habilitar a regra de NAT
-#                             api(cmd='/ip/firewall/nat/enable', numbers=rule['.id'])
-
-#                 # Fecha a conexão
-#                 api.close()
-
-#             return JsonResponse({'success': True})
-#         except Exception as e:
-#             print(str(e))
-#             return JsonResponse({'success': False, 'error': str(e)})
-
-#     return JsonResponse({'success': False, 'error': 'Método não permitido'})
+@login_required
+def tasks_view(request):
+    queue = django_rq.get_queue('default')
+    jobs = []
+    for job in queue.get_jobs():
+        jobs.append({
+            'id': job.id,
+            'func_name': job.func_name,
+            'status': job.get_status(),
+            'created_at': job.created_at,
+            'ended_at': job.ended_at if hasattr(job, 'ended_at') else None
+        })
+    return render(request, 'olt/tasks.html', {'jobs': jobs})
 
 
-# @csrf_exempt
-# def disable_nats(request):
-#     if request.method == 'POST':
-#         data = json.loads(request.body)
-#         keyword = data.get('keyword')
-
-#         # Buscar valores do .env
-#         hostname = os.getenv('MIKROTIK_HOST')
-#         username = os.getenv('MIKROTIK_USERNAME')
-#         password = os.getenv('MIKROTIK_PASSWORD')
-#         port = int(os.getenv('MIKROTIK_PORT'))
-#         timeout = int(os.getenv('MIKROTIK_TIMEOUT'))
-
-#         try:
-#             api = connect_to_mikrotik(hostname, username, password, port)
-
-#             if api:
-#                 # Obtém as regras de NAT
-#                 nat_rules = get_nat_rules(api)
-
-#                 if nat_rules:
-#                     for rule in nat_rules:
-#                         comment = rule.get('comment', '').lower()
-#                         if keyword in comment:
-#                             # Desabilitar a regra de NAT
-#                             api(cmd='/ip/firewall/nat/disable', numbers=rule['.id'])
-
-#                 # Fecha a conexão
-#                 api.close()
-
-#             return JsonResponse({'success': True})
-#         except Exception as e:
-#             print(str(e))
-#             return JsonResponse({'success': False, 'error': str(e)})
-
-#     return JsonResponse({'success': False, 'error': 'Método não permitido'})
+@login_required
+def view_tasks(request):
+    queue = get_queue('default')
+    
+    # Get all jobs from different states
+    running_jobs = []
+    
+    # Get all jobs in the queue
+    all_jobs = queue.jobs
+    for job in all_jobs:
+        if job is not None:
+            status = job.get_status()
+            if status in ['queued', 'started', 'deferred']:
+                job_info = {
+                    'id': job.id,
+                    'func_name': job.func_name,
+                    'status': status,
+                    'created_at': job.created_at,
+                    'user': job.meta.get('user', 'N/A'),
+                    'menu_item': job.meta.get('menu_item', 'N/A'),
+                    'started_at': job.meta.get('started_at', 'N/A')
+                }
+                running_jobs.append(job_info)
+    
+    # Get completed and failed jobs info
+    finished_registry = queue.finished_job_registry
+    failed_registry = queue.failed_job_registry
+    
+    finished_jobs = []
+    for job_id in finished_registry.get_job_ids():
+        job = queue.fetch_job(job_id)
+        if job:
+            finished_jobs.append({
+                'id': job.id,
+                'user': job.meta.get('user', 'N/A'),
+                'menu_item': job.meta.get('menu_item', 'N/A'),
+                'started_at': job.meta.get('started_at', 'N/A')
+            })
+    
+    failed_jobs = []
+    for job_id in failed_registry.get_job_ids():
+        job = queue.fetch_job(job_id)
+        if job:
+            failed_jobs.append({
+                'id': job.id,
+                'user': job.meta.get('user', 'N/A'),
+                'menu_item': job.meta.get('menu_item', 'N/A'),
+                'started_at': job.meta.get('started_at', 'N/A')
+            })
+    
+    # Get message from session if exists
+    message = request.session.pop('task_message', None)
+    job_id = request.session.pop('job_id', None)
+    
+    context = {
+        'running_jobs': running_jobs,
+        'finished_jobs': finished_jobs,
+        'failed_jobs': failed_jobs,
+        'message': message,
+        'job_id': job_id
+    }
+    return render(request, 'olt/tasks.html', context)
