@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-header" style="background: rgba(255,193,7,.2)">
+                    <h5>ONUs sem MAC</h5>
+                </div>
+                <div class="card-body text-center">
+                    <h1>{{ onus_without_mac }}</h1>
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'olt:list_onus_without_mac' %}" class="btn btn-warning w-100">Ver Detalhes</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-header" style="background: rgba(220,53,69,.2)">
+                    <h5>ONUs sem Cliente Fibra</h5>
+                </div>
+                <div class="card-body text-center">
+                    <h1>{{ onus_without_client }}</h1>
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'olt:list_onus_without_client' %}" class="btn btn-danger w-100">Ver Detalhes</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-header" style="background: rgba(23,162,184,.2)">
+                    <h5>Tarefas</h5>
+                </div>
+                <div class="card-body text-center">
+                    <h1><i class="fas fa-tasks"></i></h1>
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'olt:view_tasks' %}" class="btn btn-info w-100">Ver Tarefas</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-header" style="background: rgba(0,123,255,.2)">
+            <h5>Top 5 Portas</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Porta</th>
+                            <th>Usuários</th>
+                            <th>Atualização</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for port in top_ports %}
+                        <tr>
+                            <td>1/1/{{ port.slot }}/{{ port.port }}</td>
+                            <td>{{ port.users_connected }}</td>
+                            <td>{{ port.last_updated|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <a href="{% url 'olt:get_itens_to_port' slot=port.slot port=port.port %}" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-info-circle"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<script>setTimeout(function(){window.location.reload()},30000)</script>
+{% endblock %}

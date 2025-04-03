@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import os
 from librouteros import connect
 from librouteros.exceptions import LibRouterosError
+from django.utils import timezone
 
 # Carregar variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -69,30 +70,30 @@ class olt_connector():
 
 
     def update_port_ocupation(self, read_timeout=None, expect_string=None):
-
         if read_timeout is not None:
             self.read_timeout = read_timeout
         if expect_string is not None:
             self.expect_string = expect_string
 
         net_connect = self.connect()
-        #send command
         olts = OltUsers.objects.all()
         olts.delete()
 
         for slot in range(3):
             for pon in range(17):
                 command = f"show equipment ont status pon 1/1/{slot}/{pon}"
-                output = net_connect.send_command(command)
-                for line in iter(output.splitlines()):
-                    if "count" in line:
-                        new_olt_user = OltUsers()
-                        new_olt_user.slot = slot
-                        new_olt_user.port = pon
-                        new_olt_user.users_connected = int(line.split(":")[1])
-                        new_olt_user.last_updated = datetime.now()
-                        new_olt_user.save()
-                        print(f"1/1/{slot}/{pon} - {line}")  
+                try:
+                    output = net_connect.send_command(command)
+                    for line in iter(output.splitlines()):
+                        if "count" in line:
+                            new_olt_user = OltUsers()
+                            new_olt_user.slot = slot
+                            new_olt_user.port = pon
+                            new_olt_user.users_connected = int(line.split(":")[1])
+                            new_olt_user.last_updated = timezone.now()
+                            new_olt_user.save()
+                except Exception as e:
+                    continue
         
         self.disconnect(net_connect)
     
@@ -104,26 +105,33 @@ class olt_connector():
         for slot in range(3):
             for pon in range(17):
                 self.update_port(slot, pon)
-            # self.get_mac_values()
 
     def update_port(self, slot, pon):
         old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
         old_values.delete()
         net_connect = self.connect()
         command = f"show equipment ont status pon 1/1/{slot}/{pon}"
-        output = net_connect.send_command(command)
-        self.update_values(output)
-        self.disconnect(net_connect)
+        try:
+            output = net_connect.send_command(command)
+            self.update_values(output)
+        except Exception:
+            pass
+        finally:
+            self.disconnect(net_connect)
     
     def get_mac_values(self):
         net_connect = self.connect()
-        command = "environment inhibit-alarms"
-        net_connect.write_channel(command)
-        time.sleep(2)  # Aguarda um pouco para o comando ser processado
-        command = "show vlan bridge-port-fdb"
-        output = net_connect.send_command(command, read_timeout=1200)
-        self.update_mac(output)
-        self.disconnect(net_connect)
+        try:
+            command = "environment inhibit-alarms"
+            net_connect.write_channel(command)
+            time.sleep(2)  # Aguarda um pouco para o comando ser processado
+            command = "show vlan bridge-port-fdb"
+            output = net_connect.send_command(command, read_timeout=1200)
+            self.update_mac(output)
+        except Exception as e:
+            print(f"Erro ao obter valores MAC: {str(e)}")
+        finally:
+            self.disconnect(net_connect)
     
     def update_mac(self, output):
         try:
@@ -131,36 +139,27 @@ class olt_connector():
                 return
             lines = output.strip().split('\n')
             for line in lines:
-                print(f"Processing line: {line}")
                 try:
                     data = extract_olt_info(line)
-                    print(f"Data: {data}")
-
-                    parts =  data['pon'].split('/')
-                    pon = '/'.join(parts[:3])  # Take first 4 parts
-                    position = parts[-1]  # Take last part      
+                    if data:
+                        parts = data['pon'].split('/')
+                        pon = '/'.join(parts[:3])
+                        position = parts[-1]
         
-                    onu = ONU.objects.filter(
-                        pon=f"1/{pon}",
-                        position=position
-                    ).first()
+                        onu = ONU.objects.filter(
+                            pon=f"1/{pon}",
+                            position=position
+                        ).first()
 
-                    if onu:
-                        onu.mac = data['mac']
-                        onu.save()
-                        print(f"Updated MAC for ONU {onu}")
-                    else:
-                        print(f"ONU not found for PON {pon} and position {position}")
-                            
-                except Exception as ve:
-                    print(f"Error parsing line '{line}': {str(ve)}")
+                        if onu:
+                            onu.mac = data['mac']
+                            onu.save()
+                except Exception:
                     continue
-                    
-        except Exception as e:
-            print(f"Error updating MAC: {e}")
+        except Exception:
+            pass
 
     def update_values(self, output):
-        
         data_dict = {}
         try:
             data_dict = self.create_dict_from_result(output)
@@ -168,7 +167,6 @@ class olt_connector():
             pass
 
         for data in data_dict:
-            
             new_onu = ONU()
             try:
                 has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
@@ -187,41 +185,30 @@ class olt_connector():
             new_onu.desc1 = data['desc1']
             new_onu.desc2 = data['desc2']
             new_onu.save()
-            print(data)
-
-                
+            
     def remove_onu(self, pon):
-       
-        # ont_id = f"{queryset.first().pon}/{queryset.first().position}"
         net_connect = self.connect()
-        command = f"configure equipment ont interface {pon} admin-state down\n"
-        print(command)
-        net_connect.write_channel(command)
-        time.sleep(2)  # Aguarda um pouco para o comando ser processado
-        output = net_connect.read_channel()
-        print(output)
-        command = f"configure equipment ont no interface {pon}\n"
-        net_connect.write_channel(command)
-        time.sleep(2)  # Aguarda um pouco para o comando ser processado
-        output = net_connect.read_channel()
-        print(output)
-        self.disconnect(net_connect)           
+        try:
+            command = f"configure equipment ont interface {pon} admin-state down\n"
+            net_connect.write_channel(command)
+            time.sleep(2)
+            net_connect.read_channel()
+            
+            command = f"configure equipment ont no interface {pon}\n"
+            net_connect.write_channel(command)
+            time.sleep(2)
+            net_connect.read_channel()
+        except Exception:
+            pass
+        finally:
+            self.disconnect(net_connect)
 
     def create_mac_dict(self, data):
-        print("create_mac_dict")
-    
-       # Define the regex pattern
         pattern = r"(\d+/\d+/\d+/\d+/\d+/\d+/\d+)\s+(\d+)\s+([a-f0-9:]+)\s+(\d+)\s+(\w+)\s+([0-9:]+)"
-
-        # Find all matches in the data
         matches = re.findall(pattern, data)
-
-        # Initialize an empty dictionary to store the data
         data_dict = {}
 
-        # Iterate over each match
         for match in matches:
-            # Add the match to the dictionary
             pon_value = match[0]
             parts = pon_value.split('/')
             first_five_parts = parts[:4]
@@ -235,11 +222,7 @@ class olt_connector():
                 'time': match[5]
             }
 
-        print(data_dict)
         return data_dict
-        # Print the dictionary
-        
-
 
     def create_dict_from_result(self, data):
 
@@ -313,10 +296,8 @@ def connect_to_mikrotik(hostname, username, password, port):
             password=password,
             port=port,
         )
-        print("Conexão estabelecida com sucesso!")
         return api
     except LibRouterosError as e:
-        print(f"Erro ao conectar ao MikroTik: {e}")
         return None
 
 def get_nat_rules(api):
@@ -325,6 +306,5 @@ def get_nat_rules(api):
         nat_rules = api(cmd='/ip/firewall/nat/print')
         return nat_rules
     except LibRouterosError as e:
-        print(f"Erro ao buscar regras de NAT: {e}")
         return None
 

@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% load define_action %}
+{% load static %}
+{% load olt_filters %}
 
 {% block title %}{{ title }}{% endblock %}
 
@@ -24,7 +26,7 @@
             </form>
         </div>
         <div class="col-md-6 text-right">
-            <span class="badge badge-info">Total: {{ duplicates.paginator.count }}</span>
+            <span class="badge badge-info">Total: {{ onus.paginator.count }}</span>
         </div>
     </div>
 
@@ -46,22 +48,21 @@
                 </tr>
             </thead>
             <tbody>
-                {% for line in duplicates %}
+                {% for onu in onus %}
                 <tr>
-                    <td>{{line.pon}}</td>
-                    <td>{{line.position}}</td>
-                    <td>{{line.mac}}</td>
-                    <td>{{line.serial}}</td>
-                    <td>{{line.oper_state}}</td>
-                    <td>{{line.olt_rx_sig}}</td>
-                    <td>{% if line.cliente_fibra %}Sim{% else %}Não{% endif %}</td>
-                    <td>{{line.desc1}}</td>
-                    <td>{{line.desc2}}</td>
+                    <td>{{onu.pon}}</td>
+                    <td>{{onu.position}}</td>
+                    <td>{{onu.mac}}</td>
+                    <td>{{onu.serial}}</td>
+                    <td>{{onu.oper_state}}</td>
+                    <td>{{onu.olt_rx_sig}}</td>
+                    <td>{% if onu.cliente_fibra %}Sim{% else %}Não{% endif %}</td>
+                    <td>{{onu.desc1}}</td>
+                    <td>{{onu.desc2}}</td>
                     <td>
-                        <button class="btn btn-sm btn-danger" data-toggle="modal" data-target="#delete_modal" 
-                                data-position="{{line.position}}" data-slot="{{line.pon}}">
-                            <i class="fa fa-trash"></i>
-                        </button>
+                        <a href="{% url 'olt:update_values' onu.get_slot onu.get_port %}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-sync"></i>
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -70,33 +71,32 @@
     </div>
 
     <!-- Paginação -->
-    {% if duplicates.has_other_pages %}
+    {% if onus.has_other_pages %}
         <nav>
             <ul class="pagination justify-content-center">
-                {% if duplicates.has_previous %}
+                {% if onus.has_previous %}
                     <li class="page-item">
                         <a class="page-link" href="?page=1&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">&laquo;</a>
                     </li>
                 {% endif %}
 
-                {% for num in duplicates.paginator.page_range %}
-                    {% if duplicates.number == num %}
+                {% for num in onus.paginator.page_range %}
+                    {% if onus.number == num %}
                         <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-                    {% elif num > duplicates.number|add:'-3' and num < duplicates.number|add:'3' %}
+                    {% elif num > onus.number|add:'-3' and num < onus.number|add:'3' %}
                         <li class="page-item">
                             <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">{{ num }}</a>
                         </li>
                     {% endif %}
                 {% endfor %}
 
-                {% if duplicates.has_next %}
+                {% if onus.has_next %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ duplicates.next_page_number }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">&raquo;</a>
+                        <a class="page-link" href="?page={{ onus.next_page_number }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">&raquo;</a>
                     </li>
                 {% endif %}
             </ul>
         </nav>
     {% endif %}
-
 </div>
 {% endblock %}

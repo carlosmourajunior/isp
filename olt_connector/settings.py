@@ -137,8 +137,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 RQ_QUEUES = {
     'default': {
         'HOST': 'redis',
-        'PORT': 6379,  # Usando a porta interna do container
+        'PORT': 6379,
         'DB': 0,
         'DEFAULT_TIMEOUT': 360,
+        'DEFAULT_RESULT_TTL': 86400,  # 24 horas em segundos
     },
 }
+
+# Job settings
+RQ_SHOW_ADMIN_LINK = True
