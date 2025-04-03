@@ -141,6 +141,7 @@ RQ_QUEUES = {
         'DB': 0,
         'DEFAULT_TIMEOUT': 360,
         'DEFAULT_RESULT_TTL': 86400,  # 24 horas em segundos
+        'DEFAULT_AT_FRONT': False,  # Garante FIFO por padrão
     },
 }
 
