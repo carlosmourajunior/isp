@@ -35,8 +35,11 @@ services:
 
   redis:
     image: redis:7.2
+    command: redis-server --save "" --appendonly no
     ports:
       - "6380:6379"
+    volumes:
+      - redis_data:/data
 
   rq_worker:
     build: .
@@ -59,3 +62,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
