@@ -34,7 +34,7 @@ services:
       - DJANGO_SETTINGS_MODULE=olt_connector.settings
 
   redis:
-    image: redis:6
+    image: redis:7.2
     ports:
       - "6380:6379"
 
