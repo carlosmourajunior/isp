@@ -68,17 +68,14 @@ def update_all_data_task(user=None, menu_item=None):
     job = rq.get_current_job()
     add_metadata(job, user, menu_item)
     
-    # Enfileira cada job na sequência, colocando no início da fila
+    # Enfileira cada job na sequência, garantindo FIFO (First In, First Out)
     job.meta['current_step'] = "Iniciando atualização sequencial"
     job.save_meta()
     
-    # Executa as tasks em sequência
-    queue.enqueue(update_port_occupation_task, user=user, menu_item="Atualização de Portas", job_timeout=1200, at_front=True)
-    sleep(5)
-    queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=True)
-    sleep(5)
-    queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=True)
-    sleep(5)
-    queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=True)
+    # Executa as tasks em sequência, adicionando ao final da fila
+    queue.enqueue(update_port_occupation_task, user=user, menu_item="Atualização de Portas", job_timeout=1200, at_front=False)
+    queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=False)
+    queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=False)
+    queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
     
     return "Sequência de atualizações iniciada"
