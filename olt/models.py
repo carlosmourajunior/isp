@@ -41,7 +41,20 @@ class ONU(models.Model):
     
     def __str__(self) -> str:
         return f"{ self.serial }"
-        
+
+    def get_slot(self):
+        """Get slot number from PON string"""
+        parts = self.pon.split('/')
+        if len(parts) >= 3:
+            return parts[2]
+        return ''
+
+    def get_port(self):
+        """Get port number from PON string"""
+        parts = self.pon.split('/')
+        if len(parts) >= 4:
+            return parts[3]
+        return ''
 
 class PlacaOnu(models.Model):
 
@@ -66,4 +79,4 @@ class ClienteFibraIxc(models.Model):
     
     def __str__(self) -> str:
         return f"{self.nome}"
-    
+

@@ -1,13 +1,24 @@
-version: "3"
+version: "3.3"
 
 services:
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+
   web:
     build: .
     command: python /code/manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/code
     ports:
-      - 8000:8000
+      - "8000:8000"
     depends_on:
       - db
       - redis
@@ -20,22 +31,10 @@ services:
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - REDIS_PORT=6380
-
-  db:
-    image: postgres:13
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_HOST_AUTH_METHOD=trust
-    ports:
-      - "5433:5432"
-    command: postgres -c 'listen_addresses=*'
+      - DJANGO_SETTINGS_MODULE=olt_connector.settings
 
   redis:
-    image: redis:7
+    image: redis:6
     ports:
       - "6380:6379"
 

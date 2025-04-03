@@ -1,24 +1,29 @@
-import base64
-import json
 from django.http import HttpResponse
 from django.template import loader
 from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector
 from django.shortcuts import render, redirect
 from olt.models import ONU, ClienteFibraIxc, OltUsers
-import requests
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
-from librouteros import connect
-from librouteros.query import Key
-from dotenv import load_dotenv
-import os
-import subprocess
-from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
 from routeros_api import RouterOsApiPool
 import django_rq
 from django_rq import get_queue
-from .tasks import update_all_onus, update_port_onus, update_users_task, update_mac_values_task
+from .tasks import (
+    update_all_data_task,
+    update_onus_task,  # Changed from update_all_onus
+    update_clientes_task,
+    update_port_occupation_task,
+    update_mac_task
+)
+from django.core.paginator import Paginator
+from django.db.models import Q
+import os
+from dotenv import load_dotenv
+import subprocess
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+import base64
+import json
 
 
 # Carregar variáveis de ambiente do arquivo .env
@@ -26,85 +31,322 @@ load_dotenv()
 
 @login_required
 def home(request):
-    olt_users_list = OltUsers.objects.order_by('-users_connected')
-    template = loader.get_template('olt/home.html')
+    # Quantidade de ONUs sem MAC
+    onus_without_mac = ONU.objects.filter(mac__isnull=True).count() + ONU.objects.filter(mac='').count()
+    
+    # Quantidade de ONUs sem cliente fibra
+    onus_without_client = ONU.objects.filter(cliente_fibra=False).count()
+    
+    # 5 portas com maior ocupação
+    top_ports = OltUsers.objects.order_by('-users_connected')[:5]
+    
+    template = loader.get_template('olt/dashboard.html')
     context = {
-        'olt_users_list': olt_users_list,
+        'onus_without_mac': onus_without_mac,
+        'onus_without_client': onus_without_client,
+        'top_ports': top_ports,
     }
     return HttpResponse(template.render(context, request))
 
 
+@login_required
 def critical_users_list(request):
-    olt_users_list = OltUsers.objects.filter(users_connected__gte=120).order_by('-users_connected')
-    template = loader.get_template('olt/home.html')
+    """View para listar ocupação de portas"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'slot')
+    
+    # Base query
+    queryset = OltUsers.objects.all()
+    
+    # Apply search filter
+    if search_query:
+        queryset = queryset.filter(
+            Q(slot__icontains=search_query) |
+            Q(port__icontains=search_query) |
+            Q(serial__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+    
+    # Apply sorting
+    queryset = queryset.order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
     context = {
-        'olt_users_list': olt_users_list,
+        'olt_users': page_obj,
+        'title': 'Ocupação de Portas',
+        'description': 'Lista de portas da OLT e suas ocupações',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
     }
-    return HttpResponse(template.render(context, request))
+    return render(request, 'olt/home.html', context)
 
 
 def update_users(request):
-    # Queue the task with metadata
-    job = update_users_task.delay(
+    """View para atualizar ocupação de portas"""
+    job = update_port_occupation_task.delay(
         user=request.user.username,
-        menu_item='Atualizar Ocupação'
+        menu_item='Atualização de Portas'
     )
-    request.session['task_message'] = 'Atualização de usuários iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['task_message'] = 'Atualização de portas iniciada. Acompanhe o progresso na lista de tarefas.'
     request.session['job_id'] = job.id
     return redirect('olt:view_tasks')
+
 
 def update_mac_values(request):
-    # Queue the task with metadata
-    job = update_mac_values_task.delay(
+    """View para atualizar endereços MAC"""
+    job = update_mac_task.delay(
         user=request.user.username,
-        menu_item='Atualizar MAC Address'
+        menu_item='Atualização de MAC'
     )
-    request.session['task_message'] = 'Atualização de MAC Address iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['task_message'] = 'Atualização de MAC iniciada. Acompanhe o progresso na lista de tarefas.'
     request.session['job_id'] = job.id
     return redirect('olt:view_tasks')
 
 
-def remove_onu(request):
-    print(f'{request}')
+def update_onus_all(request):
+    """View para atualizar ONUs"""
+    job = update_onus_task.delay(
+        user=request.user.username,
+        menu_item='Atualização de ONUs'
+    )
+    request.session['task_message'] = 'Atualização de ONUs iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['job_id'] = job.id
+    return redirect('olt:view_tasks')
 
-def update_onus(request, slot, port):
-    connector = olt_connector()
-    olt_users_list = connector.get_itens_to_port(slot, port)
-    template = loader.get_template('olt/home.html')
-    context = {
-        'olt_users_list': olt_users_list,
-    }
-    return HttpResponse(template.render(context, request))
 
-def removable_users_list(request, slot, port):
-    update_onus(request, slot, port)
-    pon = f"1/1/{slot}/{port}"
-    removable_list = ONU.objects.filter(pon=pon)
-    template = loader.get_template('olt/removable_list.html')
-    context = {
-        'removable_list': removable_list,
-    }
-    return HttpResponse(template.render(context, request))
+def update_values(request, port, slot):
+    """View para atualizar valores de uma porta específica"""
+    # Continua usando update_users pois precisamos da atualização completa da porta
+    return update_users(request)
 
-def delete(request, slot, port, position):
-    pon = f"1/1/{slot}/{port}/{position}"
-    # ONU.objects.filter(pon=pon, onu=onu).delete()
-    # removable_list = ONU.objects.filter(pon=pon)
-    # template = loader.get_template('olt/removable_list.html')
-    # context = {
-    #     'removable_list': removable_list,
-    # }
-    conector = olt_connector()
-    conector.remove_onu(pon)
-    print(f"configure equipment ont interface 1/1/{slot}/{port}/{position} admin-state down")
-    print(f"configure equipment no interface 1/1/{slot}/{port}/{position}")
 
-    response = update_values(request, port, slot)
+@login_required
+def update_all_data(request):
+    """View para iniciar a atualização de todos os dados"""
+    # Inicia o job que fará todas as atualizações em sequência
+    main_job = update_all_data_task.delay(
+        user=request.user.username,
+        menu_item='Atualizar Todos os Dados'
+    )
 
-    return response
+    request.session['task_message'] = 'Atualização sequencial iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['job_id'] = main_job.id
+    return redirect('olt:view_tasks')
+
+
+@login_required
+def list_onus_without_mac(request):
+    """View para listar ONUs que não possuem MAC cadastrado"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'pon')
     
+    # Base queryset
+    onus_without_mac = ONU.objects.filter(Q(mac__isnull=True) | Q(mac=''))
+    
+    # Apply search if provided
+    if search_query:
+        onus_without_mac = onus_without_mac.filter(
+            Q(pon__icontains=search_query) |
+            Q(serial__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query) |
+            Q(oper_state__icontains=search_query)
+        )
+    
+    # Apply sorting
+    onus_without_mac = onus_without_mac.order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(onus_without_mac, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'duplicates': page_obj,
+        'title': 'ONUs sem MAC',
+        'description': 'Lista de ONUs que não possuem endereço MAC cadastrado',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/duplicates.html', context)
+
+
+@login_required
+def list_onus_without_client(request):
+    """View para listar ONUs que não possuem cliente fibra associado"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'pon')
+    
+    # Base queryset
+    onus_without_client = ONU.objects.filter(cliente_fibra=False)
+    
+    # Apply search if provided
+    if search_query:
+        onus_without_client = onus_without_client.filter(
+            Q(pon__icontains=search_query) |
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query) |
+            Q(oper_state__icontains=search_query)
+        )
+    
+    # Apply sorting
+    onus_without_client = onus_without_client.order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(onus_without_client, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'duplicates': page_obj,
+        'title': 'ONUs sem Cliente Fibra',
+        'description': 'Lista de ONUs que não possuem cliente fibra associado',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/duplicates.html', context)
+
+
+@login_required
+def get_duplicated(request):
+    """View para listar ONUs duplicadas"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'serial')
+    
+    # Get duplicated ONUs
+    duplicates = []
+    base_query = ONU.objects.all()
+    
+    if search_query:
+        base_query = base_query.filter(
+            Q(pon__icontains=search_query) |
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query) |
+            Q(oper_state__icontains=search_query)
+        )
+    
+    # Find duplicates
+    for onu in base_query:
+        if ONU.objects.filter(serial=onu.serial).count() > 1 and onu not in duplicates:
+            duplicates.append(onu)
+    
+    # Convert list to queryset for proper sorting
+    duplicates_ids = [onu.id for onu in duplicates]
+    duplicates_queryset = ONU.objects.filter(id__in=duplicates_ids).order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(duplicates_queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'duplicates': page_obj,
+        'title': 'ONUs Duplicadas',
+        'description': 'Lista de ONUs com número serial duplicado',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/duplicates.html', context)
+
+
+@login_required
+def list_onus(request):
+    """View para listar todas as ONUs"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'position')
+    
+    # Base query
+    queryset = ONU.objects.all()
+    
+    # Apply search filter
+    if search_query:
+        queryset = queryset.filter(
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query) |
+            Q(pon__icontains=search_query)
+        )
+    
+    # Apply sorting
+    queryset = queryset.order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'onus': page_obj,
+        'title': 'Lista de ONUs',
+        'description': 'Lista completa de ONUs cadastradas',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/list_onus.html', context)
+
+
+def get_itens_to_port(request, slot, port):
+    """View para listar itens de uma porta específica"""
+    connector = olt_connector()
+    
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'position')
+    
+    # Get base queryset
+    queryset = connector.get_itens_to_port(slot, port, order_by=sort_by)
+    
+    # Apply search filter if provided
+    if search_query:
+        queryset = queryset.filter(
+            Q(serial__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query)
+        )
+    
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'removable_list': page_obj,
+        'slot': slot,
+        'port': port,
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by,
+    }
+    return render(request, 'olt/removable_list.html', context)
+
 
 def remover_ont(request, porta):
+    """View para remover uma ONT"""
     connector = olt_connector()
     connector.remove_onu(porta)
     porta = porta.split("/")
@@ -116,366 +358,225 @@ def remover_ont(request, porta):
     return HttpResponse(template.render(context, request))
 
 
-def get_itens_to_port(request, slot, port):
+def delete(request, slot, port, position):
+    """View para deletar uma ONT específica"""
+    pon = f"1/1/{slot}/{port}/{position}"
     connector = olt_connector()
-    old_values = connector.get_itens_to_port(slot, port)
-    template = loader.get_template('olt/duplicates.html')
-    context = {
-        'duplicates': old_values,
-        'slot': slot,
-        'port': port,
-    }
-    return HttpResponse(template.render(context, request))
-
-def update_values(request, port, slot):
-    order_by = request.GET.get('sort', 'position')
-    # Queue the task with metadata
-    job = update_port_onus.delay(
-        slot, port,
-        user=request.user.username,
-        menu_item=f'Atualizar ONUs da Porta {slot}/{port}'
-    )
-    request.session['task_message'] = f'Atualização de ONUs para porta {slot}/{port} iniciada.'
-    request.session['job_id'] = job.id
-    return redirect('olt:view_tasks')
-
-
-def update_onus_all(request):
-    # Queue the task with metadata
-    job = update_all_onus.delay(
-        user=request.user.username,
-        menu_item='ONU Atualizar Todas'
-    )
-    request.session['task_message'] = 'Atualização de ONUs iniciada. Acompanhe o progresso na lista de tarefas.'
-    request.session['job_id'] = job.id
-    return redirect('olt:view_tasks')
-
-
-def get_duplicated(request):
-    onus = ONU.objects.all().order_by('serial')
-    duplicates = []
-    for onu in onus:
-        serial_count = ONU.objects.filter(serial=onu.serial).count()
-        if serial_count > 1:
-            duplicates.append(onu)
-    template = loader.get_template('olt/duplicates.html')
-    context = {
-        'duplicates': duplicates,
-    }
-    return HttpResponse(template.render(context, request))
-
-
-def search_view(request):
-
-    removable_list = []
-    query = request.GET.get('q', '')
-    print("Search query: " + query)
-
-    if query:
-        serial = ONU.objects.filter(serial__icontains=query)
-        print(serial)
-        mac = ONU.objects.filter(mac__icontains=query)
-        print(mac)
-        desc1 = ONU.objects.filter(desc1__icontains=query)
-        print(desc1)
-        desc2 = ONU.objects.filter(desc2__icontains=query)
-        print(desc1)
-        mac = ONU.objects.filter(mac__icontains=query)
-        print(desc1)
-    
-        removable_list = serial.union(mac).union(desc1).union(desc2).union(mac)
-
-    return render(request, 'olt/duplicates.html', {'query': query , 'duplicates': removable_list})
-
-def listar_clientes(request):
-
-    clientes = ClienteFibraIxc.objects.all()
-    template = loader.get_template('olt/clientes_fibra.html')
-    context = {
-        'clientes': clientes,
-    }
-    return HttpResponse(template.render(context, request))
-
-def update_clientes():
-    clientes = ClienteFibraIxc.objects.all()
-    for client in clientes:
-        onu = ONU.objects.filter(serial__icontains=client.mac, desc1__icontains=client.nome)
-        if onu.exists():
-            onu = onu.first()
-            onu.cliente_fibra = True
-            onu.save()
-            print(f'Cliente {client.nome} marcado como cliente de fibra.')
-
-def search_ixc(request):
-
-    response = search_ixc_page(request, 1)
-    data = response.json()
-
-    num_records = len(data['registros'])
-    print(f'There are {num_records} records in this JSON file.')    
-    total_de_paginas = int(data['total'])/100
-    print(f'Total de páginas: {total_de_paginas}')
-
-    # print(response.json())
-    ClienteFibraIxc.objects.all().delete()
-    for page in range(1, int(total_de_paginas+1)):
-        response = search_ixc_page(request, page)
-        data = response.json()
-        print(f'Página {page} de {total_de_paginas}')
-        
-        for registro in data['registros']:
-            ClienteFibraIxc.objects.create(
-                mac=registro['mac'], 
-                nome=registro['nome'],
-            )
-
-    update_clientes()
-
-    clientes = ClienteFibraIxc.objects.all()
-
-    template = loader.get_template('olt/clientes_fibra.html')
-    context = {
-        'clientes': clientes,
-    }
-    return HttpResponse(template.render(context, request))
-
-
-
-def search_ixc_page(request, page):
-
-    host = os.getenv('IXC_HOST')
-    url = f"https://{host}/webservice/v1/radpop_radio_cliente_fibra"
-    token = os.getenv('IXC_TOKEN').encode('utf-8')
-
-    payload = {
-        'qtype': 'radpop_radio_cliente_fibra.id',
-        'query': '',
-        'oper': '>',
-        'page': page,
-        'rp': '100',
-        'sortname': 'radpop_radio_cliente_fibra.id',
-        'sortorder': 'asc'
-    }
-
-    headers = {
-        'ixcsoft': 'listar',
-        'Authorization': 'Basic {}'.
-        format(base64.b64encode(token).decode('utf-8')),
-        'Content-Type': 'application/json'
-    }
-
-    response = requests.post(url, data=json.dumps(payload), headers=headers)
-
+    connector.remove_onu(pon)
+    response = update_values(request, port, slot)
     return response
 
 
+def search_view(request):
+    """View para busca geral"""
+    query = request.GET.get('q', '')
+    if not query:
+        return redirect('olt:home')
+    
+    results = ONU.objects.filter(
+        Q(serial__icontains=query) |
+        Q(mac__icontains=query) |
+        Q(desc1__icontains=query) |
+        Q(desc2__icontains=query) |
+        Q(pon__icontains=query)
+    )
+    
+    context = {
+        'duplicates': results,
+        'title': 'Resultados da Busca',
+        'description': f'Resultados para: {query}',
+        'search_query': query
+    }
+    return render(request, 'olt/duplicates.html', context)
+
+
+def search_ixc(request):
+    """View para atualizar clientes fibra"""
+    job = update_clientes_task.delay(
+        user=request.user.username,
+        menu_item='Atualização de Clientes Fibra'
+    )
+    request.session['task_message'] = 'Atualização de clientes fibra iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['job_id'] = job.id
+    return redirect('olt:view_tasks')
+
+
+def listar_clientes(request):
+    """View para listar clientes fibra"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'nome')
+    
+    # Base query
+    queryset = ClienteFibraIxc.objects.all()
+    
+    # Apply search filter
+    if search_query:
+        queryset = queryset.filter(
+            Q(nome__icontains=search_query) |
+            Q(mac__icontains=search_query)
+        )
+    
+    # Apply sorting
+    queryset = queryset.order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'clientes': page_obj,
+        'title': 'Clientes Fibra',
+        'description': 'Lista de clientes fibra cadastrados no sistema',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/clientes_fibra.html', context)
+
+
 def register(request):
+    """View para registro de usuário"""
     if request.method == 'POST':
         form = UserCreationForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('login')
+            return redirect('olt:login')
     else:
         form = UserCreationForm()
     return render(request, 'register.html', {'form': form})
 
 
-def decode_value(value):
-    if isinstance(value, bytes):
-        encodings = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252']
-        for encoding in encodings:
-            try:
-                return value.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        return value.decode('utf-8', errors='replace')
-    return value
-
-
-def test_ping(api, address, count=15, src_address=None):
-    try:
-        print(f"Testando ping de {src_address} para {address}...")
-        
-        # Executando o comando ping com parâmetros convertidos para bytes
-        ping_params = {
-            'address': '8.8.8.8'.encode('utf-8'),
-            'src-address': src_address.encode('utf-8'),
-            'count': '10'.encode('utf-8')
-        }
-
-        ping_results = api.get_binary_resource('/').call('ping', ping_params)
-        # print(f"Resultado do ping: {ping_results}")
-        # Get last result for final statistics
-        if ping_results:
-            final_result = ping_results[-1]  # Get last ping response
-            print(f"Resultado final do ping: {final_result}")
-            # Extract and decode values
-            packets_sent = int(decode_value(final_result.get('sent', '0')))
-            packets_received = int(decode_value(final_result.get('received', '0')))
-            packets_lost = int(decode_value(final_result.get('packet-loss', '0')))
-            avg_rtt = decode_value(final_result.get('avg-rtt', '0ms')).replace('ms','')
-            
-            result_str = f"\nEstatísticas do Ping:\n"
-            result_str += f"Pacotes: Enviados = {packets_sent}, "
-            result_str += f"Recebidos = {packets_received}, "
-            result_str += f"Perdidos = {packets_lost}\n"
-            result_str += f"Tempo médio de ida e volta = {avg_rtt}ms\n"
-            
-            return result_str
-        
-    except Exception as e:
-        return f"Erro no ping: {str(e)}"
-
-
 @login_required
 def mikrotik_info(request):
-    # Buscar valores do .env
-    hostname = os.getenv('MIKROTIK_HOST')
-    username = os.getenv('MIKROTIK_USERNAME')
-    password = os.getenv('MIKROTIK_PASSWORD')
-    port = int(os.getenv('MIKROTIK_PORT'))
-    timeout = int(os.getenv('MIKROTIK_TIMEOUT'))
+    """View para exibir informações do Mikrotik"""
+    mikrotik_host = os.getenv('MIKROTIK_HOST')
+    mikrotik_user = os.getenv('MIKROTIK_USERNAME')
+    mikrotik_pass = os.getenv('MIKROTIK_PASSWORD')
+    mikrotik_port = int(os.getenv('MIKROTIK_PORT', 8728))
     
-    try:
-        # Conectar ao Mikrotik usando RouterOsApiPool
-        api_pool = RouterOsApiPool(hostname, username=username, password=password, plaintext_login=True)
-        api = api_pool.get_api()
-        nat_rules_data = []
-        print('Conexão estabelecida com sucesso!')
-        # Obtém as regras de NAT
-        nat_resource = api.get_binary_resource('/ip/firewall/nat')
-        nat_rules = nat_resource.call('print')
-
-        print('Obtendo regras de NAT...')
-        if nat_rules:
-            print('Regras de NAT obtidas com sucesso!')
-            for rule in nat_rules:
-                
-                relevant_info = {}
-                for key in ['chain', 'action', 'src-address', 'dst-address', 'comment', 'to-addresses', 'disabled']:
-                    try:
-                        value = rule.get(key, b'N/A')
-                        relevant_info[key] = decode_value(value)
-                    except Exception as e:
-                        relevant_info[key] = f"N/A"
-                if str(relevant_info.get('action')) == 'src-nat' and str(relevant_info.get('disabled')) != 'true':
-
-                    comment = relevant_info.get('comment', 'Não especificado')
-                    src_address = relevant_info.get('src-address', 'Não especificado')
-                    to_address = relevant_info.get('to-addresses', 'Não especificado')
-                    
-                    # Verifica as condições para marcar a linha como vermelho
-                    mark_red = False
-                    if (to_address.startswith('170') and 'corporativa' in comment.lower()) or \
-                        (to_address.startswith('177') and 'turbonet' in comment.lower()):
-                        mark_red = True
-                    
-                    # Testar conectividade com ping
-                    print(f'Testando ping de {src_address} para {to_address}...')
-                    ping_result = test_ping(api, '8.8.8.8', count=5, src_address=to_address)
-
-                    # Adiciona os detalhes da regra à lista
-                    nat_rules_data.append({
-                        'comment': comment,
-                        'src_address': src_address,
-                        'to_address': to_address,
-                        'mark_red': mark_red,
-                        'ping_result': ping_result if ping_result else 'N/A'
-                    })
-        
-        # Fecha a conexão
-        api_pool.disconnect()
-
-        # Ordenar a lista de regras de NAT por to_address
-        nat_rules_data.sort(key=lambda x: x['to_address'])
-
-        # Extrair dados relevantes
-        mikrotik_data = {
-            'hostname': hostname,
-            'ip_address': hostname,  # IP do Mikrotik
-            'nat_rules': nat_rules_data
+    api = connect_to_mikrotik(mikrotik_host, mikrotik_user, mikrotik_pass, mikrotik_port)
+    nat_rules = get_nat_rules(api) if api else []
+    
+    context = {
+        'mikrotik_data': {
+            'nat_rules': nat_rules
         }
-        
-        return render(request, 'olt/mikrotik_info.html', {'mikrotik_data': mikrotik_data})
-    except Exception as e:
-        print(str(e))
-        return render(request, 'olt/mikrotik_info.html', {'error': str(e)})
-    
-
-@login_required
-def tasks_view(request):
-    queue = django_rq.get_queue('default')
-    jobs = []
-    for job in queue.get_jobs():
-        jobs.append({
-            'id': job.id,
-            'func_name': job.func_name,
-            'status': job.get_status(),
-            'created_at': job.created_at,
-            'ended_at': job.ended_at if hasattr(job, 'ended_at') else None
-        })
-    return render(request, 'olt/tasks.html', {'jobs': jobs})
+    }
+    return render(request, 'olt/mikrotik_info.html', context)
 
 
 @login_required
 def view_tasks(request):
+    """View para monitoramento de tarefas"""
     queue = get_queue('default')
     
     # Get all jobs from different states
     running_jobs = []
-    
-    # Get all jobs in the queue
-    all_jobs = queue.jobs
-    for job in all_jobs:
-        if job is not None:
-            status = job.get_status()
-            if status in ['queued', 'started', 'deferred']:
-                job_info = {
-                    'id': job.id,
-                    'func_name': job.func_name,
-                    'status': status,
-                    'created_at': job.created_at,
-                    'user': job.meta.get('user', 'N/A'),
-                    'menu_item': job.meta.get('menu_item', 'N/A'),
-                    'started_at': job.meta.get('started_at', 'N/A')
-                }
-                running_jobs.append(job_info)
-    
-    # Get completed and failed jobs info
-    finished_registry = queue.finished_job_registry
-    failed_registry = queue.failed_job_registry
-    
+    queued_jobs = []
     finished_jobs = []
-    for job_id in finished_registry.get_job_ids():
-        job = queue.fetch_job(job_id)
-        if job:
-            finished_jobs.append({
-                'id': job.id,
-                'user': job.meta.get('user', 'N/A'),
-                'menu_item': job.meta.get('menu_item', 'N/A'),
-                'started_at': job.meta.get('started_at', 'N/A')
-            })
-    
     failed_jobs = []
-    for job_id in failed_registry.get_job_ids():
+    
+    # Get started jobs
+    started_registry = queue.started_job_registry
+    for job_id in started_registry.get_job_ids()[:5]:  # Limita a 5 tarefas
         job = queue.fetch_job(job_id)
-        if job:
-            failed_jobs.append({
+        if job is not None:
+            job_info = {
                 'id': job.id,
+                'func_name': job.func_name,
+                'status': job.get_status(),
+                'created_at': job.created_at,
+                'user': job.meta.get('user', 'N/A'),
+                'menu_item': job.meta.get('menu_item', 'N/A'),
+                'started_at': job.meta.get('started_at', 'N/A'),
+                'current_step': job.meta.get('current_step', 'N/A')
+            }
+            running_jobs.append(job_info)
+    
+    # Get queued jobs
+    for job in list(queue.jobs)[:5]:  # Limita a 5 tarefas
+        if job is not None and job.get_status() in ['queued', 'deferred']:
+            job_info = {
+                'id': job.id,
+                'func_name': job.func_name,
+                'status': job.get_status(),
+                'created_at': job.created_at,
+                'user': job.meta.get('user', 'N/A'),
+                'menu_item': job.meta.get('menu_item', 'N/A')
+            }
+            queued_jobs.append(job_info)
+    
+    # Get failed jobs
+    failed_registry = queue.failed_job_registry
+    for job_id in failed_registry.get_job_ids()[:5]:  # Limita a 5 tarefas
+        job = queue.fetch_job(job_id)
+        if job is not None:
+            job_info = {
+                'id': job.id,
+                'func_name': job.func_name,
+                'status': job.get_status(),
+                'created_at': job.created_at,
+                'user': job.meta.get('user', 'N/A'),
+                'menu_item': job.meta.get('menu_item', 'N/A'),
+                'started_at': job.meta.get('started_at', 'N/A'),
+                'error_message': job.exc_info  # Adiciona mensagem de erro
+            }
+            failed_jobs.append(job_info)
+    
+    # Get finished jobs
+    finished_registry = queue.finished_job_registry
+    for job_id in finished_registry.get_job_ids()[:5]:  # Limita a 5 tarefas
+        job = queue.fetch_job(job_id)
+        if job is not None:
+            job_info = {
+                'id': job.id,
+                'func_name': job.func_name,
+                'status': job.get_status(),
+                'created_at': job.created_at,
                 'user': job.meta.get('user', 'N/A'),
                 'menu_item': job.meta.get('menu_item', 'N/A'),
                 'started_at': job.meta.get('started_at', 'N/A')
-            })
-    
-    # Get message from session if exists
-    message = request.session.pop('task_message', None)
-    job_id = request.session.pop('job_id', None)
+            }
+            finished_jobs.append(job_info)
     
     context = {
         'running_jobs': running_jobs,
+        'queued_jobs': queued_jobs,
         'finished_jobs': finished_jobs,
         'failed_jobs': failed_jobs,
-        'message': message,
-        'job_id': job_id
+        'message': request.session.pop('task_message', None)
     }
     return render(request, 'olt/tasks.html', context)
+
+
+def update_clientes():
+    """Função para atualizar a lista de clientes fibra do IXC"""
+    # Limpa a tabela atual
+    ClienteFibraIxc.objects.all().delete()
+    
+    try:
+        # Pega todos os ONUs existentes
+        onus = ONU.objects.all()
+        
+        # Cria novos registros de clientes para cada ONU com desc1 não vazio
+        for onu in onus:
+            if onu.desc1 and onu.desc1.strip():  # Se tem descrição e não está vazia
+                ClienteFibraIxc.objects.create(
+                    mac=onu.serial,
+                    nome=onu.desc1
+                )
+                # Marca a ONU como tendo cliente fibra
+                onu.cliente_fibra = True
+                onu.save()
+            else:
+                # Se não tem descrição, marca como não tendo cliente fibra
+                onu.cliente_fibra = False
+                onu.save()
+                
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar clientes: {str(e)}")
+        return False
