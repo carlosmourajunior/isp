@@ -39,19 +39,23 @@
             <table class="table table-striped">
                 <thead>
                     <tr>
-                        <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=nome">Nome</a></th>
-                        <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=mac">MAC</a></th>
+                        <th>MAC</th>
+                        <th>Nome</th>
+                        <th>Latitude</th>
+                        <th>Longitude</th>
+                        <th>Endereço</th>
+                        <th>ID Caixa FTTH</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for cliente in clientes %}
                     <tr>
-                        <td>{{ cliente.nome }}</td>
                         <td>{{ cliente.mac }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="2" class="text-center">Nenhum cliente encontrado.</td>
+                        <td>{{ cliente.nome }}</td>
+                        <td>{{ cliente.latitude }}</td>
+                        <td>{{ cliente.longitude }}</td>
+                        <td>{{ cliente.endereco }}</td>
+                        <td>{{ cliente.id_caixa_ftth }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -94,4 +98,11 @@
         {% endif %}
     </div>
 </main>
+
+<script>
+function executeReboot(ponPosition) {
+    // Simulate the reboot command execution
+    alert(`Comando executado: admin equipment ont interface ${ponPosition} reboot with-active-image`);
+}
+</script>
 {% endblock %}

@@ -43,6 +43,36 @@
             </div>
         </div>
     </div>
+    <div class="row">
+        <!-- Card for clients with signal < -27 -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header" style="background:  rgba(255,193,7,.2)">
+                    <h5>Clientes com Sinal < -27</h5>
+                </div>
+                <div class="card-body text-center">
+                    <h1>{{ clients_signal_below_27_count }}</h1>
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'olt:clients_signal_below_27' %}" class="btn btn-warning w-100">Ver Detalhes</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header" style="background: rgba(220,53,69,.2)">
+                    <h5>Clientes com Sinal < -29</h5>
+                </div>
+                <div class="card-body text-center">
+                    <h1>{{ clients_signal_below_29_count }}</h1>
+                </div>
+                <div class="card-footer">
+                    <a href="{% url 'olt:clients_signal_below_27' %}" class="btn btn-danger w-100">Ver Detalhes</a>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="card">
         <div class="card-header" style="background: rgba(0,123,255,.2)">
             <h5>Top 5 Portas</h5>

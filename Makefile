@@ -23,9 +23,9 @@ _rebuild: show_env
 up: show_env
 	docker-compose ${DOCKER_COMPOSE_FILE} up -d --remove-orphans
 
-# up_debug: show_env
-# 	docker-compose ${DOCKER_COMPOSE_FILE} stop web
-# 	docker-compose ${DOCKER_COMPOSE_FILE} -f docker-compose.override.debug.yml up -d --remove-orphans
+up_debug: show_env
+	docker-compose ${DOCKER_COMPOSE_FILE} stop web
+	docker-compose ${DOCKER_COMPOSE_FILE} -f docker-compose.override.debug.yml up -d --remove-orphans
 
 log: show_env
 	docker-compose ${DOCKER_COMPOSE_FILE} logs -f --tail 200 web

@@ -33,26 +33,42 @@
         <table class="table">
             <thead>
                 <tr>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=slot">Slot</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=port">Porta</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=users_connected">Usuários</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=description">Descrição</a></th>
+                    <th>Serial</th>
+                    <th>MAC</th>
+                    <th>PON</th>
+                    <th>Posição</th>
+                    <th>Admin State</th>
+                    <th>Oper State</th>
+                    <th>OLT RX Signal</th>
+                    <th>Descrição 1</th>
+                    <th>Descrição 2</th>
+                    <th>Cliente Fibra</th>
                     <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
-                {% for user in olt_users %}
+                {% for onu in onus %}
                 <tr>
-                    <td>{{ user.slot }}</td>
-                    <td>{{ user.port }}</td>
-                    <td>{{ user.users_connected }}</td>
-                    <td>{{ user.description }}</td>
+                    <td>{{ onu.serial }}</td>
+                    <td>{{ onu.mac }}</td>
+                    <td>{{ onu.pon }}</td>
+                    <td>{{ onu.position }}</td>
+                    <td>{{ onu.admin_state }}</td>
+                    <td>{{ onu.oper_state }}</td>
+                    <td>{{ onu.olt_rx_sig }}</td>
+                    <td>{{ onu.desc1 }}</td>
+                    <td>{{ onu.desc2 }}</td>
+                    <td>{{ onu.cliente_fibra|yesno:"Sim,Não" }}</td>
                     <td>
-                        <a href="{% url 'olt:update_values' user.port user.slot %}" class="btn btn-primary btn-sm">
-                            <i class="fas fa-sync"></i>
+                        <a href="{% url 'olt:delete' slot=onu.get_slot port=onu.get_port position=onu.position %}" 
+                           class="btn btn-danger btn-sm" 
+                           onclick="return confirm('Tem certeza que deseja excluir esta ONU?');">
+                            <i class="fas fa-trash"></i> Excluir
                         </a>
-                        <a href="{% url 'olt:get_itens_to_port' user.slot user.port %}" class="btn btn-info btn-sm">
-                            <i class="fas fa-list"></i>
+                        <a href="{% url 'olt:reset_onu' slot=onu.get_slot port=onu.get_port position=onu.position %}" 
+                           class="btn btn-warning btn-sm" 
+                           onclick="return confirm('Tem certeza que deseja reiniciar esta ONU?');">
+                            <i class="fas fa-sync-alt"></i> Reset
                         </a>
                     </td>
                 </tr>
@@ -94,4 +110,11 @@
         </ul>
     </nav>
 </div>
+
+<script>
+function executeReboot(ponPosition) {
+    // Simulate the reboot command execution
+    alert(`Comando executado: admin equipment ont interface ${ponPosition} reboot with-active-image`);
+}
+</script>
 {% endblock %}
