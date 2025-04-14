@@ -2,7 +2,6 @@ from time import sleep
 from olt.utils import olt_connector
 from django_rq import job, get_queue
 import django_rq
-from .models import OltUsers, ONU
 from datetime import datetime
 import rq
 from .client_utils import update_clientes

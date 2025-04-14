@@ -1,4 +1,5 @@
 # import netmiko library
+import base64
 from datetime import datetime
 import time
 from netmiko import ConnectHandler
@@ -180,7 +181,11 @@ class olt_connector():
             new_onu.serial = data['sernum']
             new_onu.admin_state = data['admin_status']
             new_onu.oper_state = data['oper_status']
-            new_onu.olt_rx_sig = data['olt_rx_sig']
+            # Convert olt_rx_sig to float before saving
+            try:
+                new_onu.olt_rx_sig = float(data['olt_rx_sig'])
+            except (ValueError, TypeError):
+                new_onu.olt_rx_sig = None
             new_onu.ont_olt = data['ont_olt']
             new_onu.desc1 = data['desc1']
             new_onu.desc2 = data['desc2']
@@ -199,6 +204,20 @@ class olt_connector():
             time.sleep(2)
             net_connect.read_channel()
         except Exception:
+            pass
+        finally:
+            self.disconnect(net_connect)
+    
+    def reset_onu(self, pon):
+        net_connect = self.connect()
+        try:
+            # command = f"configure equipment ont interface {pon} admin-state down\n"
+            command = f"admin equipment ont interface {pon} reboot with-active-image"
+            net_connect.send_command(command)
+            # time.sleep(2)
+            # net_connect.read_channel()            
+        except Exception as e:
+            print(e)
             pass
         finally:
             self.disconnect(net_connect)
@@ -307,4 +326,3 @@ def get_nat_rules(api):
         return nat_rules
     except LibRouterosError as e:
         return None
-

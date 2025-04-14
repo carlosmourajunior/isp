@@ -33,35 +33,43 @@
         <table class="table">
             <thead>
                 <tr>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=pon">PON</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=position">Posição</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=mac">MAC</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=serial">Serial</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=oper_state">Status</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=olt_rx_sig">Signal RX</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=cliente_fibra">Cliente</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=desc1">PPPoE</a></th>
-                    <th><a href="?search={{ search_query }}&per_page={{ items_per_page }}&sort=desc2">Descrição</a></th>
+                    <th>Serial</th>
+                    <th>MAC</th>
+                    <th>PON</th>
+                    <th>Posição</th>
+                    <th>Admin State</th>
+                    <th>Oper State</th>
+                    <th>OLT RX Signal</th>
+                    <th>Descrição 1</th>
+                    <th>Descrição 2</th>
+                    <th>Cliente Fibra</th>
                     <th>Ações</th>
                 </tr>
             </thead>
             <tbody>
-                {% for line in duplicates %}
+                {% for onu in duplicates %}
                 <tr>
-                    <td>{{line.pon}}</td>
-                    <td>{{line.position}}</td>
-                    <td>{{line.mac}}</td>
-                    <td>{{line.serial}}</td>
-                    <td>{{line.oper_state}}</td>
-                    <td>{{line.olt_rx_sig}}</td>
-                    <td>{% if line.cliente_fibra %}Sim{% else %}Não{% endif %}</td>
-                    <td>{{line.desc1}}</td>
-                    <td>{{line.desc2}}</td>
+                    <td>{{ onu.serial }}</td>
+                    <td>{{ onu.mac }}</td>
+                    <td>{{ onu.pon }}</td>
+                    <td>{{ onu.position }}</td>
+                    <td>{{ onu.admin_state }}</td>
+                    <td>{{ onu.oper_state }}</td>
+                    <td>{{ onu.olt_rx_sig }}</td>
+                    <td>{{ onu.desc1 }}</td>
+                    <td>{{ onu.desc2 }}</td>
+                    <td>{{ onu.cliente_fibra|yesno:"Sim,Não" }}</td>
                     <td>
-                        <button class="btn btn-sm btn-danger" data-toggle="modal" data-target="#delete_modal" 
-                                data-position="{{line.position}}" data-slot="{{line.pon}}">
-                            <i class="fa fa-trash"></i>
-                        </button>
+                        <a href="{% url 'olt:delete' slot=onu.get_slot port=onu.get_port position=onu.position %}" 
+                           class="btn btn-danger btn-sm" 
+                           onclick="return confirm('Tem certeza que deseja excluir esta ONU?');">
+                            <i class="fas fa-trash"></i> Excluir
+                        </a>
+                        <a href="{% url 'olt:reset_onu' slot=onu.get_slot port=onu.get_port position=onu.position %}" 
+                           class="btn btn-warning btn-sm" 
+                           onclick="return confirm('Tem certeza que deseja reiniciar esta ONU?');">
+                            <i class="fas fa-sync-alt"></i> Reset
+                        </a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -99,4 +107,11 @@
     {% endif %}
 
 </div>
+
+<script>
+function executeReboot(ponPosition) {
+    // Simulate the reboot command execution
+    alert(`Comando executado: admin equipment ont interface ${ponPosition} reboot with-active-image`);
+}
+</script>
 {% endblock %}

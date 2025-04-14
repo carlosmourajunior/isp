@@ -89,14 +89,17 @@
                     <div class="dropdown-menu" aria-labelledby="dropdown02">
                         <a class="dropdown-item" href="{% url 'olt:critical_users_list' %}">Ocupação de Portas</a>
                         <div class="dropdown-divider"></div>
-                        <a class="dropdown-item" href="{% url 'olt:get_duplicated' %}">ONUs Duplicadas</a>
                         <a class="dropdown-item" href="{% url 'olt:list_onus' %}">Todas as ONUs</a>
+                        <a class="dropdown-item" href="{% url 'olt:get_duplicated' %}">ONUs Duplicadas</a>
                         <a class="dropdown-item" href="{% url 'olt:list_onus_without_mac' %}">ONUs sem MAC</a>
                         <a class="dropdown-item" href="{% url 'olt:list_onus_without_client' %}">ONUs sem Cliente Fibra</a>
+                        <a class="dropdown-item" href="{% url 'olt:list_onus_with_oper_state_down' %}">ONUs com Oper State Down</a>
                         <a class="dropdown-item" href="{% url 'olt:listar_clientes' %}">Clientes Fibra</a>
                         <a class="dropdown-item" href="{% url 'olt:mikrotik_info' %}">Informações do Mikrotik</a>
+                        <a class="dropdown-item" href="{% url 'olt:list_ftth_boxes_by_occupancy' %}">Caixas FTTH por Ocupação</a>
                     </div>
                 </li>
+            
             </ul>
             <form class="form-inline my-2 my-lg-0" action="{% url 'olt:search_view' %}">
                 <input class="form-control mr-sm-2" type="text" placeholder="Search" aria-label="Search" name="q">

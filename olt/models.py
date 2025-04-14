@@ -29,7 +29,7 @@ class ONU(models.Model):
     serial = models.CharField(verbose_name="Serial", max_length=30)
     oper_state = models.CharField(verbose_name="Status", max_length=30)
     admin_state = models.CharField(verbose_name="Status", max_length=30, default="up", null=True, blank=True)
-    olt_rx_sig = models.CharField(verbose_name="OLT RX Signal", max_length=200, default="0", null=True, blank=True)
+    olt_rx_sig = models.FloatField(verbose_name="OLT RX Signal", default=0, null=True, blank=True)
     ont_olt = models.CharField(verbose_name="Distancia", max_length=200, default="0", null=True, blank=True)
     desc1 = models.CharField(verbose_name="Descrição_1", max_length=200)
     desc2 = models.CharField(verbose_name="Descrição_2", max_length=300)
@@ -56,6 +56,12 @@ class ONU(models.Model):
             return parts[3]
         return ''
 
+    def update_cliente_fibra_status(self):
+        """Update the cliente_fibra field based on ClienteFibraIxc."""
+        existe = ClienteFibraIxc.objects.filter(mac=self.serial, nome=self.desc1).exists()
+        self.cliente_fibra = existe
+        self.save()
+
 class PlacaOnu(models.Model):
 
     chassi = models.CharField(verbose_name="Chassi", max_length=20, default="1/1/1")
@@ -69,14 +75,17 @@ class PlacaOnu(models.Model):
         return f"{self.chassi}/{self.position}"
     
 class ClienteFibraIxc(models.Model):
-
     mac = models.CharField(max_length=255)
     nome = models.CharField(max_length=255)
+    latitude = models.CharField(max_length=50, blank=True, null=True)
+    longitude = models.CharField(max_length=50, blank=True, null=True)
+    endereco = models.TextField(blank=True, null=True)
+    id_caixa_ftth = models.CharField(max_length=50, blank=True, null=True)
 
     class Meta:
         verbose_name = "Cliente Fibra"
-        verbose_name_plural = ("Clientes Fibra")
-    
+        verbose_name_plural = "Clientes Fibra"
+
     def __str__(self) -> str:
         return f"{self.nome}"
 

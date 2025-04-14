@@ -6,7 +6,6 @@ from olt.models import ONU, ClienteFibraIxc, OltUsers
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
 from routeros_api import RouterOsApiPool
-import django_rq
 from django_rq import get_queue
 from .tasks import (
     update_all_data_task,
@@ -16,14 +15,12 @@ from .tasks import (
     update_mac_task
 )
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Q, FloatField, Count
+from django.db.models.functions import Cast
 import os
 from dotenv import load_dotenv
-import subprocess
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
-import base64
-import json
+from django.contrib import messages
 
 
 # Carregar variáveis de ambiente do arquivo .env
@@ -33,17 +30,29 @@ load_dotenv()
 def home(request):
     # Quantidade de ONUs sem MAC
     onus_without_mac = ONU.objects.filter(mac__isnull=True).count() + ONU.objects.filter(mac='').count()
-    
+
     # Quantidade de ONUs sem cliente fibra
     onus_without_client = ONU.objects.filter(cliente_fibra=False).count()
-    
+
+    # Quantidade de clientes com sinal < -27
+    # clients_signal_below_27_count = ONU.objects.filter(olt_rx_sig__lt=-27).count()
+
+    # Quantidade de clientes com sinal < -29
+    clients_signal_below_29_count = ONU.objects.filter(olt_rx_sig__lt=-29).count()
+
+    # Quantidade de clientes com sinal entre -27 e -29
+    clients_signal_below_27_count = ONU.objects.filter(olt_rx_sig__gte=-29, olt_rx_sig__lte=-27).count()
+
     # 5 portas com maior ocupação
     top_ports = OltUsers.objects.order_by('-users_connected')[:5]
-    
+
     template = loader.get_template('olt/dashboard.html')
     context = {
         'onus_without_mac': onus_without_mac,
         'onus_without_client': onus_without_client,
+        'clients_signal_below_27_count': clients_signal_below_27_count,
+        'clients_signal_below_29_count': clients_signal_below_29_count,
+        # 'clients_signal_between_27_and_29_count': clients_signal_between_27_and_29_count,
         'top_ports': top_ports,
     }
     return HttpResponse(template.render(context, request))
@@ -51,36 +60,35 @@ def home(request):
 
 @login_required
 def critical_users_list(request):
-    """View para listar ocupação de portas"""
+    """View para listar ocupação de todas as portas"""
     # Get query parameters
     search_query = request.GET.get('search', '')
     items_per_page = request.GET.get('per_page', 10)
     sort_by = request.GET.get('sort', 'slot')
-    
+
     # Base query
     queryset = OltUsers.objects.all()
-    
+
     # Apply search filter
     if search_query:
         queryset = queryset.filter(
             Q(slot__icontains=search_query) |
             Q(port__icontains=search_query) |
-            Q(serial__icontains=search_query) |
-            Q(description__icontains=search_query)
+            Q(users_connected__icontains=search_query)
         )
-    
+
     # Apply sorting
     queryset = queryset.order_by(sort_by)
-    
+
     # Pagination
     paginator = Paginator(queryset, items_per_page)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
-    
+
     context = {
         'olt_users': page_obj,
         'title': 'Ocupação de Portas',
-        'description': 'Lista de portas da OLT e suas ocupações',
+        'description': 'Lista de todas as portas da OLT e suas ocupações',
         'search_query': search_query,
         'items_per_page': items_per_page,
         'sort_by': sort_by
@@ -157,6 +165,7 @@ def list_onus_without_mac(request):
         onus_without_mac = onus_without_mac.filter(
             Q(pon__icontains=search_query) |
             Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |  # Include MAC address in search
             Q(desc1__icontains=search_query) |
             Q(desc2__icontains=search_query) |
             Q(oper_state__icontains=search_query)
@@ -197,7 +206,7 @@ def list_onus_without_client(request):
         onus_without_client = onus_without_client.filter(
             Q(pon__icontains=search_query) |
             Q(serial__icontains=search_query) |
-            Q(mac__icontains=search_query) |
+            Q(mac__icontains=search_query) |  # Include MAC address in search
             Q(desc1__icontains=search_query) |
             Q(desc2__icontains=search_query) |
             Q(oper_state__icontains=search_query)
@@ -238,7 +247,7 @@ def get_duplicated(request):
         base_query = base_query.filter(
             Q(pon__icontains=search_query) |
             Q(serial__icontains=search_query) |
-            Q(mac__icontains=search_query) |
+            Q(mac__icontains=search_query) |  # Include MAC address in search
             Q(desc1__icontains=search_query) |
             Q(desc2__icontains=search_query) |
             Q(oper_state__icontains=search_query)
@@ -284,7 +293,7 @@ def list_onus(request):
     if search_query:
         queryset = queryset.filter(
             Q(serial__icontains=search_query) |
-            Q(mac__icontains=search_query) |
+            Q(mac__icontains=search_query) |  # Include MAC address in search
             Q(desc1__icontains=search_query) |
             Q(desc2__icontains=search_query) |
             Q(pon__icontains=search_query)
@@ -309,6 +318,153 @@ def list_onus(request):
     return render(request, 'olt/list_onus.html', context)
 
 
+@login_required
+def list_onus_with_oper_state_down(request):
+    """View para listar ONUs com oper_state 'down'"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'pon')
+
+    # Base queryset
+    onus_with_oper_state_down = ONU.objects.filter(oper_state='down')
+
+    # Apply search if provided
+    if search_query:
+        onus_with_oper_state_down = onus_with_oper_state_down.filter(
+            Q(pon__icontains=search_query) |
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query)
+        )
+
+    # Apply sorting
+    onus_with_oper_state_down = onus_with_oper_state_down.order_by(sort_by)
+
+    # Pagination
+    paginator = Paginator(onus_with_oper_state_down, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'onus': page_obj,
+        'title': 'ONUs com Oper State Down',
+        'description': 'Lista de ONUs com estado operacional "down"',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/list_onus.html', context)
+
+
+@login_required
+def clients_signal_below_27(request):
+    """View to list ONUs with signal below -27 dBm."""
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'olt_rx_sig')
+
+    queryset = ONU.objects.filter(olt_rx_sig__lt=-27)
+
+    if search_query:
+        queryset = queryset.filter(
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query)
+        )
+
+    queryset = queryset.order_by(sort_by)
+
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'onus': page_obj,
+        'title': 'Clientes com Sinal < -27',
+        'description': 'Lista de ONUs com sinal abaixo de -27 dBm.',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/list_onus.html', context)
+
+
+@login_required
+def clients_signal_below_29(request):
+    """View to list ONUs with signal below -29 dBm."""
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'olt_rx_sig')
+
+    queryset = ONU.objects.filter(olt_rx_sig__lt=-29)
+
+    if search_query:
+        queryset = queryset.filter(
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query)
+        )
+
+    queryset = queryset.order_by(sort_by)
+
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'onus': page_obj,
+        'title': 'Clientes com Sinal < -29',
+        'description': 'Lista de ONUs com sinal abaixo de -29 dBm.',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/list_onus.html', context)
+
+
+@login_required
+def list_onus_signal_between_27_and_29(request):
+    """View to list ONUs with signal levels between -27 and -29."""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'olt_rx_sig')
+
+    # Base queryset
+    queryset = ONU.objects.filter(olt_rx_sig__gte=-29, olt_rx_sig__lte=-27)
+
+    # Apply search filter
+    if search_query:
+        queryset = queryset.filter(
+            Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query)
+        )
+
+    # Apply sorting
+    queryset = queryset.order_by(sort_by)
+
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'onus': page_obj,
+        'title': 'ONUs com Sinal entre -27 e -29',
+        'description': 'Lista de ONUs com sinal entre -27 e -29 dBm.',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/list_onus.html', context)
+
+
 def get_itens_to_port(request, slot, port):
     """View para listar itens de uma porta específica"""
     connector = olt_connector()
@@ -325,6 +481,7 @@ def get_itens_to_port(request, slot, port):
     if search_query:
         queryset = queryset.filter(
             Q(serial__icontains=search_query) |
+            Q(mac__icontains=search_query) |  # Include MAC address in search
             Q(desc1__icontains=search_query) |
             Q(desc2__icontains=search_query)
         )
@@ -363,8 +520,27 @@ def delete(request, slot, port, position):
     pon = f"1/1/{slot}/{port}/{position}"
     connector = olt_connector()
     connector.remove_onu(pon)
-    response = update_values(request, port, slot)
-    return response
+
+    # Remove a ONU correspondente do banco de dados
+    ONU.objects.filter(pon=f"1/1/{slot}/{port}", position=position).delete()
+
+    return redirect('olt:list_onus')
+
+
+@login_required
+def reset_onu(request, slot, port, position):
+    """View para reiniciar uma ONT específica"""
+    pon = f"1/1/{slot}/{port}/{position}"
+    connector = olt_connector()
+    
+    print(f"Reiniciando ONU {pon}...")
+    try:
+        connector.reset_onu(pon)
+        messages.success(request, f"ONU {pon} reiniciada com sucesso.")
+    except Exception as e:
+        print(e)
+        messages.error(request, f"Erro ao reiniciar ONU {pon}: {str(e)}")
+    return redirect('olt:list_onus')
 
 
 def search_view(request):
@@ -375,7 +551,7 @@ def search_view(request):
     
     results = ONU.objects.filter(
         Q(serial__icontains=query) |
-        Q(mac__icontains=query) |
+        Q(mac__icontains=query) |  # Include MAC address in search
         Q(desc1__icontains=query) |
         Q(desc2__icontains=query) |
         Q(pon__icontains=query)
@@ -415,7 +591,7 @@ def listar_clientes(request):
     if search_query:
         queryset = queryset.filter(
             Q(nome__icontains=search_query) |
-            Q(mac__icontains=search_query)
+            Q(mac__icontains=search_query)  # Include MAC address in search
         )
     
     # Apply sorting
@@ -552,31 +728,84 @@ def view_tasks(request):
     return render(request, 'olt/tasks.html', context)
 
 
-def update_clientes():
-    """Função para atualizar a lista de clientes fibra do IXC"""
-    # Limpa a tabela atual
-    ClienteFibraIxc.objects.all().delete()
-    
-    try:
-        # Pega todos os ONUs existentes
-        onus = ONU.objects.all()
-        
-        # Cria novos registros de clientes para cada ONU com desc1 não vazio
-        for onu in onus:
-            if onu.desc1 and onu.desc1.strip():  # Se tem descrição e não está vazia
-                ClienteFibraIxc.objects.create(
-                    mac=onu.serial,
-                    nome=onu.desc1
-                )
-                # Marca a ONU como tendo cliente fibra
-                onu.cliente_fibra = True
-                onu.save()
-            else:
-                # Se não tem descrição, marca como não tendo cliente fibra
-                onu.cliente_fibra = False
-                onu.save()
-                
-        return True
-    except Exception as e:
-        print(f"Erro ao atualizar clientes: {str(e)}")
-        return False
+@login_required
+def list_mac_addresses(request):
+    """View para listar todos os MAC addresses cadastrados."""
+    mac_addresses = ONU.objects.values_list('mac', flat=True)
+
+    context = {
+        'title': 'Lista de MAC Addresses',
+        'description': 'Todos os MAC addresses cadastrados no sistema.',
+        'mac_addresses': mac_addresses,
+    }
+    return render(request, 'olt/list_mac_addresses.html', context)
+
+
+@login_required
+def list_all_macs(request):
+    """View para listar todos os MAC addresses com busca e paginação."""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'mac')
+
+    # Base query
+    queryset = ONU.objects.all()
+
+    # Apply search filter
+    if search_query:
+        queryset = queryset.filter(
+            Q(mac__icontains=search_query) |
+            Q(serial__icontains=search_query) |
+            Q(desc1__icontains=search_query) |
+            Q(desc2__icontains=search_query)
+        )
+
+    # Apply sorting
+    queryset = queryset.order_by(sort_by)
+
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'macs': page_obj,
+        'title': 'Lista de MAC Addresses',
+        'description': 'Todos os MAC addresses cadastrados no sistema.',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/list_mac_addresses.html', context)
+
+
+@login_required
+def list_ftth_boxes_by_occupancy(request):
+    """View to list FTTH boxes ordered by client occupancy."""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+
+    # Base queryset
+    queryset = ClienteFibraIxc.objects.values('id_caixa_ftth').annotate(
+        client_count=Count('id_caixa_ftth')
+    ).order_by('-client_count')
+
+    # Apply search filter
+    if search_query:
+        queryset = queryset.filter(id_caixa_ftth__icontains=search_query)
+
+    # Pagination
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'ftth_boxes': page_obj,
+        'title': 'Caixas FTTH por Ocupação',
+        'description': 'Lista de caixas FTTH ordenadas por número de clientes.',
+        'search_query': search_query,
+        'items_per_page': items_per_page
+    }
+    return render(request, 'olt/list_ftth_boxes.html', context)

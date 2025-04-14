@@ -14,6 +14,7 @@ urlpatterns = [
     path('remover/<int:porta>/', views.remover_ont, name='remover'),
     path('update_values/<int:port>/<int:slot>/', views.update_values, name='update_values'),
     path('delete/<int:slot>/<int:port>/<int:position>/', views.delete, name='delete'),
+    path('reset/<int:slot>/<int:port>/<int:position>/', views.reset_onu, name='reset_onu'),  # Add reset_onu URL pattern
     path('search/', views.search_view, name='search_view'),
     path('search_ixc/', views.search_ixc, name='search_ixc'),
     path('listar_clientes/', views.listar_clientes, name='listar_clientes'),
@@ -27,4 +28,8 @@ urlpatterns = [
     path('onus-sem-mac/', views.list_onus_without_mac, name='list_onus_without_mac'),
     path('onus-sem-cliente/', views.list_onus_without_client, name='list_onus_without_client'),
     path('onus/', views.list_onus, name='list_onus'),
+    path('onus-oper-state-down/', views.list_onus_with_oper_state_down, name='list_onus_with_oper_state_down'),  # Add URL pattern for ONUs with oper_state 'down'
+    path('clients-signal-below-27/', views.list_onus_signal_between_27_and_29, name='clients_signal_below_27'),
+    path('clients-signal-below-29/', views.clients_signal_below_29, name='clients_signal_below_29'),
+    path('ftth-boxes/', views.list_ftth_boxes_by_occupancy, name='list_ftth_boxes_by_occupancy'),
 ]
