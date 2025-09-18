@@ -12,3 +12,6 @@ routeros-api
 django-rq==2.5.1
 redis==4.5.4
 rq==1.5.2  # Change to a version that includes Connection class
+djangorestframework
+djangorestframework-simplejwt
+django-filter

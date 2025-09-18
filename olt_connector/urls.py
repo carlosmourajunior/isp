@@ -21,5 +21,6 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('django-rq/', include('django_rq.urls')),  # Django RQ admin interface
+    path('api/', include('olt.api_urls')),  # API endpoints
     path('', include('olt.urls')),
 ]
