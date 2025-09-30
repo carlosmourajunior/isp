@@ -29,7 +29,23 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',') + ['177.22.126.77'] + ['177.22.126.77']
+
+# Lista de IPs permitidos para acessar o sistema
+# Suporta IPs individuais e ranges CIDR (ex: '192.168.1.0/24')
+ALLOWED_IPS = [
+    '127.0.0.1',        # Localhost
+    '::1',              # Localhost IPv6
+    '177.22.126.77',    # Servidor
+    '172.16.0.0/12',    # Redes Docker privadas
+    '192.168.0.0/16',   # Redes privadas locais
+    '10.0.0.0/8',       # Redes privadas
+    # Adicione outros IPs conforme necessário
+    # '203.0.113.0/24',  # Exemplo de range público específico
+]
+
+
+# Application definition
 
 
 # Application definition
@@ -46,6 +62,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - deve ser o primeiro
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
