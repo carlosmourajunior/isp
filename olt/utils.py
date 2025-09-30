@@ -3,7 +3,7 @@ import base64
 from datetime import datetime
 import time
 from netmiko import ConnectHandler
-from olt.models import ONU, ClienteFibraIxc, OltUsers
+from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
 import re
 from dotenv import load_dotenv
 import os
@@ -326,3 +326,246 @@ def get_nat_rules(api):
         return nat_rules
     except LibRouterosError as e:
         return None
+
+
+class OltSystemCollector:
+    """Classe para coletar informações do sistema OLT"""
+    
+    def __init__(self):
+        self.nokia = {
+            'device_type': os.getenv('NOKIA_DEVICE_TYPE'),
+            'host': os.getenv('NOKIA_HOST'),
+            'username': os.getenv('NOKIA_USERNAME'),
+            'password': os.getenv('NOKIA_PASSWORD'),
+            'verbose': os.getenv('NOKIA_VERBOSE') == 'True',
+            'global_delay_factor': int(os.getenv('NOKIA_GLOBAL_DELAY_FACTOR', 2)),
+        }
+    
+    def connect(self):
+        """Conecta à OLT"""
+        net_connect = ConnectHandler(**self.nokia)
+        net_connect.find_prompt()
+        return net_connect
+    
+    def disconnect(self, net_connect):
+        """Desconecta da OLT"""
+        net_connect.disconnect()
+    
+    def collect_system_info(self):
+        """Coleta informações do sistema (versão e uptime)"""
+        net_connect = self.connect()
+        try:
+            # Coletar versão do sistema
+            version_output = net_connect.send_command("show software-mngt version etsi")
+            isam_release = self._parse_isam_release(version_output)
+            
+            # Coletar uptime
+            uptime_output = net_connect.send_command("show core1-uptime")
+            uptime_data = self._parse_uptime(uptime_output)
+            
+            # Atualizar ou criar registro
+            system_info, created = OltSystemInfo.objects.get_or_create(
+                id=1,  # Usando ID fixo pois só temos uma OLT
+                defaults={
+                    'isam_release': isam_release,
+                    'uptime_days': uptime_data['days'],
+                    'uptime_hours': uptime_data['hours'],
+                    'uptime_minutes': uptime_data['minutes'],
+                    'uptime_seconds': uptime_data['seconds'],
+                    'uptime_raw': uptime_data['raw']
+                }
+            )
+            
+            if not created:
+                system_info.isam_release = isam_release
+                system_info.uptime_days = uptime_data['days']
+                system_info.uptime_hours = uptime_data['hours']
+                system_info.uptime_minutes = uptime_data['minutes']
+                system_info.uptime_seconds = uptime_data['seconds']
+                system_info.uptime_raw = uptime_data['raw']
+                system_info.save()
+            
+            return system_info
+            
+        except Exception as e:
+            print(f"Erro ao coletar informações do sistema: {str(e)}")
+            return None
+        finally:
+            self.disconnect(net_connect)
+    
+    def collect_slot_info(self):
+        """Coleta informações dos slots"""
+        net_connect = self.connect()
+        try:
+            output = net_connect.send_command("show equipment slot")
+            slots_data = self._parse_slots(output)
+            
+            # Limpar dados antigos
+            OltSlot.objects.all().delete()
+            
+            # Inserir novos dados
+            for slot_data in slots_data:
+                OltSlot.objects.create(**slot_data)
+            
+            return OltSlot.objects.all()
+            
+        except Exception as e:
+            print(f"Erro ao coletar informações dos slots: {str(e)}")
+            return None
+        finally:
+            self.disconnect(net_connect)
+    
+    def collect_temperature_info(self):
+        """Coleta informações de temperatura"""
+        net_connect = self.connect()
+        try:
+            output = net_connect.send_command("show equipment temperature")
+            temp_data = self._parse_temperature(output)
+            
+            # Limpar dados antigos
+            OltTemperature.objects.all().delete()
+            
+            # Inserir novos dados
+            for temp in temp_data:
+                OltTemperature.objects.create(**temp)
+            
+            return OltTemperature.objects.all()
+            
+        except Exception as e:
+            print(f"Erro ao coletar informações de temperatura: {str(e)}")
+            return None
+        finally:
+            self.disconnect(net_connect)
+    
+    def collect_all_system_data(self):
+        """Coleta todas as informações do sistema"""
+        try:
+            system_info = self.collect_system_info()
+            slots = self.collect_slot_info()
+            temperatures = self.collect_temperature_info()
+            
+            return {
+                'system_info': system_info,
+                'slots': slots,
+                'temperatures': temperatures
+            }
+        except Exception as e:
+            print(f"Erro ao coletar dados do sistema: {str(e)}")
+            return None
+    
+    def _parse_isam_release(self, output):
+        """Extrai a versão ISAM do output"""
+        try:
+            match = re.search(r'isam-release\s*:\s*(\S+)', output)
+            return match.group(1) if match else "Unknown"
+        except Exception:
+            return "Unknown"
+    
+    def _parse_uptime(self, output):
+        """Extrai informações de uptime"""
+        try:
+            # Exemplo: "System Up Time         : 958 days, 12:26:47.46 (hr:min:sec)"
+            match = re.search(r'(\d+)\s+days?,\s+(\d+):(\d+):(\d+)', output)
+            if match:
+                return {
+                    'days': int(match.group(1)),
+                    'hours': int(match.group(2)),
+                    'minutes': int(match.group(3)),
+                    'seconds': int(match.group(4)),
+                    'raw': output.strip()
+                }
+            else:
+                return {
+                    'days': 0,
+                    'hours': 0,
+                    'minutes': 0,
+                    'seconds': 0,
+                    'raw': output.strip()
+                }
+        except Exception:
+            return {
+                'days': 0,
+                'hours': 0,
+                'minutes': 0,
+                'seconds': 0,
+                'raw': "Parse Error"
+            }
+    
+    def _parse_slots(self, output):
+        """Extrai informações dos slots"""
+        slots = []
+        try:
+            # Buscar linhas com dados de slots
+            lines = output.split('\n')
+            for line in lines:
+                line = line.strip()
+                # Procura por linhas que contêm dados de slots (não cabeçalhos ou separadores)
+                if any(prefix in line for prefix in ['acu:', 'nt-', 'lt:', 'vlt:']):
+                    # Divide por espaços múltiplos para separar as colunas
+                    parts = [part.strip() for part in line.split() if part.strip()]
+                    if len(parts) >= 6:
+                        # Reconstrói slot_name caso tenha sido dividido
+                        slot_name = parts[0]
+                        if not any(prefix in slot_name for prefix in ['acu:', 'nt-', 'lt:', 'vlt:']):
+                            continue
+                            
+                        actual_type = parts[1]
+                        enabled = parts[2].lower() == 'yes'
+                        error_status = parts[3]
+                        availability = parts[4]
+                        restart_count = int(parts[5]) if parts[5].isdigit() else 0
+                        
+                        slots.append({
+                            'slot_name': slot_name,
+                            'actual_type': actual_type,
+                            'enabled': enabled,
+                            'error_status': error_status,
+                            'availability': availability,
+                            'restart_count': restart_count
+                        })
+        except Exception as e:
+            print(f"Erro ao fazer parse dos slots: {str(e)}")
+        
+        return slots
+    
+    def _parse_temperature(self, output):
+        """Extrai informações de temperatura"""
+        temperatures = []
+        try:
+            lines = output.split('\n')
+            for line in lines:
+                line = line.strip()
+                # Procura por linhas que contêm dados de temperatura
+                if any(prefix in line for prefix in ['nt-', 'lt:', 'acu:']):
+                    # Divide por espaços múltiplos para separar as colunas
+                    parts = [part.strip() for part in line.split() if part.strip()]
+                    if len(parts) >= 7:
+                        try:
+                            slot_name = parts[0]
+                            # Verifica se é uma linha válida de dados
+                            if not any(prefix in slot_name for prefix in ['nt-', 'lt:', 'acu:']):
+                                continue
+                                
+                            sensor_id = int(parts[1])
+                            actual_temp = int(parts[2])
+                            tca_low = int(parts[3])
+                            tca_high = int(parts[4])
+                            shutdown_low = int(parts[5])
+                            shutdown_high = int(parts[6])
+                            
+                            temperatures.append({
+                                'slot_name': slot_name,
+                                'sensor_id': sensor_id,
+                                'actual_temp': actual_temp,
+                                'tca_low': tca_low,
+                                'tca_high': tca_high,
+                                'shutdown_low': shutdown_low,
+                                'shutdown_high': shutdown_high
+                            })
+                        except (ValueError, IndexError):
+                            # Pular linhas com valores não numéricos ou insuficientes
+                            continue
+        except Exception as e:
+            print(f"Erro ao fazer parse da temperatura: {str(e)}")
+        
+        return temperatures

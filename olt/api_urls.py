@@ -21,4 +21,13 @@ urlpatterns = [
     
     # Clientes Fibra
     path('clientes-fibra/', api_views.ClienteFibraListAPIView.as_view(), name='clientes_fibra_list'),
+    
+    # Sistema OLT
+    path('olt/system-info/', api_views.OltSystemInfoAPIView.as_view(), name='olt_system_info'),
+    path('olt/slots/', api_views.OltSlotListAPIView.as_view(), name='olt_slots'),
+    path('olt/temperatures/', api_views.OltTemperatureListAPIView.as_view(), name='olt_temperatures'),
+    path('olt/sfp-diagnostics/', api_views.OltSfpDiagnosticsListAPIView.as_view(), name='olt_sfp_diagnostics'),
+    path('olt/system-stats/', api_views.olt_system_stats, name='olt_system_stats'),
+    path('olt/temperature-alerts/', api_views.olt_temperature_alerts, name='olt_temperature_alerts'),
+    path('olt/update-system-data/', api_views.update_olt_system_data, name='update_olt_system_data'),
 ]

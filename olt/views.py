@@ -1,8 +1,8 @@
 from django.http import HttpResponse
 from django.template import loader
-from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector
+from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector, OltSystemCollector
 from django.shortcuts import render, redirect
-from olt.models import ONU, ClienteFibraIxc, OltUsers
+from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
 from routeros_api import RouterOsApiPool
@@ -15,7 +15,7 @@ from .tasks import (
     update_mac_task
 )
 from django.core.paginator import Paginator
-from django.db.models import Q, FloatField, Count
+from django.db.models import Q, FloatField, Count, Avg, Max
 from django.db.models.functions import Cast
 import os
 from dotenv import load_dotenv
@@ -46,14 +46,53 @@ def home(request):
     # 5 portas com maior ocupação
     top_ports = OltUsers.objects.order_by('-users_connected')[:5]
 
+    # Informações da OLT
+    try:
+        # Informações do sistema
+        system_info = OltSystemInfo.objects.first()
+        
+        # Estatísticas dos slots
+        total_slots = OltSlot.objects.count()
+        operational_slots = OltSlot.objects.filter(
+            enabled=True, 
+            availability='available', 
+            error_status='no-error'
+        ).count()
+        
+        # Temperaturas críticas e de aviso
+        critical_temps = OltTemperature.objects.filter(actual_temp__gte=75).count()
+        warning_temps = OltTemperature.objects.filter(actual_temp__gte=70, actual_temp__lt=75).count()
+        
+        # Temperatura média
+        avg_temp = OltTemperature.objects.aggregate(avg_temp=Avg('actual_temp'))['avg_temp']
+        max_temp = OltTemperature.objects.aggregate(max_temp=Max('actual_temp'))['max_temp']
+        
+    except Exception as e:
+        print(f"Erro ao obter informações da OLT: {str(e)}")
+        system_info = None
+        total_slots = 0
+        operational_slots = 0
+        critical_temps = 0
+        warning_temps = 0
+        avg_temp = 0
+        max_temp = 0
+
     template = loader.get_template('olt/dashboard.html')
     context = {
         'onus_without_mac': onus_without_mac,
         'onus_without_client': onus_without_client,
         'clients_signal_below_27_count': clients_signal_below_27_count,
         'clients_signal_below_29_count': clients_signal_below_29_count,
-        # 'clients_signal_between_27_and_29_count': clients_signal_between_27_and_29_count,
         'top_ports': top_ports,
+        # Informações da OLT
+        'system_info': system_info,
+        'total_slots': total_slots,
+        'operational_slots': operational_slots,
+        'offline_slots': total_slots - operational_slots,
+        'critical_temps': critical_temps,
+        'warning_temps': warning_temps,
+        'avg_temp': round(avg_temp, 1) if avg_temp else 0,
+        'max_temp': max_temp or 0,
     }
     return HttpResponse(template.render(context, request))
 
@@ -137,16 +176,80 @@ def update_values(request, port, slot):
 
 @login_required
 def update_all_data(request):
-    """View para iniciar a atualização de todos os dados"""
-    # Inicia o job que fará todas as atualizações em sequência
-    main_job = update_all_data_task.delay(
+    """View para iniciar a atualização de todos os dados (incluindo OLT)"""
+    # Inicia o job que fará todas as atualizações em sequência incluindo dados da OLT
+    from olt.tasks import comprehensive_update_task
+    
+    main_job = comprehensive_update_task.delay(
         user=request.user.username,
-        menu_item='Atualizar Todos os Dados'
+        menu_item='Atualizar Todos os Dados Completo'
     )
 
-    request.session['task_message'] = 'Atualização sequencial iniciada. Acompanhe o progresso na lista de tarefas.'
+    request.session['task_message'] = 'Atualização sequencial completa iniciada (incluindo dados da OLT). Acompanhe o progresso na lista de tarefas.'
     request.session['job_id'] = main_job.id
     return redirect('olt:view_tasks')
+
+
+@login_required
+def update_olt_system_data(request):
+    """View para atualizar dados do sistema OLT"""
+    try:
+        collector = OltSystemCollector()
+        result = collector.collect_all_system_data()
+        
+        if result:
+            messages.success(request, 'Dados do sistema OLT atualizados com sucesso!')
+        else:
+            messages.error(request, 'Falha ao coletar dados da OLT')
+            
+    except Exception as e:
+        messages.error(request, f'Erro ao atualizar dados da OLT: {str(e)}')
+    
+    return redirect('olt:home')
+
+
+@login_required
+def list_temperature_alerts(request):
+    """View para listar alertas de temperatura detalhados"""
+    # Get query parameters
+    search_query = request.GET.get('search', '')
+    items_per_page = request.GET.get('per_page', 10)
+    sort_by = request.GET.get('sort', 'actual_temp')
+    
+    # Temperaturas críticas (>=75°C)
+    critical_temps = OltTemperature.objects.filter(actual_temp__gte=75)
+    
+    # Temperaturas de aviso (70-74°C)
+    warning_temps = OltTemperature.objects.filter(actual_temp__gte=70, actual_temp__lt=75)
+    
+    # Combinar ambas para a listagem
+    alert_temps = critical_temps.union(warning_temps)
+    
+    # Apply search if provided
+    if search_query:
+        alert_temps = alert_temps.filter(
+            Q(slot_name__icontains=search_query)
+        )
+    
+    # Apply sorting
+    alert_temps = alert_temps.order_by(sort_by)
+    
+    # Pagination
+    paginator = Paginator(alert_temps, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'temperatures': page_obj,
+        'critical_count': critical_temps.count(),
+        'warning_count': warning_temps.count(),
+        'title': 'Alertas de Temperatura',
+        'description': 'Lista detalhada de sensores com temperatura crítica ou de aviso',
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'sort_by': sort_by
+    }
+    return render(request, 'olt/temperature_alerts.html', context)
 
 
 @login_required

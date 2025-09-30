@@ -2,6 +2,81 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <div class="container mt-5">
+    <!-- Seção de informações da OLT -->
+    {% if system_info %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4>Informações da OLT</h4>
+        </div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-header" style="background: rgba(40,167,69,.2)">
+                    <h6>Sistema</h6>
+                </div>
+                <div class="card-body">
+                    <p class="card-text mb-1"><strong>Versão:</strong> {{ system_info.isam_release }}</p>
+                    <p class="card-text mb-0"><strong>Uptime:</strong> {{ system_info.uptime_days }} dias</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-header" style="background: rgba(23,162,184,.2)">
+                    <h6>Slots</h6>
+                </div>
+                <div class="card-body">
+                    <p class="card-text mb-1"><strong>Total:</strong> {{ total_slots }}</p>
+                    <p class="card-text mb-1"><strong>Operacionais:</strong> 
+                        <span class="text-success">{{ operational_slots }}</span>
+                    </p>
+                    <p class="card-text mb-0"><strong>Offline:</strong> 
+                        <span class="text-danger">{{ offline_slots }}</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-header" style="background: rgba(255,193,7,.2)">
+                    <h6>Temperatura</h6>
+                </div>
+                <div class="card-body">
+                    <p class="card-text mb-1"><strong>Média:</strong> {{ avg_temp }}°C</p>
+                    <p class="card-text mb-1"><strong>Máxima:</strong> {{ max_temp }}°C</p>
+                    <p class="card-text mb-0">
+                        <strong>Alertas:</strong> 
+                        <a href="{% url 'olt:list_temperature_alerts' %}" class="text-decoration-none">
+                            <span class="text-danger">{{ critical_temps }}</span> / 
+                            <span class="text-warning">{{ warning_temps }}</span>
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card">
+                <div class="card-header" style="background: rgba(108,117,125,.2)">
+                    <h6>Atualização</h6>
+                </div>
+                <div class="card-body text-center">
+                    <a href="{% url 'olt:update_olt_system_data' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-sync-alt"></i> Atualizar OLT
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <hr class="my-4">
+    {% endif %}
+
+    <!-- Seção de ONUs -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4>Informações das ONUs</h4>
+        </div>
+    </div>
     <div class="row">
         <div class="col-md-4 mb-4">
             <div class="card">
@@ -73,7 +148,9 @@
             </div>
         </div>
     </div>
-    <div class="card">
+    
+    <!-- Top 5 Portas -->
+    <div class="card mt-4">
         <div class="card-header" style="background: rgba(0,123,255,.2)">
             <h5>Top 5 Portas</h5>
         </div>
