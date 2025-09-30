@@ -1,6 +1,7 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from olt import views
+from olt.scheduler_views import scheduler_status
 
 app_name = 'olt'
 
@@ -25,6 +26,7 @@ urlpatterns = [
     path('update-mac/', views.update_mac_values, name='update_mac'),
     path('tasks/', views.view_tasks, name='view_tasks'),
     path('update-all-data/', views.update_all_data, name='update_all_data'),
+    path('scheduler-status/', scheduler_status, name='scheduler_status'),  # Nova URL para status do scheduler
     path('onus-sem-mac/', views.list_onus_without_mac, name='list_onus_without_mac'),
     path('onus-sem-cliente/', views.list_onus_without_client, name='list_onus_without_client'),
     path('onus/', views.list_onus, name='list_onus'),
