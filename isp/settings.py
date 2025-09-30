@@ -40,6 +40,7 @@ ALLOWED_IPS = [
     '172.16.0.0/12',    # Redes Docker privadas
     '192.168.0.0/16',   # Redes privadas locais
     '10.0.0.0/8',       # Redes privadas
+    '192.168.90.0/24',  # Rede local adicional
     # Adicione outros IPs conforme necessário
     # '203.0.113.0/24',  # Exemplo de range público específico
 ]

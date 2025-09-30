@@ -52,6 +52,7 @@ class IPWhitelistMiddleware:
             if ip_list:
                 # Pega o primeiro IP da lista (IP original do cliente)
                 ip = ip_list.split(',')[0].strip()
+                print(f'IP original do cliente: {ip}')
                 if ip and ip != 'unknown':
                     return ip
         
