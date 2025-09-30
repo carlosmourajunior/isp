@@ -16,3 +16,4 @@ rq>=1.15,<2.0
 djangorestframework
 djangorestframework-simplejwt
 django-filter
+whitenoise>=6.0.0
