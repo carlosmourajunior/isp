@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',') + ['177.22.126.77'] + ['177.22.126.77']
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
 
 # Lista de IPs permitidos para acessar o sistema
 # Suporta IPs individuais e ranges CIDR (ex: '192.168.1.0/24')
@@ -65,7 +65,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    # 'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - temporariamente desabilitado para debug
+    'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - reabilitado
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Whitenoise para arquivos estáticos
     'django.contrib.sessions.middleware.SessionMiddleware',
