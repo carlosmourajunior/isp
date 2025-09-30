@@ -78,3 +78,26 @@ def update_all_data_task(user=None, menu_item=None):
     queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
     
     return "Sequência de atualizações iniciada"
+
+@django_rq.job
+def hourly_update_task():
+    """Task para atualização automática a cada hora"""
+    from datetime import datetime
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+    logger.info(f"Iniciando atualização automática às {current_time}")
+    
+    # Executa a atualização completa como usuário automático
+    queue = get_queue('default')
+    job = queue.enqueue(
+        update_all_data_task, 
+        user="Sistema Automático", 
+        menu_item="Atualização Automática Horária",
+        job_timeout=3600  # 1 hora de timeout
+    )
+    
+    logger.info(f"Atualização automática agendada com ID: {job.id}")
+    return f"Atualização automática iniciada às {current_time} - Job ID: {job.id}"
