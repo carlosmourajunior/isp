@@ -130,6 +130,112 @@ Authorization: Bearer <access_token>
 **Parâmetros de filtro:**
 - `search`: Buscar por nome, MAC ou endereço
 
+### 8. Informações do sistema OLT
+```
+GET /api/olt/system-info/
+Authorization: Bearer <access_token>
+```
+
+**Resposta:**
+```json
+{
+    "id": 1,
+    "isam_release": "R6.2.03",
+    "uptime_days": 958,
+    "uptime_hours": 12,
+    "uptime_minutes": 26,
+    "uptime_seconds": 47,
+    "uptime_raw": "System Up Time         : 958 days, 12:26:47.46 (hr:min:sec)",
+    "total_uptime_hours": 23004,
+    "last_updated": "2025-09-30T16:30:00Z"
+}
+```
+
+### 9. Listar slots da OLT
+```
+GET /api/olt/slots/
+Authorization: Bearer <access_token>
+```
+
+**Parâmetros de filtro:**
+- `enabled`: Filtrar por slots habilitados (true/false)
+- `availability`: Filtrar por disponibilidade
+- `actual_type`: Filtrar por tipo
+
+### 10. Listar temperaturas da OLT
+```
+GET /api/olt/temperatures/
+Authorization: Bearer <access_token>
+```
+
+**Parâmetros de filtro:**
+- `slot_name`: Filtrar por slot específico
+
+### 11. Estatísticas completas do sistema OLT
+```
+GET /api/olt/system-stats/
+Authorization: Bearer <access_token>
+```
+
+**Resposta:**
+```json
+{
+    "system_info": {
+        "isam_release": "R6.2.03",
+        "uptime_days": 958,
+        "total_uptime_hours": 23004
+    },
+    "slots_stats": {
+        "total_slots": 9,
+        "operational_slots": 4,
+        "offline_slots": 5,
+        "operational_percentage": 44.44,
+        "slots_by_type": [
+            {"actual_type": "fglt-b", "count": 2},
+            {"actual_type": "ngfc-f", "count": 1}
+        ]
+    },
+    "temperature_stats": {
+        "critical_temperatures": 1,
+        "warning_temperatures": 2,
+        "normal_temperatures": 14,
+        "average_temperature": 54.2,
+        "max_temperature": 75,
+        "min_temperature": 31,
+        "temperature_by_slot": [
+            {
+                "slot_name": "nt-a",
+                "avg_temp": 42.0,
+                "max_temp": 52,
+                "sensor_count": 3
+            }
+        ]
+    }
+}
+```
+
+### 12. Alertas de temperatura
+```
+GET /api/olt/temperature-alerts/
+Authorization: Bearer <access_token>
+```
+
+### 13. Atualizar dados do sistema OLT
+```
+POST /api/olt/update-system-data/
+Authorization: Bearer <access_token>
+```
+
+**Resposta:**
+```json
+{
+    "message": "Dados do sistema OLT atualizados com sucesso",
+    "system_info": {...},
+    "slots_count": 9,
+    "temperatures_count": 17
+}
+```
+
 ## Códigos de Resposta
 
 - **200 OK**: Sucesso
@@ -164,16 +270,28 @@ Authorization: Bearer <access_token>
 
 ```bash
 # 1. Obter token
-curl -X POST http://localhost:8000/api/auth/login/ \
+curl -X POST http://177.22.126.77:8000/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "password"}'
 
 # 2. Usar o token para acessar dados
-curl -X GET http://localhost:8000/api/onus/ \
+curl -X GET http://177.22.126.77:8000/api/onus/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 3. Filtrar ONUs online
-curl -X GET "http://localhost:8000/api/onus/?oper_state=up" \
+curl -X GET "http://177.22.126.77:8000/api/onus/?oper_state=up" \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+# 4. Obter informações do sistema OLT
+curl -X GET http://177.22.126.77:8000/api/olt/system-info/ \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+# 5. Obter estatísticas completas da OLT
+curl -X GET http://177.22.126.77:8000/api/olt/system-stats/ \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+# 6. Atualizar dados do sistema OLT
+curl -X POST http://177.22.126.77:8000/api/olt/update-system-data/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 ```
 
@@ -183,7 +301,7 @@ curl -X GET "http://localhost:8000/api/onus/?oper_state=up" \
 import requests
 
 # 1. Obter token
-login_url = "http://localhost:8000/api/auth/login/"
+login_url = "http://177.22.126.77:8000/api/auth/login/"
 login_data = {"username": "admin", "password": "password"}
 response = requests.post(login_url, json=login_data)
 tokens = response.json()
@@ -193,11 +311,34 @@ access_token = tokens['access']
 headers = {"Authorization": f"Bearer {access_token}"}
 
 # 3. Buscar ONUs
-onus_url = "http://localhost:8000/api/onus/"
+onus_url = "http://177.22.126.77:8000/api/onus/"
 onus_response = requests.get(onus_url, headers=headers)
 onus_data = onus_response.json()
 
 print(f"Total de ONUs: {onus_data['count']}")
 for onu in onus_data['results']:
     print(f"ONU {onu['serial']}: {onu['oper_state']}")
+
+# 4. Obter informações do sistema OLT
+system_url = "http://177.22.126.77:8000/api/olt/system-info/"
+system_response = requests.get(system_url, headers=headers)
+system_data = system_response.json()
+
+print(f"Versão OLT: {system_data['isam_release']}")
+print(f"Uptime: {system_data['uptime_days']} dias")
+
+# 5. Obter estatísticas completas da OLT
+stats_url = "http://177.22.126.77:8000/api/olt/system-stats/"
+stats_response = requests.get(stats_url, headers=headers)
+stats_data = stats_response.json()
+
+print(f"Slots operacionais: {stats_data['slots_stats']['operational_slots']}")
+print(f"Temperatura média: {stats_data['temperature_stats']['average_temperature']}°C")
+
+# 6. Atualizar dados do sistema OLT
+update_url = "http://177.22.126.77:8000/api/olt/update-system-data/"
+update_response = requests.post(update_url, headers=headers)
+update_data = update_response.json()
+
+print(f"Atualização: {update_data['message']}")
 ```

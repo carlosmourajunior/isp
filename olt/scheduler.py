@@ -54,22 +54,22 @@ def stop_scheduler():
         logger.info("Scheduler parado")
 
 def schedule_hourly_update():
-    """Agenda uma atualização completa na fila do RQ"""
+    """Agenda uma atualização completa na fila do RQ (incluindo dados da OLT)"""
     try:
         queue = get_queue('default')
         current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         
         # Importa aqui para evitar import circular
-        from olt.tasks import update_all_data_task
+        from olt.tasks import comprehensive_update_task
         
         job = queue.enqueue(
-            update_all_data_task,
+            comprehensive_update_task,
             user="Sistema Automático",
-            menu_item="Atualização Automática Horária",
+            menu_item="Atualização Automática Horária Completa",
             job_timeout=3600  # 1 hora de timeout
         )
         
-        logger.info(f"🔄 Atualização automática agendada às {current_time} - Job ID: {job.id}")
+        logger.info(f"🔄 Atualização automática completa (incluindo OLT) agendada às {current_time} - Job ID: {job.id}")
         
     except Exception as e:
         logger.error(f"❌ Erro ao agendar atualização automática: {e}")

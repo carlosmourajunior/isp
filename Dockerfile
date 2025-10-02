@@ -9,9 +9,19 @@ ENV PYTHONUNBUFFERED 1
 # Set work directory
 WORKDIR /code
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y netcat && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY ./requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy project
 COPY . .
+
+# Copy entrypoint script
+COPY entrypoint.sh /code/entrypoint.sh
+RUN chmod +x /code/entrypoint.sh
+
+# Set entrypoint
+ENTRYPOINT ["/code/entrypoint.sh"]
