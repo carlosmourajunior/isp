@@ -4,19 +4,23 @@ services:
   db:
     image: postgres:13
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - ./data/postgres:/var/lib/postgresql/data/
     environment:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:
       - "5432:5432"
+    restart: unless-stopped
 
   web:
     build: .
     command: python /code/manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/code
+      - ./data/media:/code/media
+      - ./data/staticfiles:/code/staticfiles
+      - ./data/logs:/code/logs
     ports:
       - "8000:8000"
     depends_on:
@@ -26,20 +30,41 @@ services:
       - .env
     environment:
       - DJANGO_SETTINGS_MODULE=isp.settings
+    restart: unless-stopped
 
   redis:
     image: redis:7.2
-    command: redis-server --save "" --appendonly no
+    command: redis-server --save 60 1 --appendonly yes --appendfsync everysec
     ports:
       - "6380:6379"
     volumes:
-      - redis_data:/data
+      - ./data/redis:/data
+    restart: unless-stopped
 
   rq_worker:
     build: .
     command: python /code/manage.py rqworker default
     volumes:
       - .:/code
+      - ./data/media:/code/media
+      - ./data/staticfiles:/code/staticfiles
+      - ./data/logs:/code/logs
+    depends_on:
+      - redis
+      - db
+      - web
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=isp.settings
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    command: python /code/manage.py run_scheduler --daemon
+    volumes:
+      - .:/code
+      - ./data/logs:/code/logs
     depends_on:
       - redis
       - db
@@ -47,7 +72,4 @@ services:
       - .env
     environment:
       - DJANGO_SETTINGS_MODULE=isp.settings
-
-volumes:
-  postgres_data:
-  redis_data:
+    restart: unless-stopped
