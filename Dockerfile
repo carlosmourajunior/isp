@@ -10,7 +10,10 @@ ENV PYTHONUNBUFFERED 1
 WORKDIR /code
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y netcat && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    netcat \
+    dos2unix \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 COPY ./requirements.txt .
@@ -19,9 +22,10 @@ RUN pip install -r requirements.txt
 # Copy project
 COPY . .
 
-# Copy entrypoint script
+# Copy entrypoint script and set permissions
 COPY entrypoint.sh /code/entrypoint.sh
-RUN chmod +x /code/entrypoint.sh
+RUN dos2unix /code/entrypoint.sh && \
+    chmod +x /code/entrypoint.sh
 
 # Set entrypoint
 ENTRYPOINT ["/code/entrypoint.sh"]
