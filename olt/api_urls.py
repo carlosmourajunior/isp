@@ -1,10 +1,27 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views
+from . import api_views, health_views, prometheus_views, alert_views, user_activity_views
 
 app_name = 'api'
 
 urlpatterns = [
+    # Health Checks e Monitoramento
+    path('health/', health_views.health_check, name='health_check'),
+    path('health/detailed/', health_views.health_detailed, name='health_detailed'),
+    path('health/readiness/', health_views.readiness, name='readiness'),
+    path('health/liveness/', health_views.liveness, name='liveness'),
+    path('metrics/', prometheus_views.prometheus_metrics, name='prometheus_metrics'),
+    
+    # Alertas
+    path('alerts/webhook', alert_views.alertmanager_webhook, name='alertmanager_webhook'),
+    path('alerts/status/', alert_views.alert_status, name='alert_status'),
+    path('alerts/test/', alert_views.test_alert, name='test_alert'),
+    
+    # Monitoramento de Usuários (Admin apenas)
+    path('monitoring/users/active/', user_activity_views.active_users_list, name='active_users_list'),
+    path('monitoring/users/<int:user_id>/activity/', user_activity_views.user_activity_details, name='user_activity_details'),
+    path('monitoring/api/usage-stats/', user_activity_views.api_usage_stats, name='api_usage_stats'),
+    
     # Autenticação JWT
     path('auth/login/', api_views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

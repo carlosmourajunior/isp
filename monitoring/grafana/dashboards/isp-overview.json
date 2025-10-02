@@ -1,0 +1,93 @@
+{
+  "id": null,
+  "title": "ISP System Overview",
+  "tags": ["isp"],
+  "style": "dark",
+  "timezone": "",
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requisições por Segundo",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(django_requests_total[5m])",
+          "legendFormat": "{{method}} {{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Total de Requisições",
+      "type": "singlestat",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(django_requests_total)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Usuários Ativos",
+      "type": "singlestat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "active_users_total"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Requisições por Usuário",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 8},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(api_requests_by_user_total[5m])",
+          "legendFormat": "{{username}} - {{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Top Usuários Mais Ativos",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "topk(5, sum by (username) (api_requests_by_user_total))",
+          "legendFormat": "{{username}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Tempo de Resposta por Usuário",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(api_users_response_time_seconds_bucket[5m])) * 1000",
+          "legendFormat": "{{username}} - 95th percentile"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 16,
+  "version": 1,
+  "links": []
+}

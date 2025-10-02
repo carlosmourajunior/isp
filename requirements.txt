@@ -17,3 +17,5 @@ djangorestframework
 djangorestframework-simplejwt
 django-filter
 whitenoise>=6.0.0
+psutil>=5.9.0
+prometheus-client>=0.16.0

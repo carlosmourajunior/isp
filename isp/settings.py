@@ -67,6 +67,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - reabilitado
+    'olt.prometheus_views.PrometheusMiddleware',  # Métricas Prometheus
+    'isp.monitoring_middleware.MonitoringMiddleware',  # Monitoramento de APIs
+    'isp.monitoring_middleware.MetricsCollectionMiddleware',  # Coleta de métricas
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Whitenoise para arquivos estáticos
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -196,8 +199,19 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
+            'format': '[{asctime}] {levelname} {name}: {message}',
             'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'simple': {
+            'format': '[{asctime}] {levelname}: {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'api_access': {
+            'format': '[{asctime}] API_ACCESS: {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
         },
     },
     'handlers': {
@@ -205,16 +219,87 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
+        'file_general': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'file_api': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'api_access.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 10,
+            'formatter': 'api_access',
+        },
+        'file_security': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'security.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+        },
+        'file_performance': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'performance.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'file_user_activity': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'user_activity.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file_general'],
             'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console', 'file_general'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console', 'file_security'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'olt.api_access': {
+            'handlers': ['file_api', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'olt.security': {
+            'handlers': ['file_security', 'console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'olt.performance': {
+            'handlers': ['file_performance'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'olt.user_activity': {
+            'handlers': ['file_user_activity'],
+            'level': 'INFO',
+            'propagate': False,
         },
         'rq.worker': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file_general'],
             'level': 'INFO',
+            'propagate': False,
         },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
     }
 }
 
