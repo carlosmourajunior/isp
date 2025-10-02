@@ -24,8 +24,7 @@ COPY . .
 
 # Copy entrypoint script and set permissions
 COPY entrypoint.sh /code/entrypoint.sh
-RUN dos2unix /code/entrypoint.sh && \
-    chmod +x /code/entrypoint.sh
+RUN chmod +x /code/entrypoint.sh
 
 # Set entrypoint
-ENTRYPOINT ["/code/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/code/entrypoint.sh"]
