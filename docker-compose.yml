@@ -91,27 +91,28 @@ services:
     networks:
       - app-network
 
-  scheduler:
-    build: .
-    entrypoint: []
-    command: python /code/run_scheduler.py
-    volumes:
-      - .:/code
-      - ./data/logs:/code/logs
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-      web:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      - DJANGO_SETTINGS_MODULE=isp.settings
-    restart: unless-stopped
-    networks:
-      - app-network
+  # SCHEDULER DESABILITADO POR SEGURANÇA
+  # scheduler:
+  #   build: .
+  #   entrypoint: []
+  #   command: python /code/run_scheduler.py
+  #   volumes:
+  #     - .:/code
+  #     - ./data/logs:/code/logs
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #     db:
+  #       condition: service_healthy
+  #     web:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - DJANGO_SETTINGS_MODULE=isp.settings
+  #   restart: unless-stopped
+  #   networks:
+  #     - app-network
 
   # ==================== MONITORAMENTO ====================
   prometheus:

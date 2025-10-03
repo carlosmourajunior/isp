@@ -26,17 +26,18 @@ def start_scheduler():
     try:
         scheduler = BackgroundScheduler(daemon=True)
         
+        # SCHEDULER AUTOMÁTICO DESABILITADO POR SEGURANÇA
         # Adiciona job para execução a cada hora
-        scheduler.add_job(
-            func=schedule_hourly_update,
-            trigger=CronTrigger(minute=0),  # A cada hora no minuto 0
-            id='hourly_update',
-            name='Atualização Automática Horária',
-            replace_existing=True
-        )
+        # scheduler.add_job(
+        #     func=schedule_hourly_update,
+        #     trigger=CronTrigger(minute=0),  # A cada hora no minuto 0
+        #     id='hourly_update',
+        #     name='Atualização Automática Horária',
+        #     replace_existing=True
+        # )
         
         scheduler.start()
-        logger.info("✅ Scheduler iniciado - Atualizações automáticas configuradas para executar a cada hora")
+        logger.info("✅ Scheduler iniciado - Atualizações automáticas DESABILITADAS por segurança")
         
         # Registra função para parar o scheduler ao fechar a aplicação
         atexit.register(stop_scheduler)
@@ -54,37 +55,42 @@ def stop_scheduler():
         logger.info("Scheduler parado")
 
 def schedule_hourly_update():
-    """Agenda uma atualização completa na fila do RQ (incluindo dados da OLT)"""
-    try:
-        # Força fechamento de conexões ociosas do Django antes de agendar
-        from django.db import connections
-        for conn in connections.all():
-            conn.close()
-        
-        queue = get_queue('default')
-        current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        # Importa aqui para evitar import circular
-        from olt.tasks import comprehensive_update_task
-        
-        job = queue.enqueue(
-            comprehensive_update_task,
-            user="Sistema Automático",
-            menu_item="Atualização Automática Horária Completa",
-            job_timeout=3600  # 1 hora de timeout
-        )
-        
-        logger.info(f"🔄 Atualização automática completa (incluindo OLT) agendada às {current_time} - Job ID: {job.id}")
-        
-    except Exception as e:
-        logger.error(f"❌ Erro ao agendar atualização automática: {e}")
-        # Em caso de erro, tenta fechar todas as conexões e limpar
-        try:
-            from django.db import connections
-            for conn in connections.all():
-                conn.close()
-        except:
-            pass
+    """FUNÇÃO DESABILITADA - Anteriormente agendava atualização completa na fila do RQ"""
+    logger.warning("⚠️ schedule_hourly_update foi chamada mas está DESABILITADA por segurança")
+    logger.info("💡 Para executar atualizações, use a interface web ou API manual")
+    return "Atualização automática desabilitada por segurança"
+    
+    # CÓDIGO ORIGINAL COMENTADO POR SEGURANÇA:
+    # try:
+    #     # Força fechamento de conexões ociosas do Django antes de agendar
+    #     from django.db import connections
+    #     for conn in connections.all():
+    #         conn.close()
+    #     
+    #     queue = get_queue('default')
+    #     current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    #     
+    #     # Importa aqui para evitar import circular
+    #     from olt.tasks import comprehensive_update_task
+    #     
+    #     job = queue.enqueue(
+    #         comprehensive_update_task,
+    #         user="Sistema Automático",
+    #         menu_item="Atualização Automática Horária Completa",
+    #         job_timeout=3600  # 1 hora de timeout
+    #     )
+    #     
+    #     logger.info(f"🔄 Atualização automática completa (incluindo OLT) agendada às {current_time} - Job ID: {job.id}")
+    #     
+    # except Exception as e:
+    #     logger.error(f"❌ Erro ao agendar atualização automática: {e}")
+    #     # Em caso de erro, tenta fechar todas as conexões e limpar
+    #     try:
+    #         from django.db import connections
+    #         for conn in connections.all():
+    #             conn.close()
+    #     except:
+    #         pass
 
 def get_scheduler_status():
     """Retorna o status do scheduler"""

@@ -37,6 +37,9 @@ if [ "$1" = "python" ] && [ "$2" = "/code/manage.py" ] && [ "$3" = "runserver" ]
     echo "Executando migrations..."
     python manage.py migrate --noinput || echo "Erro nas migrations"
     
+    echo "Verificando se migrações foram aplicadas corretamente..."
+    python manage.py showmigrations --plan | tail -10
+    
     echo "Coletando arquivos estáticos..."
     python manage.py collectstatic --noinput || echo "Erro no collectstatic"
     
