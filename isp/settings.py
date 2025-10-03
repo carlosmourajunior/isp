@@ -115,6 +115,11 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
+        'CONN_MAX_AGE': 60,  # Conexões reutilizáveis por 60 segundos
+        'OPTIONS': {
+            'connect_timeout': 20,
+            'options': '-c statement_timeout=300000'  # 5 minutos timeout
+        },
     }
 }
 

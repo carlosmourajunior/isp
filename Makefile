@@ -197,11 +197,21 @@ restore: show_env ## Restaurar backup do banco (use: make restore FILE=backup.sq
 
 # ==================== LIMPEZA ====================
 
-clean: show_env ## Limpar containers, volumes e imagens não utilizadas
-	@echo "$(RED)🧹 Limpando sistema...$(RESET)"
+clean: show_env ## Limpar containers e imagens (PRESERVA VOLUMES DE DADOS)
+	@echo "$(RED)🧹 Limpando sistema (PRESERVANDO DADOS)...$(RESET)"
+	@echo "$(YELLOW)⚠️  Parando containers mas MANTENDO volumes de dados...$(RESET)"
+	@docker-compose ${DOCKER_COMPOSE_FILE} down
+	@docker system prune -f
+	@echo "$(GREEN)✅ Limpeza concluída! (Dados preservados)$(RESET)"
+
+clean-all: show_env ## ⚠️ PERIGOSO: Limpar TUDO incluindo volumes de dados
+	@echo "$(RED)⚠️ ⚠️ ⚠️  ATENÇÃO: ESTA OPERAÇÃO VAI APAGAR TODOS OS DADOS! ⚠️ ⚠️ ⚠️$(RESET)"
+	@echo "$(RED)Pressione Ctrl+C nos próximos 10 segundos para cancelar...$(RESET)"
+	@sleep 10
+	@echo "$(RED)🧹 Limpando sistema INCLUINDO VOLUMES DE DADOS...$(RESET)"
 	@docker-compose ${DOCKER_COMPOSE_FILE} down -v
 	@docker system prune -f
-	@echo "$(GREEN)✅ Limpeza concluída!$(RESET)"
+	@echo "$(GREEN)✅ Limpeza COMPLETA concluída! (TODOS OS DADOS FORAM PERDIDOS)$(RESET)"
 
 clean-logs: ## Limpar logs antigos
 	@echo "$(YELLOW)🧹 Limpando logs antigos...$(RESET)"

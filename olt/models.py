@@ -81,6 +81,7 @@ class ClienteFibraIxc(models.Model):
     longitude = models.CharField(max_length=50, blank=True, null=True)
     endereco = models.TextField(blank=True, null=True)
     id_caixa_ftth = models.CharField(max_length=50, blank=True, null=True)
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
 
     class Meta:
         verbose_name = "Cliente Fibra"
@@ -128,6 +129,7 @@ class OltSlot(models.Model):
     error_status = models.CharField(max_length=100, verbose_name="Status de Erro")
     availability = models.CharField(max_length=50, verbose_name="Disponibilidade")
     restart_count = models.IntegerField(verbose_name="Contador de Reinicializações", default=0)
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
     
     # Timestamp da última atualização
     last_updated = models.DateTimeField(auto_now=True, verbose_name="Última Atualização")
@@ -156,6 +158,7 @@ class OltTemperature(models.Model):
     tca_high = models.IntegerField(verbose_name="TCA Alto (°C)")
     shutdown_low = models.IntegerField(verbose_name="Shutdown Baixo (°C)")
     shutdown_high = models.IntegerField(verbose_name="Shutdown Alto (°C)")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
     
     # Timestamp da última atualização
     last_updated = models.DateTimeField(auto_now=True, verbose_name="Última Atualização")

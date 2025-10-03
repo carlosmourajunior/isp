@@ -56,6 +56,11 @@ def stop_scheduler():
 def schedule_hourly_update():
     """Agenda uma atualização completa na fila do RQ (incluindo dados da OLT)"""
     try:
+        # Força fechamento de conexões ociosas do Django antes de agendar
+        from django.db import connections
+        for conn in connections.all():
+            conn.close()
+        
         queue = get_queue('default')
         current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         
@@ -73,6 +78,13 @@ def schedule_hourly_update():
         
     except Exception as e:
         logger.error(f"❌ Erro ao agendar atualização automática: {e}")
+        # Em caso de erro, tenta fechar todas as conexões e limpar
+        try:
+            from django.db import connections
+            for conn in connections.all():
+                conn.close()
+        except:
+            pass
 
 def get_scheduler_status():
     """Retorna o status do scheduler"""

@@ -17,20 +17,34 @@ def update_clientes():
 
     total_de_paginas = int(data['total'])/100
 
-    ClienteFibraIxc.objects.all().delete()
-    for page in range(1, int(total_de_paginas+1)):
-        response = search_ixc_page(page)
-        data = response.json()
+    # Usar transação atômica para evitar perda de dados
+    from django.db import transaction
+    with transaction.atomic():
+        # Marcar todos como inativos primeiro
+        ClienteFibraIxc.objects.all().update(is_active=False)
         
-        for registro in data['registros']:
-            ClienteFibraIxc.objects.create(
-                mac=registro['mac'],
-                nome=registro['nome'],
-                latitude=registro.get('latitude', ''),
-                longitude=registro.get('longitude', ''),
-                endereco=f"{registro.get('endereco', '')}, {registro.get('numero', '')}, {registro.get('bairro', '')}, {registro.get('cidade', '')}",
-                id_caixa_ftth=registro.get('id_caixa_ftth', '')
-            )
+        for page in range(1, int(total_de_paginas+1)):
+            response = search_ixc_page(page)
+            data = response.json()
+            
+            for registro in data['registros']:
+                cliente_data = {
+                    'mac': registro['mac'],
+                    'nome': registro['nome'],
+                    'latitude': registro.get('latitude', ''),
+                    'longitude': registro.get('longitude', ''),
+                    'endereco': f"{registro.get('endereco', '')}, {registro.get('numero', '')}, {registro.get('bairro', '')}, {registro.get('cidade', '')}",
+                    'id_caixa_ftth': registro.get('id_caixa_ftth', ''),
+                    'is_active': True
+                }
+                ClienteFibraIxc.objects.update_or_create(
+                    mac=registro['mac'],
+                    defaults=cliente_data
+                )
+        
+        # Remover apenas os que realmente não existem mais
+        # (opcional - pode manter histórico marcando como inativo)
+        # ClienteFibraIxc.objects.filter(is_active=False).delete()
 
     onus = ONU.objects.all()
     for onu in onus:

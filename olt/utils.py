@@ -400,14 +400,25 @@ class OltSystemCollector:
             output = net_connect.send_command("show equipment slot")
             slots_data = self._parse_slots(output)
             
-            # Limpar dados antigos
-            OltSlot.objects.all().delete()
+            # Usar transação atômica para evitar perda de dados
+            from django.db import transaction
+            with transaction.atomic():
+                # Marcar todos como inativos primeiro
+                OltSlot.objects.all().update(is_active=False)
+                
+                # Inserir/atualizar novos dados
+                for slot_data in slots_data:
+                    slot_data['is_active'] = True
+                    OltSlot.objects.update_or_create(
+                        slot_name=slot_data.get('slot_name'),
+                        defaults=slot_data
+                    )
+                
+                # Remover apenas os que realmente não existem mais
+                # (opcional - pode manter histórico)
+                # OltSlot.objects.filter(is_active=False).delete()
             
-            # Inserir novos dados
-            for slot_data in slots_data:
-                OltSlot.objects.create(**slot_data)
-            
-            return OltSlot.objects.all()
+            return OltSlot.objects.filter(is_active=True)
             
         except Exception as e:
             print(f"Erro ao coletar informações dos slots: {str(e)}")
@@ -422,12 +433,26 @@ class OltSystemCollector:
             output = net_connect.send_command("show equipment temperature")
             temp_data = self._parse_temperature(output)
             
-            # Limpar dados antigos
-            OltTemperature.objects.all().delete()
+            # Usar transação atômica para evitar perda de dados
+            from django.db import transaction
+            with transaction.atomic():
+                # Marcar todos como inativos primeiro
+                OltTemperature.objects.all().update(is_active=False)
+                
+                # Inserir/atualizar novos dados
+                for temp in temp_data:
+                    temp['is_active'] = True
+                    OltTemperature.objects.update_or_create(
+                        slot_name=temp.get('slot_name'),
+                        sensor_id=temp.get('sensor_id'),
+                        defaults=temp
+                    )
+                
+                # Remover apenas os que realmente não existem mais
+                # (opcional - pode manter histórico)
+                # OltTemperature.objects.filter(is_active=False).delete()
             
-            # Inserir novos dados
-            for temp in temp_data:
-                OltTemperature.objects.create(**temp)
+            return OltTemperature.objects.filter(is_active=True)
             
             return OltTemperature.objects.all()
             

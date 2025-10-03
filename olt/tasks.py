@@ -147,6 +147,12 @@ def update_olt_system_task(user=None, menu_item=None):
 @django_rq.job
 def comprehensive_update_task(user=None, menu_item=None):
     """Task para atualização completa incluindo dados da OLT"""
+    from django.db import connections
+    
+    # Fecha conexões antes de iniciar
+    for conn in connections.all():
+        conn.close()
+    
     queue = get_queue('default')
     job = rq.get_current_job()
     add_metadata(job, user, menu_item)
@@ -154,11 +160,24 @@ def comprehensive_update_task(user=None, menu_item=None):
     job.meta['current_step'] = "Iniciando atualização completa"
     job.save_meta()
     
-    # Executa as tasks em sequência
-    queue.enqueue(update_olt_system_task, user=user, menu_item="Atualização Sistema OLT", job_timeout=300, at_front=False)
-    queue.enqueue(update_port_occupation_task, user=user, menu_item="Atualização de Portas", job_timeout=1200, at_front=False)
-    queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=False)
-    queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=False)
-    queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
+    try:
+        # Executa as tasks em sequência com intervalos menores
+        queue.enqueue(update_olt_system_task, user=user, menu_item="Atualização Sistema OLT", job_timeout=300, at_front=False)
+        sleep(2)  # Pequena pausa entre enqueue
+        queue.enqueue(update_port_occupation_task, user=user, menu_item="Atualização de Portas", job_timeout=1200, at_front=False)
+        sleep(2)
+        queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=False)
+        sleep(2)
+        queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=False)
+        sleep(2)
+        queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
+        
+        return "Sequência de atualizações completa iniciada"
     
-    return "Sequência de atualizações completa iniciada"
+    except Exception as e:
+        job.meta['current_step'] = f"Erro: {str(e)}"
+        job.save_meta()
+        # Fecha conexões em caso de erro
+        for conn in connections.all():
+            conn.close()
+        raise
