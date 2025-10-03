@@ -132,7 +132,7 @@ def critical_users_list(request):
         'items_per_page': items_per_page,
         'sort_by': sort_by
     }
-    return render(request, 'olt/home.html', context)
+    return render(request, 'olt/port_occupation.html', context)
 
 
 def update_users(request):

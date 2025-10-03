@@ -1,0 +1,227 @@
+{% extends 'base.html' %}
+{% load define_action %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ title }}</h2>
+    <p class="text-muted">{{ description }}</p>
+
+    <!-- Busca e Paginação -->
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <form method="get" class="form-inline">
+                <input type="text" name="search" class="form-control mr-2" placeholder="Buscar slot ou porta..." value="{{ search_query }}">
+                <select name="per_page" class="form-control mr-2" onchange="this.form.submit()">
+                    <option value="10" {% if items_per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if items_per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if items_per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if items_per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+                <select name="sort" class="form-control mr-2" onchange="this.form.submit()">
+                    <option value="slot" {% if sort_by == 'slot' %}selected{% endif %}>Ordenar por Slot</option>
+                    <option value="port" {% if sort_by == 'port' %}selected{% endif %}>Ordenar por Porta</option>
+                    <option value="-users_connected" {% if sort_by == '-users_connected' %}selected{% endif %}>Maior Ocupação</option>
+                    <option value="users_connected" {% if sort_by == 'users_connected' %}selected{% endif %}>Menor Ocupação</option>
+                </select>
+                <input type="hidden" name="search" value="{{ search_query }}">
+                <button type="submit" class="btn btn-primary">Buscar</button>
+            </form>
+        </div>
+        <div class="col-md-6 text-right">
+            <span class="badge badge-info">Total de Portas: {{ olt_users.paginator.count }}</span>
+            <a href="{% url 'olt:update_users' %}" class="btn btn-success btn-sm ml-2">
+                <i class="fas fa-sync-alt"></i> Atualizar Dados
+            </a>
+        </div>
+    </div>
+
+    <!-- Tabela de Ocupação de Portas -->
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="thead-dark">
+                <tr>
+                    <th>
+                        <a href="?sort=slot&search={{ search_query }}&per_page={{ items_per_page }}" class="text-white">
+                            Slot {% if sort_by == 'slot' %}▲{% elif sort_by == '-slot' %}▼{% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="?sort=port&search={{ search_query }}&per_page={{ items_per_page }}" class="text-white">
+                            Porta {% if sort_by == 'port' %}▲{% elif sort_by == '-port' %}▼{% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="?sort=-users_connected&search={{ search_query }}&per_page={{ items_per_page }}" class="text-white">
+                            Usuários Conectados {% if sort_by == '-users_connected' %}▼{% elif sort_by == 'users_connected' %}▲{% endif %}
+                        </a>
+                    </th>
+                    <th>Identificação</th>
+                    <th>Última Atualização</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for porta in olt_users %}
+                <tr>
+                    <td><span class="badge badge-secondary">{{ porta.slot }}</span></td>
+                    <td><span class="badge badge-info">{{ porta.port }}</span></td>
+                    <td>
+                        {% if porta.users_connected >= 100 %}
+                            <span class="badge badge-danger">{{ porta.users_connected }}</span>
+                        {% elif porta.users_connected >= 80 %}
+                            <span class="badge badge-warning">{{ porta.users_connected }}</span>
+                        {% elif porta.users_connected >= 50 %}
+                            <span class="badge badge-success">{{ porta.users_connected }}</span>
+                        {% else %}
+                            <span class="badge badge-light">{{ porta.users_connected }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <small class="text-muted">1/1/{{ porta.slot }}/{{ porta.port }}</small>
+                    </td>
+                    <td>
+                        <small class="text-muted">
+                            {{ porta.last_updated|date:"d/m/Y H:i" }}
+                        </small>
+                    </td>
+                    <td>
+                        {% if porta.users_connected >= 120 %}
+                            <span class="badge badge-danger">Lotada</span>
+                        {% elif porta.users_connected >= 100 %}
+                            <span class="badge badge-warning">Quase Cheia</span>
+                        {% elif porta.users_connected >= 50 %}
+                            <span class="badge badge-success">Normal</span>
+                        {% elif porta.users_connected > 0 %}
+                            <span class="badge badge-info">Baixa</span>
+                        {% else %}
+                            <span class="badge badge-light">Vazia</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{% url 'olt:get_itens_to_port' porta.slot porta.port %}" 
+                           class="btn btn-sm btn-outline-primary" 
+                           title="Ver ONUs desta porta">
+                            <i class="fas fa-eye"></i> Detalhes
+                        </a>
+                        <a href="{% url 'olt:update_values' porta.port porta.slot %}" 
+                           class="btn btn-sm btn-outline-success" 
+                           title="Atualizar esta porta">
+                            <i class="fas fa-sync-alt"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted">
+                        {% if search_query %}
+                            Nenhuma porta encontrada para "{{ search_query }}".
+                        {% else %}
+                            Nenhum dado de ocupação de portas disponível. 
+                            <a href="{% url 'olt:update_users' %}" class="btn btn-sm btn-success">
+                                Clique aqui para atualizar
+                            </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Estatísticas Resumidas -->
+    {% if olt_users %}
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-danger">Portas Lotadas</h5>
+                    <h3 class="text-danger">
+                        {% for porta in olt_users %}
+                            {% if porta.users_connected >= 120 %}{{ forloop.counter0|add:1 }}{% endif %}
+                        {% empty %}0{% endfor %}
+                    </h3>
+                    <small class="text-muted">≥ 120 usuários</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-warning">Quase Cheias</h5>
+                    <h3 class="text-warning">
+                        {% for porta in olt_users %}
+                            {% if porta.users_connected >= 100 and porta.users_connected < 120 %}{{ forloop.counter0|add:1 }}{% endif %}
+                        {% empty %}0{% endfor %}
+                    </h3>
+                    <small class="text-muted">100-119 usuários</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-success">Ocupação Normal</h5>
+                    <h3 class="text-success">
+                        {% for porta in olt_users %}
+                            {% if porta.users_connected >= 50 and porta.users_connected < 100 %}{{ forloop.counter0|add:1 }}{% endif %}
+                        {% empty %}0{% endfor %}
+                    </h3>
+                    <small class="text-muted">50-99 usuários</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-light">Pouco Usadas</h5>
+                    <h3 class="text-info">
+                        {% for porta in olt_users %}
+                            {% if porta.users_connected < 50 %}{{ forloop.counter0|add:1 }}{% endif %}
+                        {% empty %}0{% endfor %}
+                    </h3>
+                    <small class="text-muted">< 50 usuários</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Paginação -->
+    {% if olt_users.has_other_pages %}
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if olt_users.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">&laquo; Primeira</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ olt_users.previous_page_number }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">Anterior</a>
+                </li>
+            {% endif %}
+
+            {% for num in olt_users.paginator.page_range %}
+                {% if olt_users.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > olt_users.number|add:'-3' and num < olt_users.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">{{ num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+
+            {% if olt_users.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ olt_users.next_page_number }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">Próxima</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ olt_users.paginator.num_pages }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">Última &raquo;</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}
