@@ -1,5 +1,7 @@
 from django.db import models
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.exceptions import ValidationError
+import ipaddress
 
 
 class OltUsers(models.Model):
@@ -219,4 +221,48 @@ class OltSfpDiagnostics(models.Model):
     
     def __str__(self):
         return f"SFP {self.interface}"
+
+
+class AllowedIP(models.Model):
+    """Model para gerenciar IPs permitidos no sistema"""
+    
+    ip_address = models.CharField(
+        max_length=50, 
+        verbose_name="IP/Range", 
+        help_text="IP individual (ex: 192.168.1.1) ou range CIDR (ex: 192.168.1.0/24)",
+        unique=True
+    )
+    description = models.CharField(
+        max_length=200, 
+        verbose_name="Descrição",
+        help_text="Descrição do IP ou range (ex: Servidor, Rede local, etc.)"
+    )
+    is_active = models.BooleanField(
+        default=True, 
+        verbose_name="Ativo",
+        help_text="Se marcado, este IP será permitido no sistema"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizado em")
+    
+    class Meta:
+        verbose_name = "IP Permitido"
+        verbose_name_plural = "IPs Permitidos"
+        ordering = ['ip_address']
+    
+    def clean(self):
+        """Valida se o IP ou range está no formato correto"""
+        super().clean()
+        try:
+            # Tenta validar como rede (CIDR) ou IP individual
+            ipaddress.ip_network(self.ip_address, strict=False)
+        except ValueError:
+            raise ValidationError({'ip_address': 'Formato de IP ou range inválido. Use formatos como: 192.168.1.1 ou 192.168.1.0/24'})
+    
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.ip_address} - {self.description}"
 

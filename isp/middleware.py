@@ -4,6 +4,7 @@ Este middleware verifica se o IP do cliente está na lista de IPs permitidos.
 """
 from django.http import HttpResponseForbidden
 from django.conf import settings
+from django.core.cache import cache
 import ipaddress
 
 
@@ -59,13 +60,53 @@ class IPWhitelistMiddleware:
         # Fallback para REMOTE_ADDR
         return request.META.get('REMOTE_ADDR', '')
 
+    def get_allowed_ips(self):
+        """
+        Obtém a lista de IPs permitidos do banco de dados com cache.
+        Fallback para settings.ALLOWED_IPS se não houver IPs no banco.
+        """
+        # Verifica o cache primeiro (cache por 5 minutos)
+        cached_ips = cache.get('allowed_ips_list')
+        if cached_ips is not None:
+            return cached_ips
+        
+        try:
+            # Importa aqui para evitar problemas de circular import
+            from django.apps import apps
+            
+            # Verifica se a app e modelo existem (evita erros durante migrations)
+            if apps.ready:
+                AllowedIP = apps.get_model('olt', 'AllowedIP')
+                
+                # Busca IPs ativos do banco de dados
+                db_ips = list(AllowedIP.objects.filter(is_active=True).values_list('ip_address', flat=True))
+                
+                if db_ips:
+                    # Cache por 5 minutos
+                    cache.set('allowed_ips_list', db_ips, 300)
+                    return db_ips
+                else:
+                    # Fallback para settings se não há IPs no banco
+                    settings_ips = getattr(settings, 'ALLOWED_IPS', [])
+                    cache.set('allowed_ips_list', settings_ips, 300)
+                    return settings_ips
+            else:
+                # Durante inicialização, usa settings
+                settings_ips = getattr(settings, 'ALLOWED_IPS', [])
+                return settings_ips
+                
+        except Exception as e:
+            # Em caso de erro (ex: tabela não existe ainda), usa settings
+            settings_ips = getattr(settings, 'ALLOWED_IPS', [])
+            return settings_ips
+
     def is_ip_allowed(self, request):
         """
         Verifica se o IP do cliente está na lista de IPs permitidos.
         Suporta IPs individuais e ranges (CIDR).
         """
         client_ip = self.get_client_ip(request)
-        allowed_ips = getattr(settings, 'ALLOWED_IPS', [])
+        allowed_ips = self.get_allowed_ips()
         
         # Se não há IPs configurados, permite acesso (para evitar lockout)
         if not allowed_ips:

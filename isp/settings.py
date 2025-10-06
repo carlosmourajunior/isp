@@ -120,7 +120,6 @@ DATABASES = {
         'OPTIONS': {
             'connect_timeout': 20,
             'options': '-c statement_timeout=300000',  # 5 minutos timeout
-            'MAX_CONNS': 20,  # Máximo de conexões por processo Django
         },
     }
 }

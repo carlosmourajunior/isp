@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.admin import register
-from olt.models import ONU, OltUsers, PlacaOnu
+from django.contrib import messages
+from olt.models import ONU, OltUsers, PlacaOnu, AllowedIP
 from olt.utils import olt_connector
 
 
@@ -54,3 +55,46 @@ class PlacaAdmin(admin.ModelAdmin):
 
     ordering = ['position']
     actions = [reset_placa_onu, update_onus]
+
+
+@admin.action(description='Ativar IPs selecionados')
+def activate_ips(modeladmin, request, queryset):
+    updated = queryset.update(is_active=True)
+    messages.success(request, f'{updated} IP(s) ativado(s) com sucesso!')
+
+@admin.action(description='Desativar IPs selecionados')
+def deactivate_ips(modeladmin, request, queryset):
+    updated = queryset.update(is_active=False)
+    messages.success(request, f'{updated} IP(s) desativado(s) com sucesso!')
+
+
+@register(AllowedIP)
+class AllowedIPAdmin(admin.ModelAdmin):
+    list_display = ['ip_address', 'description', 'is_active', 'created_at', 'updated_at']
+    list_filter = ['is_active', 'created_at', 'updated_at']
+    search_fields = ['ip_address', 'description']
+    list_editable = ['is_active', 'description']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('ip_address', 'description', 'is_active'),
+            'description': 'Configure IPs ou ranges que podem acessar o sistema'
+        }),
+    )
+    
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['ip_address']
+    actions = [activate_ips, deactivate_ips]
+    
+    def get_readonly_fields(self, request, obj=None):
+        if obj:  # Editando um objeto existente
+            return self.readonly_fields + ['created_at', 'updated_at']
+        return self.readonly_fields
+    
+    def save_model(self, request, obj, form, change):
+        """Adiciona uma mensagem de sucesso personalizada"""
+        super().save_model(request, obj, form, change)
+        if change:
+            messages.success(request, f'IP {obj.ip_address} atualizado com sucesso!')
+        else:
+            messages.success(request, f'IP {obj.ip_address} adicionado com sucesso!')
