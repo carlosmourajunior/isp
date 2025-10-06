@@ -115,10 +115,12 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
-        'CONN_MAX_AGE': 60,  # Conexões reutilizáveis por 60 segundos
+        'CONN_MAX_AGE': 300,  # Conexões reutilizáveis por 5 minutos
+        'CONN_HEALTH_CHECKS': True,  # Verificar saúde das conexões
         'OPTIONS': {
             'connect_timeout': 20,
-            'options': '-c statement_timeout=300000'  # 5 minutos timeout
+            'options': '-c statement_timeout=300000',  # 5 minutos timeout
+            'MAX_CONNS': 20,  # Máximo de conexões por processo Django
         },
     }
 }
@@ -411,4 +413,46 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=60),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+}
+
+# ==================== CONFIGURA��ES DE POOL DE CONEX�ES ====================
+# Configura��es para otimizar o uso de conex�es com o banco de dados
+
+# Configura��o de logging para monitorar conex�es
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'WARNING',
+            'class': 'logging.FileHandler',
+            'filename': '/code/logs/django.log',
+        },
+        'db_handler': {
+            'level': 'DEBUG', 
+            'class': 'logging.FileHandler',
+            'filename': '/code/logs/db_connections.log',
+        },
+    },
+    'loggers': {
+        'django.db': {
+            'handlers': ['db_handler'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['file'],
+            'level': 'WARNING',
+            'propagate': True,
+        },
+    },
+}
+
+# Pool de conex�es para RQ (Redis Queue)
+RQ_CONNECTION_POOL_KWARGS = {
+    'max_connections': 10,
+    'connection_pool_class_kwargs': {
+        'socket_keepalive': True,
+        'socket_keepalive_options': {},
+    }
 }
