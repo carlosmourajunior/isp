@@ -28,9 +28,10 @@ COPY . .
 # Create logs directory
 RUN mkdir -p /code/logs
 
-# Copy entrypoint script and set permissions
+# Copy scripts and set permissions
 COPY entrypoint.sh /code/entrypoint.sh
-RUN chmod +x /code/entrypoint.sh
+COPY init_app.sh /code/init_app.sh
+RUN chmod +x /code/entrypoint.sh /code/init_app.sh
 
 # Set entrypoint
 ENTRYPOINT ["/bin/bash", "/code/entrypoint.sh"]
