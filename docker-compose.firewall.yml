@@ -1,0 +1,35 @@
+# CONFIGURAÇÃO DE FIREWALL - REMOVE PORTAS DE MONITORAMENTO
+# Use: docker compose -f docker-compose.yml -f docker-compose.security.yml -f docker-compose.firewall.yml up
+
+services:
+  # ==================== REMOVE PORTAS DE MONITORAMENTO ====================
+  node-exporter:
+    ports: []  # Remove porta 9100 - apenas acesso interno
+
+  prometheus:
+    ports: []  # Remove porta 9090 - apenas acesso interno
+    
+  redis-exporter:
+    ports: []  # Remove porta 9121 - apenas acesso interno
+    
+  postgres-exporter:
+    ports: []  # Remove porta 9187 - apenas acesso interno
+
+  # ==================== MANTÉM APENAS SERVIÇOS ESSENCIAIS ====================
+  web:
+    ports:
+      - "8000:8000"  # Aplicação principal
+    
+  grafana:
+    ports:
+      - "3000:3000"  # Dashboard de monitoramento
+
+# ==================== REDE COM CONFIGURAÇÕES DE SEGURANÇA ====================
+networks:
+  app-network:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
