@@ -46,5 +46,8 @@ urlpatterns = [
     path('olt/sfp-diagnostics/', api_views.OltSfpDiagnosticsListAPIView.as_view(), name='olt_sfp_diagnostics'),
     path('olt/system-stats/', api_views.olt_system_stats, name='olt_system_stats'),
     path('olt/temperature-alerts/', api_views.olt_temperature_alerts, name='olt_temperature_alerts'),
+    path('olt/connection-status/', api_views.olt_connection_status, name='olt_connection_status'),
+    
+    # ⚠️ ENDPOINTS QUE ACESSAM A OLT DIRETAMENTE (FRONTEND ONLY) ⚠️
     path('olt/update-system-data/', api_views.update_olt_system_data, name='update_olt_system_data'),
 ]

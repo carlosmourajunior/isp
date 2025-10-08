@@ -22,6 +22,7 @@ from .serializers import (
     OltSystemStatsSerializer
 )
 from .utils import OltSystemCollector
+from .security import frontend_only, olt_admin_required
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -291,9 +292,12 @@ def olt_system_stats(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@frontend_only
+@olt_admin_required
 def update_olt_system_data(request):
     """
     Atualiza dados do sistema OLT coletando da OLT
+    ⚠️ ACESSO RESTRITO: Apenas via frontend interno e usuários admin
     """
     try:
         collector = OltSystemCollector()
@@ -304,7 +308,12 @@ def update_olt_system_data(request):
                 'message': 'Dados do sistema OLT atualizados com sucesso',
                 'system_info': OltSystemInfoSerializer(result['system_info']).data if result['system_info'] else None,
                 'slots_count': result['slots'].count() if result['slots'] else 0,
-                'temperatures_count': result['temperatures'].count() if result['temperatures'] else 0
+                'temperatures_count': result['temperatures'].count() if result['temperatures'] else 0,
+                'security_info': {
+                    'access_type': 'frontend_internal',
+                    'user': request.user.username,
+                    'timestamp': result.get('timestamp', 'N/A')
+                }
             })
         else:
             return Response(
@@ -338,6 +347,53 @@ def olt_temperature_alerts(request):
         }
         
         return Response(response_data)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao consultar alertas de temperatura: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# ==================== ENDPOINTS DE INFORMAÇÃO (SOMENTE LEITURA) ====================
+# Estes endpoints NÃO acessam a OLT diretamente, apenas consultam dados já coletados
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olt_connection_status(request):
+    """
+    Verifica status da conexão com a OLT (sem conectar)
+    """
+    try:
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Verificar última atualização dos dados
+        latest_system_info = OltSystemInfo.objects.order_by('-last_updated').first()
+        
+        if latest_system_info:
+            time_diff = timezone.now() - latest_system_info.last_updated
+            is_recent = time_diff < timedelta(minutes=30)
+            
+            return Response({
+                'connection_status': 'online' if is_recent else 'outdated',
+                'last_update': latest_system_info.last_updated,
+                'minutes_ago': int(time_diff.total_seconds() / 60),
+                'system_uptime': latest_system_info.uptime_raw,
+                'note': 'Dados baseados na última coleta, não em conexão em tempo real'
+            })
+        else:
+            return Response({
+                'connection_status': 'unknown',
+                'message': 'Nenhum dado do sistema encontrado',
+                'note': 'Execute uma atualização via frontend para coletar dados'
+            })
+            
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao verificar status: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
         
     except Exception as e:
         return Response(

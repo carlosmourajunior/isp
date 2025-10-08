@@ -1,15 +1,13 @@
 """
-Comando para adicionar IP individual
+Comando para adicionar IP individual com validação em tempo real
 Execução: docker compose exec web python manage.py add_ip 192.168.1.100 "Descrição"
 """
 from django.core.management.base import BaseCommand
-from olt.models import AllowedIP
-from django.core.cache import cache
-import ipaddress
+from olt.ip_utils import validate_and_add_ip, force_refresh_allowed_ips
 
 
 class Command(BaseCommand):
-    help = 'Adiciona um IP à lista de permitidos'
+    help = 'Adiciona um IP à lista de permitidos com validação em tempo real'
 
     def add_arguments(self, parser):
         parser.add_argument('ip_address', type=str, help='IP ou range CIDR a ser adicionado')
@@ -20,65 +18,51 @@ class Command(BaseCommand):
             help='Adiciona o IP como inativo',
         )
         parser.add_argument(
-            '--update',
+            '--refresh-cache',
             action='store_true',
-            help='Atualiza o IP se já existir',
+            help='Força atualização do cache após adicionar',
         )
 
     def handle(self, *args, **options):
         ip_address = options['ip_address']
-        description = options['description'] or f'IP {ip_address} adicionado via comando'
-        is_active = not options['inactive']
+        description = options['description'] or f'Adicionado via comando add_ip'
+        force_active = not options['inactive']
 
-        self.stdout.write(f'➕ Adicionando IP: {ip_address}')
+        self.stdout.write(
+            self.style.SUCCESS(f'➕ Processando IP: {ip_address}')
+        )
         
-        # Validar IP/CIDR
-        try:
-            ipaddress.ip_network(ip_address, strict=False)
-        except ValueError:
-            self.stdout.write(
-                self.style.ERROR(f'❌ Formato de IP inválido: {ip_address}')
-            )
+        # Usar função de validação e adição
+        success, message, ip_object = validate_and_add_ip(
+            ip_address=ip_address,
+            description=description,
+            force_active=force_active
+        )
+        
+        if success:
+            self.stdout.write(self.style.SUCCESS(message))
+            
+            # Mostrar status do IP
+            if ip_object:
+                status = '🟢 ATIVO' if ip_object.is_active else '🔴 INATIVO'
+                self.stdout.write(f'   Status: {status}')
+                self.stdout.write(f'   Descrição: {ip_object.description}')
+                self.stdout.write(f'   Atualizado: {ip_object.updated_at.strftime("%d/%m/%Y %H:%M:%S")}')
+        else:
+            self.stdout.write(self.style.ERROR(message))
             return
 
-        try:
-            # Verificar se já existe
-            if AllowedIP.objects.filter(ip_address=ip_address).exists():
-                if options['update']:
-                    ip_obj = AllowedIP.objects.get(ip_address=ip_address)
-                    ip_obj.description = description
-                    ip_obj.is_active = is_active
-                    ip_obj.save()
-                    
-                    status = '🟢 ATIVO' if is_active else '🔴 INATIVO'
-                    self.stdout.write(
-                        self.style.SUCCESS(f'🔄 IP atualizado: {ip_address} - {status}')
-                    )
-                else:
-                    self.stdout.write(
-                        self.style.WARNING(f'⚠️ IP {ip_address} já existe! Use --update para atualizar.')
-                    )
-                    return
+        # Atualizar cache se solicitado
+        if options['refresh_cache']:
+            self.stdout.write(self.style.WARNING('🔄 Atualizando cache...'))
+            cache_success, cache_message, active_ips = force_refresh_allowed_ips()
+            
+            if cache_success:
+                self.stdout.write(self.style.SUCCESS(cache_message))
             else:
-                # Criar novo IP
-                AllowedIP.objects.create(
-                    ip_address=ip_address,
-                    description=description,
-                    is_active=is_active
-                )
-                
-                status = '🟢 ATIVO' if is_active else '🔴 INATIVO'
-                self.stdout.write(
-                    self.style.SUCCESS(f'✅ IP adicionado: {ip_address} - {status}')
-                )
-
-            # Limpar cache para aplicação imediata
-            cache.delete('allowed_ips_list')
-            self.stdout.write(
-                self.style.SUCCESS('🔄 Cache limpo! Alteração aplicada imediatamente.')
-            )
-
-        except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'❌ Erro ao adicionar IP: {e}')
-            )
+                self.stdout.write(self.style.ERROR(cache_message))
+        
+        self.stdout.write('')
+        self.stdout.write(
+            self.style.SUCCESS('✅ Operação concluída! IP está disponível imediatamente.')
+        )

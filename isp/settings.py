@@ -67,6 +67,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - reabilitado
+    'olt.security.OltSecurityMiddleware',  # Segurança OLT - NOVO
     'olt.prometheus_views.PrometheusMiddleware',  # Métricas Prometheus
     'isp.monitoring_middleware.MonitoringMiddleware',  # Monitoramento de APIs
     'isp.monitoring_middleware.MetricsCollectionMiddleware',  # Coleta de métricas
