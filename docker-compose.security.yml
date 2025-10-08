@@ -8,7 +8,7 @@ services:
     environment:
       - POSTGRES_DB=isp_production_db
       - POSTGRES_USER=isp_db_admin
-      - POSTGRES_PASSWORD=PgSql_2025_Sec!@#$$9vT8xK2mQ7nB3fH
+      - POSTGRES_PASSWORD=PgSql_2025_Sec_9vT8xK2mQ7nB3fH
     # Restrições de segurança adicionais
     security_opt:
       - no-new-privileges:true
@@ -27,7 +27,7 @@ services:
   # ==================== SEGURANÇA DO REDIS ====================
   redis:
     ports: []  # REMOVE EXPOSIÇÃO EXTERNA
-    command: redis-server --requirepass Rd1s_2025_Auth!@#$$mK9pL4nR6sT8wY --appendonly yes --appendfsync everysec
+    command: redis-server --requirepass Rd1s_2025_Auth_mK9pL4nR6sT8wY --appendonly yes --appendfsync everysec
     security_opt:
       - no-new-privileges:true
     read_only: false  # Necessário para Redis
@@ -39,12 +39,12 @@ services:
   # ==================== SEGURANÇA DA APLICAÇÃO ====================
   web:
     environment:
-      # Credenciais seguras da base de dados
-      - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec!@#$$9vT8xK2mQ7nB3fH@db:5432/isp_production_db
-      # Redis com autenticação
-      - REDIS_URL=redis://:Rd1s_2025_Auth!@#$$mK9pL4nR6sT8wY@redis:6379/0
-      # Django secret key segura
-      - DJANGO_SECRET_KEY=django-secure-$7k2@m#9vL!qR8x%N3bF6hJ$$pT9wY&zC4sG7kM0nB5vL3xR8qP!mK
+      # Credenciais seguras da base de dados (sem símbolos problemáticos)
+      - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db
+      # Redis com autenticação (sem símbolos problemáticos)
+      - REDIS_URL=redis://:Rd1s_2025_Auth_mK9pL4nR6sT8wY@redis:6379/0
+      # Django secret key segura (sem símbolos problemáticos)
+      - DJANGO_SECRET_KEY=django-secure-7k2m9vLqR8xN3bF6hJpT9wYzC4sG7kM0nB5vL3xR8qPmK
     security_opt:
       - no-new-privileges:true
     read_only: false
@@ -71,9 +71,9 @@ services:
     ports:
       - "3000:3000"  # MANTÉM ACESSO EXTERNO PARA MONITORAMENTO
     environment:
-      # Credenciais seguras do Grafana
+      # Credenciais seguras do Grafana (sem símbolos problemáticos)
       - GF_SECURITY_ADMIN_USER=admin_isp
-      - GF_SECURITY_ADMIN_PASSWORD=Grafana_2025_Adm!@#$$kL8mN6pQ4sT
+      - GF_SECURITY_ADMIN_PASSWORD=Grafana_2025_Adm_kL8mN6pQ4sT
       # Configurações de segurança
       - GF_SECURITY_DISABLE_GRAVATAR=true
       - GF_SECURITY_COOKIE_SECURE=true
@@ -106,7 +106,7 @@ services:
   postgres-exporter:
     ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
     environment:
-      - DATA_SOURCE_NAME=postgresql://isp_db_admin:PgSql_2025_Sec!@#$$9vT8xK2mQ7nB3fH@db:5432/isp_production_db?sslmode=disable
+      - DATA_SOURCE_NAME=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db?sslmode=disable
     security_opt:
       - no-new-privileges:true
     read_only: true
