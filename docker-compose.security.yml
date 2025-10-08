@@ -33,14 +33,10 @@ services:
   redis:
     ports: []  # REMOVE EXPOSIÇÃO EXTERNA - SOBRESCREVE O ORIGINAL
     command: redis-server --requirepass Redis2025SecureAuth --appendonly yes --appendfsync everysec
-    # Remover restrições que causam problemas de permissão
-    read_only: false  # Necessário para Redis
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
+    # Configurações de segurança mais permissivas para Redis
+    security_opt:
+      - no-new-privileges:true
+    # Não aplicar read-only nem cap_drop para evitar problemas de permissão
 
   # ==================== SEGURANÇA DA APLICAÇÃO ====================
   web:
