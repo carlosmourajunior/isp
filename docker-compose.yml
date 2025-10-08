@@ -21,7 +21,7 @@ services:
 
   redis:
     image: redis:7.2
-    command: redis-server --save 60 1 --appendonly yes --appendfsync everysec
+    command: redis-server --requirepass Redis2025SecureAuth --save 60 1 --appendonly yes --appendfsync everysec
     ports:
       - "6380:6379"
     volumes:
@@ -150,7 +150,7 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
       - ./monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_SECURITY_ADMIN_PASSWORD=Grafana2025AdminSecure
       - GF_SECURITY_ADMIN_USER=admin
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=false
