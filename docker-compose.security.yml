@@ -1,5 +1,3 @@
-version: '3.8'
-
 # CONFIGURAÇÃO DE SEGURANÇA - SOBRESCREVE PORTAS EXPOSTAS
 # Use: docker compose -f docker-compose.yml -f docker-compose.security.yml up
 
@@ -8,9 +6,9 @@ services:
   db:
     ports: []  # REMOVE COMPLETAMENTE A EXPOSIÇÃO EXTERNA
     environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=P@ssw0rd_Secur3_2025!@#$%  # NOVA SENHA FORTE
+      - POSTGRES_DB=isp_production_db
+      - POSTGRES_USER=isp_db_admin
+      - POSTGRES_PASSWORD=PgSql_2025_Sec!@#$$9vT8xK2mQ7nB3fH
     # Restrições de segurança adicionais
     security_opt:
       - no-new-privileges:true
@@ -29,6 +27,7 @@ services:
   # ==================== SEGURANÇA DO REDIS ====================
   redis:
     ports: []  # REMOVE EXPOSIÇÃO EXTERNA
+    command: redis-server --requirepass Rd1s_2025_Auth!@#$$mK9pL4nR6sT8wY --appendonly yes --appendfsync everysec
     security_opt:
       - no-new-privileges:true
     read_only: false  # Necessário para Redis
@@ -40,8 +39,12 @@ services:
   # ==================== SEGURANÇA DA APLICAÇÃO ====================
   web:
     environment:
-      # Atualiza string de conexão com nova senha
-      - DATABASE_URL=postgresql://postgres:P@ssw0rd_Secur3_2025!@#$%@db:5432/postgres
+      # Credenciais seguras da base de dados
+      - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec!@#$$9vT8xK2mQ7nB3fH@db:5432/isp_production_db
+      # Redis com autenticação
+      - REDIS_URL=redis://:Rd1s_2025_Auth!@#$$mK9pL4nR6sT8wY@redis:6379/0
+      # Django secret key segura
+      - DJANGO_SECRET_KEY=django-secure-$7k2@m#9vL!qR8x%N3bF6hJ$$pT9wY&zC4sG7kM0nB5vL3xR8qP!mK
     security_opt:
       - no-new-privileges:true
     read_only: false
@@ -49,14 +52,13 @@ services:
       - /tmp:noexec,nosuid,size=100m
     cap_drop:
       - ALL
-    # Expõe apenas na rede interna
+    # Mantém a porta como estava - Docker gerencia a rede interna
     ports:
-      - "127.0.0.1:8000:8000"  # APENAS LOCALHOST
+      - "8000:8000"
 
   # ==================== SEGURANÇA DO MONITORAMENTO ====================
   prometheus:
-    ports:
-      - "127.0.0.1:9090:9090"  # APENAS LOCALHOST
+    ports: []  # SEM ACESSO EXTERNO - apenas containers internos
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -67,7 +69,15 @@ services:
 
   grafana:
     ports:
-      - "127.0.0.1:3000:3000"  # APENAS LOCALHOST
+      - "3000:3000"  # MANTÉM ACESSO EXTERNO PARA MONITORAMENTO
+    environment:
+      # Credenciais seguras do Grafana
+      - GF_SECURITY_ADMIN_USER=admin_isp
+      - GF_SECURITY_ADMIN_PASSWORD=Grafana_2025_Adm!@#$$kL8mN6pQ4sT
+      # Configurações de segurança
+      - GF_SECURITY_DISABLE_GRAVATAR=true
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_SECURITY_STRICT_TRANSPORT_SECURITY=true
     security_opt:
       - no-new-privileges:true
     read_only: false
@@ -78,8 +88,7 @@ services:
 
   # ==================== SEGURANÇA DOS EXPORTERS ====================
   node-exporter:
-    ports:
-      - "127.0.0.1:9100:9100"  # APENAS LOCALHOST
+    ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -87,8 +96,7 @@ services:
       - ALL
 
   redis-exporter:
-    ports:
-      - "127.0.0.1:9121:9121"  # APENAS LOCALHOST
+    ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -96,10 +104,9 @@ services:
       - ALL
 
   postgres-exporter:
-    ports:
-      - "127.0.0.1:9187:9187"  # APENAS LOCALHOST
+    ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
     environment:
-      - DATA_SOURCE_NAME=postgresql://postgres:P@ssw0rd_Secur3_2025!@#$%@db:5432/postgres?sslmode=disable
+      - DATA_SOURCE_NAME=postgresql://isp_db_admin:PgSql_2025_Sec!@#$$9vT8xK2mQ7nB3fH@db:5432/isp_production_db?sslmode=disable
     security_opt:
       - no-new-privileges:true
     read_only: true
