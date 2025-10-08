@@ -34,21 +34,44 @@ echo "Redis disponível!"
 if [ "$1" = "python" ] && [ "$2" = "/code/manage.py" ] && [ "$3" = "runserver" ]; then
     echo "Container web detectado - executando setup automático..."
     
-    # Aguarda especificamente o PostgreSQL com credenciais corretas
-    echo "⏳ Aguardando PostgreSQL com credenciais corretas..."
-    while ! PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -c '\q' 2>/dev/null; do
-        sleep 2
-        echo "Aguardando..."
-    done
-    echo "✅ PostgreSQL pronto!"
+    # Tenta primeiro com o usuário antigo para criar o novo
+    echo "⏳ Verificando conexão com PostgreSQL..."
     
-    # Verifica se o banco existe, se não, cria
-    if ! PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -lqt | cut -d \| -f 1 | grep -qw isp_production_db; then
-        echo "🔧 Criando banco de dados isp_production_db..."
-        PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -c "CREATE DATABASE isp_production_db OWNER isp_db_admin;"
-        echo "✅ Banco criado!"
+    # Tenta conectar com postgres/postgres primeiro
+    if PGPASSWORD='postgres' psql -h db -U postgres -d postgres -c '\q' 2>/dev/null; then
+        echo "✅ Conectando com usuário postgres original"
+        
+        # Cria o usuário se não existir
+        echo "🔧 Criando usuário isp_db_admin se necessário..."
+        PGPASSWORD='postgres' psql -h db -U postgres -d postgres -c "
+        DO \$\$
+        BEGIN
+            IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'isp_db_admin') THEN
+                CREATE USER isp_db_admin WITH PASSWORD 'PgSql_2025_Sec_9vT8xK2mQ7nB3fH';
+                ALTER USER isp_db_admin CREATEDB SUPERUSER;
+            END IF;
+        END
+        \$\$;"
+        
+        # Cria o banco se não existir
+        if ! PGPASSWORD='postgres' psql -h db -U postgres -d postgres -lqt | cut -d \| -f 1 | grep -qw isp_production_db; then
+            echo "🔧 Criando banco isp_production_db..."
+            PGPASSWORD='postgres' psql -h db -U postgres -d postgres -c "CREATE DATABASE isp_production_db OWNER isp_db_admin;"
+        fi
+        
+    # Se não conseguir com postgres, tenta com isp_db_admin
+    elif PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -c '\q' 2>/dev/null; then
+        echo "✅ Conectando com usuário isp_db_admin"
+        
+        # Cria o banco se não existir
+        if ! PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -lqt | cut -d \| -f 1 | grep -qw isp_production_db; then
+            echo "🔧 Criando banco isp_production_db..."
+            PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -c "CREATE DATABASE isp_production_db OWNER isp_db_admin;"
+        fi
     else
-        echo "✅ Banco isp_production_db já existe"
+        echo "❌ Não foi possível conectar ao PostgreSQL"
+        echo "Aguardando mais um pouco..."
+        sleep 10
     fi
     
     echo "🔧 Executando migrations..."
