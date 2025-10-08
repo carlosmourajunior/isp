@@ -43,14 +43,14 @@ docker network prune -f
 log_info "Verificando permissões dos dados..."
 if [ -d "data/redis" ]; then
     log_info "Corrigindo permissões do Redis..."
-    sudo chown -R 999:999 data/redis/ || true
-    sudo chmod -R 755 data/redis/ || true
+     chown -R 999:999 data/redis/ || true
+     chmod -R 755 data/redis/ || true
 fi
 
 if [ -d "data/postgres" ]; then
     log_info "Corrigindo permissões do PostgreSQL..."
-    sudo chown -R 999:999 data/postgres/ || true
-    sudo chmod -R 755 data/postgres/ || true
+     chown -R 999:999 data/postgres/ || true
+     chmod -R 755 data/postgres/ || true
 fi
 
 # 4. Criar diretórios necessários
