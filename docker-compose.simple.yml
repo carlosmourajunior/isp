@@ -1,0 +1,89 @@
+services:
+  # ==================== BASE DE DADOS ====================
+  db:
+    image: postgres:13
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=isp_production_db
+      - POSTGRES_USER=isp_db_admin
+      - POSTGRES_PASSWORD=PgSql_2025_Sec_9vT8xK2mQ7nB3fH
+    # PORTAS REMOVIDAS PARA SEGURANÇA
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U isp_db_admin"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== REDIS ====================
+  redis:
+    image: redis:7.2
+    command: redis-server --requirepass Redis2025SecureAuth --save 60 1 --appendonly yes --appendfsync everysec
+    # PORTAS REMOVIDAS PARA SEGURANÇA
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "Redis2025SecureAuth", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== APLICAÇÃO ====================
+  web:
+    build: .
+    command: python /code/manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/code
+      - ./data/media:/code/media
+      - ./data/staticfiles:/code/staticfiles
+      - ./data/logs:/code/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+    environment:
+      - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db
+      - REDIS_URL=redis://:Redis2025SecureAuth@redis:6379/0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==================== MONITORAMENTO ====================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: isp-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin_isp
+      - GF_SECURITY_ADMIN_PASSWORD=Grafana2025AdminSecure
+    restart: unless-stopped
+    networks:
+      - app-network
+
+# ==================== VOLUMES ====================
+volumes:
+  grafana_data:
+
+# ==================== REDES ====================
+networks:
+  app-network:
+    driver: bridge

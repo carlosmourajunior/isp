@@ -8,8 +8,7 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-    ports:
-      - "5432:5432"
+    # ports: []  # REMOVIDO PARA SEGURANÇA
     restart: unless-stopped
     networks:
       - app-network
@@ -22,8 +21,7 @@ services:
   redis:
     image: redis:7.2
     command: redis-server --requirepass Redis2025SecureAuth --save 60 1 --appendonly yes --appendfsync everysec
-    ports:
-      - "6380:6379"
+    # ports: []  # REMOVIDO PARA SEGURANÇA
     volumes:
       - ./data/redis:/data
     restart: unless-stopped
