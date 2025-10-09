@@ -1,10 +1,6 @@
-# CONFIGURAÇÃO DE SEGURANÇA - SOBRESCREVE PORTAS EXPOSTAS
-# Use: docker compose -f docker-compose.yml -f docker-compose.security.yml up
-
 services:
-  # ==================== SEGURANÇA DA BASE DE DADOS ====================
   db:
-    ports: []  # REMOVE COMPLETAMENTE A EXPOSIÇÃO EXTERNA - SOBRESCREVE O ORIGINAL
+    ports: []
     environment:
       - POSTGRES_DB=isp_production_db
       - POSTGRES_USER=isp_db_admin
@@ -14,112 +10,43 @@ services:
       timeout: 10s
       interval: 30s
       retries: 3
-    # Restrições de segurança adicionais
-    security_opt:
-      - no-new-privileges:true
-    read_only: false  # Necessário para DB
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-      - SETGID
-      - SETUID
 
-  # ==================== SEGURANÇA DO REDIS ====================
   redis:
-    ports: []  # REMOVE EXPOSIÇÃO EXTERNA - SOBRESCREVE O ORIGINAL
+    ports: []
     command: redis-server --requirepass Redis2025SecureAuth --appendonly yes --appendfsync everysec
-    # Configurações de segurança mais permissivas para Redis
-    security_opt:
-      - no-new-privileges:true
-    # Não aplicar read-only nem cap_drop para evitar problemas de permissão
 
-  # ==================== SEGURANÇA DA APLICAÇÃO ====================
   web:
     environment:
-      # Credenciais seguras da base de dados (versão simples)
       - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db
-      # Redis com autenticação (versão simples)
       - REDIS_URL=redis://:Redis2025SecureAuth@redis:6379/0
-      # Django secret key segura (versão simples)
-      - DJANGO_SECRET_KEY=django-secure-7k2m9vLqR8xN3bF6hJpT9wYzC4sG7kM0nB5vL3xR8qPmK
-    security_opt:
-      - no-new-privileges:true
-    read_only: false
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-    cap_drop:
-      - ALL
-    # Mantém a porta como estava - Docker gerencia a rede interna
     ports:
       - "8000:8000"
 
-  # ==================== SEGURANÇA DO MONITORAMENTO ====================
+  rq_worker:
+    environment:
+      - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db
+      - REDIS_URL=redis://:Redis2025SecureAuth@redis:6379/0
+
   prometheus:
-    ports: []  # SEM ACESSO EXTERNO - apenas containers internos
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:noexec,nosuid,size=50m
-    cap_drop:
-      - ALL
+    ports: []
 
   grafana:
     ports:
-      - "3000:3000"  # MANTÉM ACESSO EXTERNO PARA MONITORAMENTO
+      - "3000:3000"
     environment:
-      # Credenciais seguras do Grafana (versão simples, sem símbolos problemáticos)
       - GF_SECURITY_ADMIN_USER=admin_isp
       - GF_SECURITY_ADMIN_PASSWORD=Grafana2025AdminSecure
-      # Configurações de segurança
-      - GF_SECURITY_DISABLE_GRAVATAR=true
-      - GF_SECURITY_COOKIE_SECURE=true
-      - GF_SECURITY_STRICT_TRANSPORT_SECURITY=true
-    security_opt:
-      - no-new-privileges:true
-    read_only: false
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-    cap_drop:
-      - ALL
 
-  # ==================== SEGURANÇA DOS EXPORTERS ====================
   node-exporter:
-    ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    cap_drop:
-      - ALL
+    ports: []
 
   redis-exporter:
-    ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    cap_drop:
-      - ALL
+    ports: []
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_PASSWORD=Redis2025SecureAuth
 
   postgres-exporter:
-    ports: []  # SEM ACESSO EXTERNO - apenas Prometheus interno
+    ports: []
     environment:
-      - DATA_SOURCE_NAME=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db?sslmode=disable
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    cap_drop:
-      - ALL
-
-# ==================== REDE ISOLADA ====================
-networks:
-  app-network:
-    driver: bridge
-    internal: false  # Permite acesso à internet para updates
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
+      - DATA_SOURCE_NAME=postgresql://postgres:postgres@db:5432/postgres?sslmode=disable
