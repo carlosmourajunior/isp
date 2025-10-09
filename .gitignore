@@ -44,3 +44,18 @@ coverage.xml
 ehthumbs.db
 Thumbs.db
 .env.secure
+
+# Arquivos de segurança
+.env
+.env.local
+.env.production
+*.key
+*.pem
+*.p12
+backups/
+security_scan_*.txt
+
+# Dados sensíveis
+data/postgres/
+data/redis/
+data/logs/

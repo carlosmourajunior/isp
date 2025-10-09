@@ -5,15 +5,15 @@ services:
     volumes:
       - ./data/postgres:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_DB=isp_production_db
-      - POSTGRES_USER=isp_db_admin
-      - POSTGRES_PASSWORD=PgSql_2025_Sec_9vT8xK2mQ7nB3fH
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
     # PORTAS REMOVIDAS PARA SEGURANÇA
     restart: unless-stopped
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U isp_db_admin"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -21,7 +21,7 @@ services:
   # ==================== REDIS ====================
   redis:
     image: redis:7.2
-    command: redis-server --requirepass Redis2025SecureAuth --save 60 1 --appendonly yes --appendfsync everysec
+    command: redis-server --requirepass ${REDIS_PASSWORD} --save 60 1 --appendonly yes --appendfsync everysec
     # PORTAS REMOVIDAS PARA SEGURANÇA
     volumes:
       - ./data/redis:/data
@@ -29,7 +29,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "Redis2025SecureAuth", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,8 +54,8 @@ services:
     networks:
       - app-network
     environment:
-      - DATABASE_URL=postgresql://isp_db_admin:PgSql_2025_Sec_9vT8xK2mQ7nB3fH@db:5432/isp_production_db
-      - REDIS_URL=redis://:Redis2025SecureAuth@redis:6379/0
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
       interval: 30s
@@ -73,8 +73,8 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     environment:
-      - GF_SECURITY_ADMIN_USER=admin_isp
-      - GF_SECURITY_ADMIN_PASSWORD=Grafana2025AdminSecure
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
     restart: unless-stopped
     networks:
       - app-network

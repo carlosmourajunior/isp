@@ -1,3 +1,4 @@
+# CONFIGURAÇÃO DE SEGURANÇA CORRIGIDA - SEM SENHAS EXPOSTAS
 services:
   db:
     ports: []
@@ -34,7 +35,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin_isp}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
 
   node-exporter:
@@ -49,4 +50,12 @@ services:
   postgres-exporter:
     ports: []
     environment:
-      - DATA_SOURCE_NAME=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/postgres?sslmode=disable
+      - DATA_SOURCE_NAME=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres?sslmode=disable
+
+networks:
+  app-network:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
