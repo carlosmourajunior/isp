@@ -188,7 +188,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 RQ_QUEUES = {
     'default': {
-        'URL': os.getenv('REDIS_URL', 'redis://:Redis2025SecureAuth@redis:6379/0'),
+        'URL': os.getenv('REDIS_URL', 'redis://:${REDIS_PASSWORD}@redis:6379/0'),
         'DEFAULT_TIMEOUT': 360,
         'DEFAULT_RESULT_TTL': 86400,  # 24 horas em segundos
     }

@@ -47,7 +47,7 @@ if [ "$1" = "python" ] && [ "$2" = "/code/manage.py" ] && [ "$3" = "runserver" ]
         DO \$\$
         BEGIN
             IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'isp_db_admin') THEN
-                CREATE USER isp_db_admin WITH PASSWORD 'PgSql_2025_Sec_9vT8xK2mQ7nB3fH';
+                CREATE USER isp_db_admin WITH PASSWORD '${DB_PASSWORD}';
                 ALTER USER isp_db_admin CREATEDB SUPERUSER;
             END IF;
         END
@@ -60,13 +60,13 @@ if [ "$1" = "python" ] && [ "$2" = "/code/manage.py" ] && [ "$3" = "runserver" ]
         fi
         
     # Se não conseguir com postgres, tenta com isp_db_admin
-    elif PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -c '\q' 2>/dev/null; then
+    elif PGPASSWORD='${DB_PASSWORD}' psql -h db -U isp_db_admin -d postgres -c '\q' 2>/dev/null; then
         echo "✅ Conectando com usuário isp_db_admin"
         
         # Cria o banco se não existir
-        if ! PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -lqt | cut -d \| -f 1 | grep -qw isp_production_db; then
+        if ! PGPASSWORD='${DB_PASSWORD}' psql -h db -U isp_db_admin -d postgres -lqt | cut -d \| -f 1 | grep -qw isp_production_db; then
             echo "🔧 Criando banco isp_production_db..."
-            PGPASSWORD='PgSql_2025_Sec_9vT8xK2mQ7nB3fH' psql -h db -U isp_db_admin -d postgres -c "CREATE DATABASE isp_production_db OWNER isp_db_admin;"
+            PGPASSWORD='${DB_PASSWORD}' psql -h db -U isp_db_admin -d postgres -c "CREATE DATABASE isp_production_db OWNER isp_db_admin;"
         fi
     else
         echo "❌ Não foi possível conectar ao PostgreSQL"
