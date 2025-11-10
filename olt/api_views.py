@@ -328,63 +328,59 @@ def update_olt_system_data(request):
         )
 
 
-    # try:
-    #     collector = OltSystemCollector()
-    #     result = collector.collect_all_system_data()
-    #     system_info = result.get('system_info') if result else None
-    #     # Estatísticas dos slots
-    #     total_slots = result['slots'].count() if result and result['slots'] else 0
-    #     operational_slots = OltSlot.objects.filter(
-    #         enabled=True, 
-    #         availability='available', 
-    #         error_status='no-error'
-    #     ).count()
-    #     offline_slots = total_slots - operational_slots
-    #     slots_by_type = OltSlot.objects.values('actual_type').annotate(
-    #         count=Count('id')
-    #     ).order_by('actual_type')
-    #     # Estatísticas de temperatura
-    #     temps = result['temperatures'] if result and result['temperatures'] else OltTemperature.objects.all()
-    #     critical_temps = temps.filter(actual_temp__gte=75).count() if hasattr(temps, 'filter') else 0
-    #     warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count() if hasattr(temps, 'filter') else 0
-    #     temp_stats = temps.aggregate(
-    #         avg_temp=Avg('actual_temp'),
-    #         max_temp=Max('actual_temp'),
-    #         min_temp=Min('actual_temp')
-    #     ) if hasattr(temps, 'aggregate') else {'avg_temp': 0, 'max_temp': 0, 'min_temp': 0}
-    #     # Temperaturas por slot
-    #     temp_by_slot = temps.values('slot_name').annotate(
-    #         avg_temp=Avg('actual_temp'),
-    #         max_temp=Max('actual_temp'),
-    #         sensor_count=Count('id')
-    #     ).order_by('slot_name') if hasattr(temps, 'values') else []
-    #     response_data = {
-    #         'system_info': OltSystemInfoSerializer(system_info).data if system_info else None,
-    #         'cpu_percent': result.get('cpu_percent'),
-    #         'cpu_load': result.get('cpu_load'),
-    #         'mem_percent': result.get('mem_percent'),
-    #         'model': result.get('model'),
-    #         'slots_stats': {
-    #             'total_slots': total_slots,
-    #             'operational_slots': operational_slots,
-    #             'offline_slots': offline_slots,
-    #             'slots_by_type': list(slots_by_type),
-    #             'operational_percentage': round((operational_slots / total_slots * 100), 2) if total_slots > 0 else 0
-    #         },
-    #         'temperature_stats': {
-    #             'critical_temperatures': critical_temps,
-    #             'warning_temperatures': warning_temps,
-    #             'normal_temperatures': temps.count() - critical_temps - warning_temps if hasattr(temps, 'count') else 0,
-    #             'average_temperature': round(temp_stats['avg_temp'], 1) if temp_stats['avg_temp'] else 0,
-    #             'max_temperature': temp_stats['max_temp'] or 0,
-    #             'min_temperature': temp_stats['min_temp'] or 0,
-    #             'temperature_by_slot': list(temp_by_slot)
-    #         },
-    #         'last_updated': system_info.last_updated if system_info else None
-    #     }
-    #     return Response(response_data)
-    # except Exception as e:
-    #     return Response(
-    #         {'error': f'Erro ao obter estatísticas: {str(e)}'}, 
-    #         status=status.HTTP_500_INTERNAL_SERVER_ERROR
-    #     )
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olt_temperature_alerts(request):
+    """
+    Lista temperaturas em estado de alerta
+    """
+    try:
+        # Temperaturas críticas e de aviso
+        critical_temps = OltTemperature.objects.filter(actual_temp__gte=75)
+        warning_temps = OltTemperature.objects.filter(actual_temp__gte=70, actual_temp__lt=75)
+        
+        response_data = {
+            'critical_alerts': OltTemperatureSerializer(critical_temps, many=True).data,
+            'warning_alerts': OltTemperatureSerializer(warning_temps, many=True).data,
+            'critical_count': critical_temps.count(),
+            'warning_count': warning_temps.count()
+        }
+        
+        return Response(response_data)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao consultar alertas de temperatura: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olt_connection_status(request):
+    """
+    Verifica status de conexão com a OLT
+    """
+    try:
+        # Verificar se temos dados do sistema
+        system_info = OltSystemInfo.objects.first()
+        
+        if system_info:
+            return Response({
+                'connection_status': 'connected',
+                'last_update': system_info.last_updated,
+                'system_version': system_info.isam_release,
+                'uptime_days': system_info.uptime_days
+            })
+        else:
+            return Response({
+                'connection_status': 'unknown',
+                'message': 'Nenhum dado do sistema encontrado',
+                'note': 'Execute uma atualização via frontend para coletar dados'
+            })
+            
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao verificar status: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
