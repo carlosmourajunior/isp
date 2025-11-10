@@ -49,32 +49,41 @@ def home(request):
     # Informações da OLT
     try:
         # Informações do sistema
-        system_info = OltSystemInfo.objects.first()
-        
+        # Coleta completa via API
+        from olt.utils import OltSystemCollector
+        collector = OltSystemCollector()
+        result = collector.collect_all_system_data()
+        system_info = result.get('system_info') if result else None
+        cpu_percent = result.get('cpu_percent') if result else None
+        cpu_load = result.get('cpu_load') if result else None
+        mem_percent = result.get('mem_percent') if result else None
+        model = result.get('model') if result else None
         # Estatísticas dos slots
-        total_slots = OltSlot.objects.count()
+        total_slots = result['slots'].count() if result and result['slots'] else 0
         operational_slots = OltSlot.objects.filter(
             enabled=True, 
             availability='available', 
             error_status='no-error'
         ).count()
-        
         # Temperaturas críticas e de aviso
-        critical_temps = OltTemperature.objects.filter(actual_temp__gte=75).count()
-        warning_temps = OltTemperature.objects.filter(actual_temp__gte=70, actual_temp__lt=75).count()
-        
-        # Temperatura média
-        avg_temp = OltTemperature.objects.aggregate(avg_temp=Avg('actual_temp'))['avg_temp']
-        max_temp = OltTemperature.objects.aggregate(max_temp=Max('actual_temp'))['max_temp']
-        
-    except Exception as e:
-        print(f"Erro ao obter informações da OLT: {str(e)}")
-        system_info = None
-        total_slots = 0
-        operational_slots = 0
-        critical_temps = 0
-        warning_temps = 0
-        avg_temp = 0
+        temps = result['temperatures'] if result and result['temperatures'] else OltTemperature.objects.all()
+        critical_temps = temps.filter(actual_temp__gte=75).count() if hasattr(temps, 'filter') else 0
+        warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count() if hasattr(temps, 'filter') else 0
+        avg_temp = temps.aggregate(avg_temp=Avg('actual_temp'))['avg_temp'] if hasattr(temps, 'aggregate') else 0
+        max_temp = temps.aggregate(max_temp=Max('actual_temp'))['max_temp'] if hasattr(temps, 'aggregate') else 0
+        except Exception as e:
+            print(f"Erro ao obter informações da OLT: {str(e)}")
+            system_info = None
+            cpu_percent = None
+            cpu_load = None
+            mem_percent = None
+            model = None
+            total_slots = 0
+            operational_slots = 0
+            critical_temps = 0
+            warning_temps = 0
+            avg_temp = 0
+            max_temp = 0
         max_temp = 0
 
     template = loader.get_template('olt/dashboard.html')
@@ -85,6 +94,10 @@ def home(request):
         'clients_signal_below_29_count': clients_signal_below_29_count,
         'top_ports': top_ports,
         # Informações da OLT
+            'cpu_percent': cpu_percent,
+            'cpu_load': cpu_load,
+            'mem_percent': mem_percent,
+            'model': model,
         'system_info': system_info,
         'total_slots': total_slots,
         'operational_slots': operational_slots,

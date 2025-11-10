@@ -17,6 +17,9 @@
                 </div>
                 <div class="card-body">
                     <p class="card-text mb-1"><strong>Versão:</strong> {{ system_info.isam_release }}</p>
+                    <p class="card-text mb-1"><strong>Modelo:</strong> {{ model }}</p>
+                    <p class="card-text mb-1"><strong>CPU:</strong> {{ cpu_percent }}% {% if cpu_load %}({{ cpu_load }}){% endif %}</p>
+                    <p class="card-text mb-1"><strong>Memória:</strong> {{ mem_percent }}%</p>
                     <p class="card-text mb-0"><strong>Uptime:</strong> {{ system_info.uptime_days }} dias</p>
                 </div>
             </div>
