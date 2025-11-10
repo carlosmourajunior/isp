@@ -352,7 +352,7 @@ class OltSystemCollector:
         net_connect.disconnect()
     
     def collect_system_info(self):
-        """Coleta informações do sistema (versão e uptime)"""
+        """Coleta informações do sistema (versão, uptime, CPU, memória, modelo)"""
         net_connect = self.connect()
         try:
             # Coletar versão do sistema
@@ -362,6 +362,33 @@ class OltSystemCollector:
             # Coletar uptime
             uptime_output = net_connect.send_command("show core1-uptime")
             uptime_data = self._parse_uptime(uptime_output)
+            
+            # Coletar uso de CPU
+            try:
+                cpu_output = net_connect.send_command("show system core1-cpu")
+                cpu_percent = self._parse_cpu_percent(cpu_output)
+            except:
+                cpu_percent = None
+                
+            try:
+                cpu_load_output = net_connect.send_command("show system cpu-load nt-a detail")
+                cpu_load = self._parse_cpu_load(cpu_load_output)
+            except:
+                cpu_load = None
+            
+            # Coletar uso de memória
+            try:
+                mem_output = net_connect.send_command("show system memory-usage nt-a detail")
+                mem_percent = self._parse_mem_percent(mem_output)
+            except:
+                mem_percent = None
+            
+            # Coletar modelo da OLT
+            try:
+                slot_output = net_connect.send_command("show equipment slot")
+                model = self._parse_olt_model(slot_output)
+            except:
+                model = "Unknown"
             
             # Atualizar ou criar registro
             system_info, created = OltSystemInfo.objects.get_or_create(
@@ -385,7 +412,14 @@ class OltSystemCollector:
                 system_info.uptime_raw = uptime_data['raw']
                 system_info.save()
             
-            return system_info
+            # Retornar dados extras
+            return {
+                'system_info': system_info,
+                'cpu_percent': cpu_percent,
+                'cpu_load': cpu_load,
+                'mem_percent': mem_percent,
+                'model': model
+            }
             
         except Exception as e:
             print(f"Erro ao coletar informações do sistema: {str(e)}")
@@ -465,12 +499,16 @@ class OltSystemCollector:
     def collect_all_system_data(self):
         """Coleta todas as informações do sistema"""
         try:
-            system_info = self.collect_system_info()
+            sys_data = self.collect_system_info()
             slots = self.collect_slot_info()
             temperatures = self.collect_temperature_info()
             
             return {
-                'system_info': system_info,
+                'system_info': sys_data.get('system_info') if isinstance(sys_data, dict) else sys_data,
+                'cpu_percent': sys_data.get('cpu_percent') if isinstance(sys_data, dict) else None,
+                'cpu_load': sys_data.get('cpu_load') if isinstance(sys_data, dict) else None,
+                'mem_percent': sys_data.get('mem_percent') if isinstance(sys_data, dict) else None,
+                'model': sys_data.get('model') if isinstance(sys_data, dict) else None,
                 'slots': slots,
                 'temperatures': temperatures
             }
@@ -594,3 +632,122 @@ class OltSystemCollector:
             print(f"Erro ao fazer parse da temperatura: {str(e)}")
         
         return temperatures
+    
+    def _parse_cpu_percent(self, output):
+        """Extrai percentual de uso de CPU do output"""
+        try:
+            # Buscar padrões comuns de CPU usage nos outputs Nokia/Alcatel
+            patterns = [
+                r'CPU\s*[Uu]sage\s*[:\s]*(\d+)%',
+                r'CPU\s*[Ll]oad\s*[:\s]*(\d+)%', 
+                r'Processor\s*[Ll]oad\s*[:\s]*(\d+)%',
+                r'Total\s*CPU\s*[:\s]*(\d+)%',
+                r'(\d+)%\s*CPU'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, output, re.IGNORECASE)
+                if match:
+                    return int(match.group(1))
+            
+            # Se não encontrou padrão específico, tentar extrair primeiro número seguido de %
+            match = re.search(r'(\d+)%', output)
+            if match:
+                return int(match.group(1))
+                
+        except Exception as e:
+            print(f"Erro ao fazer parse de CPU: {str(e)}")
+        
+        return None
+    
+    def _parse_cpu_load(self, output):
+        """Extrai load average do CPU"""
+        try:
+            # Buscar padrões de load average
+            patterns = [
+                r'Load\s*[Aa]verage\s*[:\s]*([\d\.]+)',
+                r'Average\s*[Ll]oad\s*[:\s]*([\d\.]+)',
+                r'CPU\s*[Ll]oad\s*[:\s]*([\d\.]+)',
+                r'System\s*[Ll]oad\s*[:\s]*([\d\.]+)'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, output, re.IGNORECASE)
+                if match:
+                    return float(match.group(1))
+                    
+        except Exception as e:
+            print(f"Erro ao fazer parse de CPU load: {str(e)}")
+        
+        return None
+    
+    def _parse_mem_percent(self, output):
+        """Extrai percentual de uso de memória"""
+        try:
+            # Buscar padrões de memory usage
+            patterns = [
+                r'Memory\s*[Uu]sage\s*[:\s]*(\d+)%',
+                r'Memory\s*[Uu]sed\s*[:\s]*(\d+)%',
+                r'RAM\s*[Uu]sage\s*[:\s]*(\d+)%',
+                r'Total\s*[Mm]emory\s*[:\s]*(\d+)%',
+                r'(\d+)%\s*[Mm]emory'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, output, re.IGNORECASE)
+                if match:
+                    return int(match.group(1))
+            
+            # Tentar calcular percentual se tiver valores absolutos
+            # Exemplo: "Memory: 1024MB / 4096MB"
+            mem_match = re.search(r'(\d+)[MKG]?B?\s*/\s*(\d+)[MKG]?B?', output, re.IGNORECASE)
+            if mem_match:
+                used = int(mem_match.group(1))
+                total = int(mem_match.group(2))
+                if total > 0:
+                    return int((used / total) * 100)
+                    
+        except Exception as e:
+            print(f"Erro ao fazer parse de memória: {str(e)}")
+        
+        return None
+    
+    def _parse_olt_model(self, output):
+        """Extrai modelo da OLT do output de show equipment slot"""
+        try:
+            # Buscar padrões de modelo em show equipment slot
+            patterns = [
+                r'acu:\s*(\S+)',  # Padrão comum para ACU (Alcatel Control Unit)
+                r'Model\s*[:\s]*(\S+)',
+                r'Type\s*[:\s]*(\S+)',
+                r'Equipment\s*[:\s]*(\S+)'
+            ]
+            
+            lines = output.split('\n')
+            for line in lines:
+                # Procurar por linha que contenha informação da ACU (placa principal)
+                if 'acu:' in line.lower():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        # Segundo campo geralmente é o modelo
+                        model = parts[1]
+                        if model and model != 'unknown' and len(model) > 2:
+                            return model
+                
+                # Buscar outros padrões
+                for pattern in patterns:
+                    match = re.search(pattern, line, re.IGNORECASE)
+                    if match and match.group(1) != 'unknown':
+                        return match.group(1)
+            
+            # Se não encontrou modelo específico, tentar extrair da primeira linha válida
+            for line in lines[:10]:  # Verificar apenas primeiras 10 linhas
+                if any(keyword in line.lower() for keyword in ['alcatel', 'nokia', 'isam', '7360']):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return parts[1] if len(parts[1]) > 2 else "ISAM-7360"
+                        
+        except Exception as e:
+            print(f"Erro ao fazer parse do modelo: {str(e)}")
+        
+        return "ISAM-Unknown"
