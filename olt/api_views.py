@@ -388,20 +388,5 @@ def update_olt_system_data(request):
             {'error': f'Erro ao obter estatísticas: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-            return Response({
-                'connection_status': 'unknown',
-                'message': 'Nenhum dado do sistema encontrado',
-                'note': 'Execute uma atualização via frontend para coletar dados'
-            })
-            
-    except Exception as e:
-        return Response(
-            {'error': f'Erro ao verificar status: {str(e)}'}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-        
-    except Exception as e:
-        return Response(
-            {'error': f'Erro ao obter alertas: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
