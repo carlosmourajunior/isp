@@ -636,25 +636,25 @@ class OltSystemCollector:
     def _parse_cpu_percent(self, output):
         """Extrai percentual de uso de CPU do output"""
         try:
-            # Buscar padrões comuns de CPU usage nos outputs Nokia/Alcatel
-            patterns = [
-                r'CPU\s*[Uu]sage\s*[:\s]*(\d+)%',
-                r'CPU\s*[Ll]oad\s*[:\s]*(\d+)%', 
-                r'Processor\s*[Ll]oad\s*[:\s]*(\d+)%',
-                r'Total\s*CPU\s*[:\s]*(\d+)%',
-                r'(\d+)%\s*CPU'
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, output, re.IGNORECASE)
-                if match:
-                    return int(match.group(1))
-            
-            # Se não encontrou padrão específico, tentar extrair primeiro número seguido de %
-            match = re.search(r'(\d+)%', output)
-            if match:
-                return int(match.group(1))
+            # Buscar especificamente pelo padrão do seu equipamento:
+            # "Usage                                133,736          26.75%"
+            lines = output.split('\n')
+            for line in lines:
+                line = line.strip()
+                if 'Usage' in line and '%' in line:
+                    # Extrair o percentual da linha de Usage
+                    match = re.search(r'Usage\s+[\d,]+\s+([\d.]+)%', line)
+                    if match:
+                        cpu_percent = float(match.group(1))
+                        return int(round(cpu_percent))
                 
+                # Alternativa: procurar por "Busiest Core Utilization"
+                if 'Busiest Core Utilization' in line and '%' in line:
+                    match = re.search(r'Busiest Core Utilization\s+[\d,]+\s+([\d.]+)%', line)
+                    if match:
+                        cpu_percent = float(match.group(1))
+                        return int(round(cpu_percent))
+                        
         except Exception as e:
             print(f"Erro ao fazer parse de CPU: {str(e)}")
         
@@ -684,70 +684,31 @@ class OltSystemCollector:
     def _parse_mem_percent(self, output):
         """Extrai percentual de uso de memória"""
         try:
-            # Buscar padrões de memory usage
-            patterns = [
-                r'Memory\s*[Uu]sage\s*[:\s]*(\d+)%',
-                r'Memory\s*[Uu]sed\s*[:\s]*(\d+)%',
-                r'RAM\s*[Uu]sage\s*[:\s]*(\d+)%',
-                r'Total\s*[Mm]emory\s*[:\s]*(\d+)%',
-                r'(\d+)%\s*[Mm]emory'
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, output, re.IGNORECASE)
-                if match:
-                    return int(match.group(1))
-            
-            # Tentar calcular percentual se tiver valores absolutos
-            # Exemplo: "Memory: 1024MB / 4096MB"
-            mem_match = re.search(r'(\d+)[MKG]?B?\s*/\s*(\d+)[MKG]?B?', output, re.IGNORECASE)
-            if mem_match:
-                used = int(mem_match.group(1))
-                total = int(mem_match.group(2))
-                if total > 0:
-                    return int((used / total) * 100)
-                    
+            # Buscar especificamente pelo padrão do seu equipamento:
+            # "slot : nt-a                          total(mb) : 1563                           used(mb) : 1334                    used-portion(%) : 85"
+            lines = output.split('\n')
+            for line in lines:
+                line = line.strip()
+                if 'slot : nt-a' in line and 'used-portion(%)' in line:
+                    # Extrair o percentual da linha
+                    match = re.search(r'used-portion\(%\)\s*:\s*(\d+)', line)
+                    if match:
+                        mem_percent = int(match.group(1))
+                        return mem_percent
+                        
+                # Formato alternativo: procurar por "used-portion(%)" em linha separada
+                if 'used-portion(%)' in line:
+                    match = re.search(r'used-portion\(%\)\s*:\s*(\d+)', line)
+                    if match:
+                        mem_percent = int(match.group(1))
+                        return mem_percent
+                        
         except Exception as e:
             print(f"Erro ao fazer parse de memória: {str(e)}")
         
         return None
     
     def _parse_olt_model(self, output):
-        """Extrai modelo da OLT do output de show equipment slot"""
-        try:
-            # Buscar padrões de modelo em show equipment slot
-            patterns = [
-                r'acu:\s*(\S+)',  # Padrão comum para ACU (Alcatel Control Unit)
-                r'Model\s*[:\s]*(\S+)',
-                r'Type\s*[:\s]*(\S+)',
-                r'Equipment\s*[:\s]*(\S+)'
-            ]
-            
-            lines = output.split('\n')
-            for line in lines:
-                # Procurar por linha que contenha informação da ACU (placa principal)
-                if 'acu:' in line.lower():
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        # Segundo campo geralmente é o modelo
-                        model = parts[1]
-                        if model and model != 'unknown' and len(model) > 2:
-                            return model
-                
-                # Buscar outros padrões
-                for pattern in patterns:
-                    match = re.search(pattern, line, re.IGNORECASE)
-                    if match and match.group(1) != 'unknown':
-                        return match.group(1)
-            
-            # Se não encontrou modelo específico, tentar extrair da primeira linha válida
-            for line in lines[:10]:  # Verificar apenas primeiras 10 linhas
-                if any(keyword in line.lower() for keyword in ['alcatel', 'nokia', 'isam', '7360']):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        return parts[1] if len(parts[1]) > 2 else "ISAM-7360"
-                        
-        except Exception as e:
-            print(f"Erro ao fazer parse do modelo: {str(e)}")
-        
-        return "ISAM-Unknown"
+        """Retorna modelo fixo da OLT"""
+        # Modelo fixo conforme informado pelo usuário
+        return "FX-4"
