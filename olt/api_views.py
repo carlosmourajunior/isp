@@ -2,6 +2,7 @@ from rest_framework import generics, filters, status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.authentication import SessionAuthentication
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -127,20 +128,38 @@ def onu_stats(request):
 @permission_classes([IsAuthenticated])
 def onu_by_pon(request, pon):
     """
-    Lista ONUs de uma PON específica
+    Lista ONUs de uma PON específica com paginação
     """
+    # Filtrar ONUs da PON específica
     onus = ONU.objects.filter(pon=pon).order_by('position')
-    if not onus.exists():
-        return Response(
-            {'error': f'Nenhuma ONU encontrada na PON {pon}'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
     
-    serializer = ONUSerializer(onus, many=True)
-    return Response({
+    # Aplicar filtros adicionais se fornecidos
+    oper_state = request.GET.get('oper_state')
+    if oper_state:
+        onus = onus.filter(oper_state=oper_state)
+    
+    admin_state = request.GET.get('admin_state')
+    if admin_state:
+        onus = onus.filter(admin_state=admin_state)
+    
+    cliente_fibra = request.GET.get('cliente_fibra')
+    if cliente_fibra:
+        if cliente_fibra.lower() == 'true':
+            onus = onus.filter(cliente_fibra=True)
+        elif cliente_fibra.lower() == 'false':
+            onus = onus.filter(cliente_fibra=False)
+    
+    # Paginação
+    paginator = PageNumberPagination()
+    paginator.page_size = 50
+    result_page = paginator.paginate_queryset(onus, request)
+    
+    serializer = ONUSerializer(result_page, many=True)
+    
+    return paginator.get_paginated_response({
         'pon': pon,
         'total_onus': onus.count(),
-        'onus': serializer.data
+        'results': serializer.data
     })
 
 
