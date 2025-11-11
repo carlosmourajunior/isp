@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     ONU, OltUsers, PlacaOnu, ClienteFibraIxc, 
-    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
+    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltSystemStats, OltAlarm
 )
 
 
@@ -162,6 +162,28 @@ class OltSfpDiagnosticsSerializer(serializers.ModelSerializer):
         ]
 
 
+class OltSystemStatsHistorySerializer(serializers.ModelSerializer):
+    """Serializer para histórico de estatísticas da OLT"""
+    
+    class Meta:
+        model = OltSystemStats
+        fields = [
+            'id',
+            'cpu_percent',
+            'cpu_load', 
+            'mem_percent',
+            'model',
+            'uptime_days',
+            'total_slots',
+            'operational_slots',
+            'avg_temperature',
+            'max_temperature',
+            'critical_temps',
+            'warning_temps',
+            'measured_at'
+        ]
+
+
 class OltSystemStatsSerializer(serializers.Serializer):
     """Serializer para estatísticas do sistema OLT"""
     system_info = OltSystemInfoSerializer()
@@ -172,3 +194,24 @@ class OltSystemStatsSerializer(serializers.Serializer):
     total_slots = serializers.IntegerField()
     operational_slots = serializers.IntegerField()
     offline_slots = serializers.IntegerField()
+
+
+class OltAlarmSerializer(serializers.ModelSerializer):
+    alarm_type_display = serializers.CharField(source='get_alarm_type_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+    
+    class Meta:
+        model = OltAlarm
+        fields = [
+            'id',
+            'alarm_type',
+            'alarm_type_display',
+            'severity',
+            'severity_display',
+            'alarm_id',
+            'entity',
+            'description',
+            'alarm_time',
+            'collected_at',
+            'is_active'
+        ]

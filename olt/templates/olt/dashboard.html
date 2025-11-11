@@ -74,6 +74,60 @@
     <hr class="my-4">
     {% endif %}
 
+    <!-- Seção de Gráficos de Performance -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4>Performance da OLT (Últimos 7 dias)</h4>
+        </div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-header">
+                    <h6>CPU e Memória</h6>
+                </div>
+                <div class="card-body">
+                    <canvas id="cpuMemoryChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-header">
+                    <h6>Estatísticas</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6">
+                            <small class="text-muted">CPU Atual</small>
+                            <h5 id="currentCpu" class="text-primary">{{ cpu_percent|default:"--" }}%</h5>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">Memória Atual</small>
+                            <h5 id="currentMemory" class="text-danger">{{ mem_percent|default:"--" }}%</h5>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-6">
+                            <small class="text-muted">CPU Média</small>
+                            <h6 id="avgCpu" class="text-info">--</h6>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">Memória Média</small>
+                            <h6 id="avgMemory" class="text-info">--</h6>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <small class="text-muted">Amostras: <span id="totalSamples">--</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <hr class="my-4">
+
     <!-- Seção de ONUs -->
     <div class="row mb-4">
         <div class="col-12">
@@ -187,5 +241,124 @@
         </div>
     </div>
 </div>
-<script>setTimeout(function(){window.location.reload()},30000)</script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+// Configuração do gráfico
+let cpuMemoryChart;
+
+// Função para carregar dados do gráfico
+async function loadChartData() {
+    try {
+        const response = await fetch('/api/olt/chart-data/', {
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('access_token'),
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            updateChart(data);
+            updateStats(data.summary);
+        } else {
+            console.error('Erro ao carregar dados do gráfico:', response.status);
+        }
+    } catch (error) {
+        console.error('Erro na requisição:', error);
+    }
+}
+
+// Função para atualizar o gráfico
+function updateChart(data) {
+    const ctx = document.getElementById('cpuMemoryChart').getContext('2d');
+    
+    if (cpuMemoryChart) {
+        cpuMemoryChart.destroy();
+    }
+    
+    cpuMemoryChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.labels,
+            datasets: data.datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': ' + context.parsed.y + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Função para atualizar estatísticas
+function updateStats(summary) {
+    document.getElementById('currentCpu').textContent = (summary.current_cpu || 0) + '%';
+    document.getElementById('currentMemory').textContent = (summary.current_memory || 0) + '%';
+    document.getElementById('avgCpu').textContent = Math.round(summary.avg_cpu || 0) + '%';
+    document.getElementById('avgMemory').textContent = Math.round(summary.avg_memory || 0) + '%';
+    document.getElementById('totalSamples').textContent = summary.total_samples || 0;
+}
+
+// Carregar dados quando a página carregar
+document.addEventListener('DOMContentLoaded', function() {
+    // Verificar se há token de autenticação
+    const token = localStorage.getItem('access_token');
+    
+    if (token) {
+        loadChartData();
+        
+        // Atualizar gráfico a cada 5 minutos
+        setInterval(loadChartData, 300000);
+    } else {
+        console.warn('Token de autenticação não encontrado');
+        // Se não há token, mostrar dados estáticos ou mensagem
+        document.getElementById('cpuMemoryChart').getContext('2d');
+        const ctx = document.getElementById('cpuMemoryChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Sem dados'],
+                datasets: [{
+                    label: 'Dados indisponíveis',
+                    data: [0],
+                    borderColor: 'rgb(200, 200, 200)',
+                    backgroundColor: 'rgba(200, 200, 200, 0.2)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        enabled: false
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+
 {% endblock %}

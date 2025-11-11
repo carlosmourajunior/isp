@@ -2,7 +2,7 @@ from django.http import HttpResponse
 from django.template import loader
 from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector, OltSystemCollector
 from django.shortcuts import render, redirect
-from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature
+from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltAlarm
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
 from routeros_api import RouterOsApiPool
@@ -12,7 +12,8 @@ from .tasks import (
     update_onus_task,  # Changed from update_all_onus
     update_clientes_task,
     update_port_occupation_task,
-    update_mac_task
+    update_mac_task,
+    collect_alarms_task
 )
 from django.core.paginator import Paginator
 from django.db.models import Q, FloatField, Count, Avg, Max
@@ -46,38 +47,50 @@ def home(request):
     # 5 portas com maior ocupação
     top_ports = OltUsers.objects.order_by('-users_connected')[:5]
 
-    # Informações da OLT
+    # Informações da OLT (apenas dados históricos - não coleta automaticamente)
     try:
-        # Informações do sistema
-        # Coleta completa via API
-        from olt.utils import OltSystemCollector
-        collector = OltSystemCollector()
-        result = collector.collect_all_system_data()
-        system_info = result.get('system_info') if result else None
-        cpu_percent = result.get('cpu_percent') if result else None
-        cpu_load = result.get('cpu_load') if result else None
-        mem_percent = result.get('mem_percent') if result else None
-        model = result.get('model') if result else None
-        # Estatísticas dos slots
-        total_slots = result['slots'].count() if result and result['slots'] else 0
+        from olt.models import OltSystemStats, OltSystemInfo
+        from django.db.models import Avg, Max
+        
+        # Buscar dados históricos mais recentes (sem coletar novos)
+        latest_stats = OltSystemStats.get_latest()
+        
+        if latest_stats:
+            cpu_percent = latest_stats.cpu_percent
+            cpu_load = latest_stats.cpu_load
+            mem_percent = latest_stats.mem_percent
+            model = latest_stats.model
+        else:
+            cpu_percent = None
+            cpu_load = None
+            mem_percent = None
+            model = "FX-4"  # Padrão
+        
+        # Informações do sistema armazenadas
+        system_info = OltSystemInfo.objects.first()
+        
+        # Estatísticas dos slots (dados armazenados)
+        total_slots = OltSlot.objects.count()
         operational_slots = OltSlot.objects.filter(
             enabled=True, 
             availability='available', 
             error_status='no-error'
         ).count()
-        # Temperaturas críticas e de aviso
-        temps = result['temperatures'] if result and result['temperatures'] else OltTemperature.objects.all()
-        critical_temps = temps.filter(actual_temp__gte=75).count() if hasattr(temps, 'filter') else 0
-        warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count() if hasattr(temps, 'filter') else 0
-        avg_temp = temps.aggregate(avg_temp=Avg('actual_temp'))['avg_temp'] if hasattr(temps, 'aggregate') else 0
-        max_temp = temps.aggregate(max_temp=Max('actual_temp'))['max_temp'] if hasattr(temps, 'aggregate') else 0
+        
+        # Temperaturas (dados armazenados)
+        temps = OltTemperature.objects.all()
+        critical_temps = temps.filter(actual_temp__gte=75).count()
+        warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count()
+        avg_temp = temps.aggregate(avg_temp=Avg('actual_temp'))['avg_temp']
+        max_temp = temps.aggregate(max_temp=Max('actual_temp'))['max_temp']
+        
     except Exception as e:
         print(f"Erro ao obter informações da OLT: {str(e)}")
         system_info = None
         cpu_percent = None
         cpu_load = None
         mem_percent = None
-        model = None
+        model = "FX-4"
         total_slots = 0
         operational_slots = 0
         critical_temps = 0
@@ -924,3 +937,64 @@ def list_ftth_boxes_by_occupancy(request):
         'items_per_page': items_per_page
     }
     return render(request, 'olt/list_ftth_boxes.html', context)
+
+
+@login_required
+def alarms_view(request):
+    """
+    View para exibir alarmes da OLT
+    """
+    # Filtros
+    alarm_type = request.GET.get('type', 'all')
+    severity = request.GET.get('severity', 'all')
+    active_only = request.GET.get('active_only', 'true') == 'true'
+    search_query = request.GET.get('search', '')
+    
+    # Query base
+    alarms = OltAlarm.objects.all()
+    
+    # Aplicar filtros
+    if alarm_type != 'all':
+        alarms = alarms.filter(alarm_type=alarm_type)
+    
+    if severity != 'all':
+        alarms = alarms.filter(severity=severity)
+        
+    if active_only:
+        alarms = alarms.filter(is_active=True)
+        
+    if search_query:
+        alarms = alarms.filter(
+            Q(description__icontains=search_query) |
+            Q(entity__icontains=search_query) |
+            Q(alarm_id__icontains=search_query)
+        )
+    
+    # Paginação
+    items_per_page = int(request.GET.get('per_page', 25))
+    paginator = Paginator(alarms, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    # Estatísticas
+    stats = {
+        'total': OltAlarm.objects.count(),
+        'active': OltAlarm.objects.filter(is_active=True).count(),
+        'critical': OltAlarm.objects.filter(severity='critical', is_active=True).count(),
+        'major': OltAlarm.objects.filter(severity='major', is_active=True).count(),
+        'minor': OltAlarm.objects.filter(severity='minor', is_active=True).count(),
+    }
+    
+    context = {
+        'alarms': page_obj,
+        'stats': stats,
+        'alarm_type': alarm_type,
+        'severity': severity, 
+        'active_only': active_only,
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'title': 'Alarmes OLT',
+        'description': 'Monitoramento de alarmes da OLT em tempo real.'
+    }
+    
+    return render(request, 'olt/alarms.html', context)

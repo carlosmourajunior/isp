@@ -266,3 +266,123 @@ class AllowedIP(models.Model):
     def __str__(self):
         return f"{self.ip_address} - {self.description}"
 
+
+class OltSystemStats(models.Model):
+    """Model para armazenar histórico de estatísticas da OLT (CPU, memória)"""
+    
+    # Dados de performance
+    cpu_percent = models.IntegerField(
+        verbose_name="CPU (%)", 
+        null=True, 
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)]
+    )
+    cpu_load = models.FloatField(
+        verbose_name="CPU Load Average", 
+        null=True, 
+        blank=True
+    )
+    mem_percent = models.IntegerField(
+        verbose_name="Memória (%)", 
+        null=True, 
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)]
+    )
+    
+    # Informações do sistema (podem variar ao longo do tempo)
+    model = models.CharField(max_length=50, verbose_name="Modelo", default="FX-4")
+    uptime_days = models.IntegerField(verbose_name="Uptime (dias)", default=0)
+    
+    # Estatísticas dos slots
+    total_slots = models.IntegerField(verbose_name="Total de Slots", default=0)
+    operational_slots = models.IntegerField(verbose_name="Slots Operacionais", default=0)
+    
+    # Estatísticas de temperatura
+    avg_temperature = models.FloatField(verbose_name="Temperatura Média (°C)", null=True, blank=True)
+    max_temperature = models.FloatField(verbose_name="Temperatura Máxima (°C)", null=True, blank=True)
+    critical_temps = models.IntegerField(verbose_name="Temperaturas Críticas", default=0)
+    warning_temps = models.IntegerField(verbose_name="Temperaturas de Aviso", default=0)
+    
+    # Timestamp da medição
+    measured_at = models.DateTimeField(auto_now_add=True, verbose_name="Medido em")
+    
+    class Meta:
+        verbose_name = "Estatística da OLT"
+        verbose_name_plural = "Estatísticas da OLT"
+        ordering = ['-measured_at']
+        indexes = [
+            models.Index(fields=['measured_at']),
+            models.Index(fields=['-measured_at']),
+        ]
+    
+    def __str__(self):
+        return f"OLT Stats {self.measured_at.strftime('%Y-%m-%d %H:%M')} - CPU: {self.cpu_percent}%, Mem: {self.mem_percent}%"
+    
+    @classmethod
+    def cleanup_old_records(cls):
+        """Remove registros mais antigos que 7 dias"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        cutoff_date = timezone.now() - timedelta(days=7)
+        deleted_count = cls.objects.filter(measured_at__lt=cutoff_date).delete()[0]
+        return deleted_count
+    
+    @classmethod
+    def get_latest(cls):
+        """Retorna a última medição"""
+        return cls.objects.first()
+    
+    @classmethod
+    def get_last_24h(cls):
+        """Retorna medições das últimas 24 horas"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        cutoff_date = timezone.now() - timedelta(hours=24)
+        return cls.objects.filter(measured_at__gte=cutoff_date)
+
+
+class OltAlarm(models.Model):
+    ALARM_TYPES = (
+        ('current', 'Alarme Atual'),
+        ('major', 'Alarme Major'),
+        ('critical', 'Alarme Crítico'),
+        ('log', 'Log de Alarmes'),
+    )
+    
+    SEVERITY_CHOICES = (
+        ('minor', 'Minor'),
+        ('major', 'Major'),
+        ('critical', 'Critical'),
+        ('warning', 'Warning'),
+        ('clear', 'Clear'),
+    )
+    
+    alarm_type = models.CharField(max_length=20, choices=ALARM_TYPES, verbose_name="Tipo de Alarme")
+    severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, verbose_name="Severidade", null=True, blank=True)
+    alarm_id = models.CharField(max_length=50, verbose_name="ID do Alarme", null=True, blank=True)
+    entity = models.CharField(max_length=100, verbose_name="Entidade", null=True, blank=True)
+    description = models.TextField(verbose_name="Descrição do Alarme")
+    alarm_time = models.DateTimeField(verbose_name="Data/Hora do Alarme", null=True, blank=True)
+    collected_at = models.DateTimeField(auto_now_add=True, verbose_name="Coletado em")
+    is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    
+    class Meta:
+        verbose_name = "Alarme OLT"
+        verbose_name_plural = "Alarmes OLT"
+        ordering = ['-alarm_time', '-collected_at']
+    
+    def __str__(self):
+        return f"{self.get_severity_display()} - {self.entity}: {self.description[:50]}"
+    
+    @classmethod
+    def cleanup_old_records(cls):
+        """Remove registros mais antigos que 30 dias"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        cutoff_date = timezone.now() - timedelta(days=30)
+        deleted_count = cls.objects.filter(collected_at__lt=cutoff_date).delete()[0]
+        return deleted_count
+

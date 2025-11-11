@@ -61,6 +61,18 @@ def update_clientes_task(user=None, menu_item=None):
     return "Atualização de clientes concluída"
 
 @django_rq.job
+def collect_alarms_task(user=None, menu_item=None):
+    """Task para coletar alarmes da OLT"""
+    connector = olt_connector()
+    job = rq.get_current_job()
+    add_metadata(job, user, menu_item)
+    job.meta['current_step'] = "Coletando alarmes da OLT"
+    job.save_meta()
+    
+    collected_count = connector.collect_all_alarms()
+    return f"Coleta de alarmes concluída - {collected_count} alarmes coletados"
+
+@django_rq.job
 def update_all_data_task(user=None, menu_item=None):
     """Task para iniciar a sequência de atualizações (incluindo dados da OLT)"""
     queue = get_queue('default')
@@ -77,6 +89,7 @@ def update_all_data_task(user=None, menu_item=None):
     queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=False)
     queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=False)
     queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
+    queue.enqueue(collect_alarms_task, user=user, menu_item="Coleta de Alarmes", job_timeout=600, at_front=False)
     
     return "Sequência de atualizações completa iniciada"
 

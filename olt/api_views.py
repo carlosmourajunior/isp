@@ -1,13 +1,15 @@
 from rest_framework import generics, filters, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, Count, Avg, Max, Min
 from .models import (
     ONU, OltUsers, PlacaOnu, ClienteFibraIxc,
-    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
+    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltAlarm
 )
 from .serializers import (
     ONUSerializer, 
@@ -19,6 +21,7 @@ from .serializers import (
     OltSlotSerializer,
     OltTemperatureSerializer,
     OltSfpDiagnosticsSerializer,
+    OltAlarmSerializer,
     OltSystemStatsSerializer
 )
 from .utils import OltSystemCollector
@@ -223,35 +226,69 @@ class OltSfpDiagnosticsListAPIView(generics.ListAPIView):
 @permission_classes([IsAuthenticated])
 def olt_system_stats(request):
     """
-    Estatísticas completas do sistema OLT
+    Estatísticas completas do sistema OLT - mostra última medição do histórico
     """
     try:
-        # Informações do sistema
-        system_info = OltSystemInfo.objects.first()
+        from olt.models import OltSystemStats
+        from olt.serializers import OltSystemStatsHistorySerializer
         
-        # Estatísticas dos slots
-        total_slots = OltSlot.objects.count()
-        operational_slots = OltSlot.objects.filter(
-            enabled=True, 
-            availability='available', 
-            error_status='no-error'
-        ).count()
-        offline_slots = total_slots - operational_slots
+        # Buscar última medição do histórico
+        latest_stats = OltSystemStats.get_latest()
         
-        slots_by_type = OltSlot.objects.values('actual_type').annotate(
-            count=Count('id')
-        ).order_by('actual_type')
-        
-        # Estatísticas de temperatura
-        temps = OltTemperature.objects.all()
-        critical_temps = temps.filter(actual_temp__gte=75).count()  # Temperatura crítica
-        warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count()
-        
-        temp_stats = temps.aggregate(
-            avg_temp=Avg('actual_temp'),
-            max_temp=Max('actual_temp'),
-            min_temp=Min('actual_temp')
-        )
+        if latest_stats:
+            # Usar dados do histórico
+            system_info = OltSystemInfo.objects.first()
+            
+            # Dados da última medição
+            response_data = {
+                'system_info': OltSystemInfoSerializer(system_info).data if system_info else None,
+                'cpu_percent': latest_stats.cpu_percent,
+                'cpu_load': latest_stats.cpu_load,
+                'mem_percent': latest_stats.mem_percent,
+                'model': latest_stats.model,
+                'slots_stats': {
+                    'total_slots': latest_stats.total_slots,
+                    'operational_slots': latest_stats.operational_slots,
+                    'offline_slots': latest_stats.total_slots - latest_stats.operational_slots,
+                    'operational_percentage': round((latest_stats.operational_slots / latest_stats.total_slots * 100), 2) if latest_stats.total_slots > 0 else 0
+                },
+                'temperature_stats': {
+                    'critical_temperatures': latest_stats.critical_temps,
+                    'warning_temperatures': latest_stats.warning_temps,
+                    'average_temperature': round(latest_stats.avg_temperature, 1) if latest_stats.avg_temperature else 0,
+                    'max_temperature': latest_stats.max_temperature or 0,
+                },
+                'last_updated': latest_stats.measured_at,
+                'latest_measurement': OltSystemStatsHistorySerializer(latest_stats).data
+            }
+        else:
+            # Fallback para o método antigo se não houver dados no histórico
+            collector = OltSystemCollector()
+            result = collector.collect_all_system_data()
+            system_info = result.get('system_info') if result else None
+            
+            # Estatísticas dos slots  
+            total_slots = result['slots'].count() if result and result['slots'] else 0
+            operational_slots = OltSlot.objects.filter(
+                enabled=True, 
+                availability='available', 
+                error_status='no-error'
+            ).count()
+            offline_slots = total_slots - operational_slots
+            
+            slots_by_type = OltSlot.objects.values('actual_type').annotate(
+                count=Count('id')
+            ).order_by('actual_type')
+            
+            # Estatísticas de temperatura
+            temps = result['temperatures'] if result and result['temperatures'] else OltTemperature.objects.all()
+            critical_temps = temps.filter(actual_temp__gte=75).count() if hasattr(temps, 'filter') else 0
+            warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count() if hasattr(temps, 'filter') else 0
+            temp_stats = temps.aggregate(
+                avg_temp=Avg('actual_temp'),
+                max_temp=Max('actual_temp'),
+                min_temp=Min('actual_temp')
+            ) if hasattr(temps, 'aggregate') else {'avg_temp': 0, 'max_temp': 0, 'min_temp': 0}
         
         # Temperaturas por slot
         temp_by_slot = temps.values('slot_name').annotate(
@@ -357,6 +394,47 @@ def olt_temperature_alerts(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def olt_system_history(request):
+    """
+    Histórico de estatísticas da OLT (últimas 24h ou período específico)
+    """
+    try:
+        from olt.models import OltSystemStats
+        from olt.serializers import OltSystemStatsHistorySerializer
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Parâmetros opcionais
+        hours = int(request.GET.get('hours', 24))  # Default: últimas 24h
+        limit = int(request.GET.get('limit', 100))  # Default: máximo 100 registros
+        
+        # Filtrar por período
+        if hours > 0:
+            cutoff_date = timezone.now() - timedelta(hours=hours)
+            queryset = OltSystemStats.objects.filter(measured_at__gte=cutoff_date)
+        else:
+            queryset = OltSystemStats.objects.all()
+        
+        # Limitar quantidade e ordenar
+        stats = queryset.order_by('-measured_at')[:limit]
+        
+        response_data = {
+            'count': stats.count(),
+            'period_hours': hours,
+            'measurements': OltSystemStatsHistorySerializer(stats, many=True).data
+        }
+        
+        return Response(response_data)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao consultar histórico: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def olt_connection_status(request):
     """
     Verifica status de conexão com a OLT
@@ -382,5 +460,176 @@ def olt_connection_status(request):
     except Exception as e:
         return Response(
             {'error': f'Erro ao verificar status: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olt_chart_data(request):
+    """
+    Endpoint para dados dos gráficos de CPU e memória
+    Retorna dados formatados para Chart.js
+    """
+    try:
+        from .models import OltSystemStats
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Buscar dados dos últimos 7 dias
+        end_date = timezone.now()
+        start_date = end_date - timedelta(days=7)
+        
+        stats = OltSystemStats.objects.filter(
+            measured_at__gte=start_date
+        ).order_by('measured_at')
+        
+        # Preparar dados para o gráfico
+        labels = []
+        cpu_data = []
+        memory_data = []
+        
+        for stat in stats:
+            # Formatar data/hora para o gráfico
+            labels.append(stat.measured_at.strftime('%d/%m %H:%M'))
+            cpu_data.append(stat.cpu_percent or 0)
+            memory_data.append(stat.mem_percent or 0)
+        
+        # Se não há dados suficientes, criar dados de exemplo/placeholder
+        if len(labels) < 2:
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            
+            # Criar algumas amostras de exemplo das últimas 24h
+            for i in range(24, 0, -1):
+                sample_time = now - timedelta(hours=i)
+                labels.append(sample_time.strftime('%d/%m %H:%M'))
+                # Usar dados das últimas medições ou valores padrão
+                last_stats = OltSystemStats.get_latest()
+                if last_stats:
+                    cpu_data.append(last_stats.cpu_percent or 0)
+                    memory_data.append(last_stats.mem_percent or 0)
+                else:
+                    cpu_data.append(0)
+                    memory_data.append(0)
+        
+        return Response({
+            'labels': labels,
+            'datasets': [
+                {
+                    'label': 'CPU (%)',
+                    'data': cpu_data,
+                    'borderColor': 'rgb(54, 162, 235)',
+                    'backgroundColor': 'rgba(54, 162, 235, 0.2)',
+                    'borderWidth': 2,
+                    'fill': True,
+                    'tension': 0.1
+                },
+                {
+                    'label': 'Memória (%)',
+                    'data': memory_data,
+                    'borderColor': 'rgb(255, 99, 132)',
+                    'backgroundColor': 'rgba(255, 99, 132, 0.2)',
+                    'borderWidth': 2,
+                    'fill': True,
+                    'tension': 0.1
+                }
+            ],
+            'summary': {
+                'current_cpu': cpu_data[-1] if cpu_data else 0,
+                'current_memory': memory_data[-1] if memory_data else 0,
+                'avg_cpu': sum(cpu_data) / len(cpu_data) if cpu_data else 0,
+                'avg_memory': sum(memory_data) / len(memory_data) if memory_data else 0,
+                'max_cpu': max(cpu_data) if cpu_data else 0,
+                'max_memory': max(memory_data) if memory_data else 0,
+                'total_samples': len(labels)
+            }
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao obter dados do gráfico: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+class OltAlarmListView(generics.ListAPIView):
+    """
+    API endpoint para listar alarmes da OLT
+    """
+    serializer_class = OltAlarmSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['alarm_type', 'severity', 'is_active']
+    search_fields = ['description', 'entity', 'alarm_id']
+    ordering_fields = ['alarm_time', 'collected_at', 'severity']
+    ordering = ['-alarm_time', '-collected_at']
+    
+    def get_queryset(self):
+        queryset = OltAlarm.objects.all()
+        
+        # Filtro para alarmes ativos apenas
+        active_only = self.request.query_params.get('active_only', None)
+        if active_only == 'true':
+            queryset = queryset.filter(is_active=True)
+            
+        return queryset
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def alarms_stats(request):
+    """
+    Endpoint para estatísticas dos alarmes
+    """
+    try:
+        stats = {
+            'total': OltAlarm.objects.count(),
+            'active': OltAlarm.objects.filter(is_active=True).count(),
+            'by_severity': {
+                'critical': OltAlarm.objects.filter(severity='critical', is_active=True).count(),
+                'major': OltAlarm.objects.filter(severity='major', is_active=True).count(),
+                'minor': OltAlarm.objects.filter(severity='minor', is_active=True).count(),
+                'warning': OltAlarm.objects.filter(severity='warning', is_active=True).count(),
+            },
+            'by_type': {
+                'current': OltAlarm.objects.filter(alarm_type='current', is_active=True).count(),
+                'major': OltAlarm.objects.filter(alarm_type='major', is_active=True).count(),
+                'critical': OltAlarm.objects.filter(alarm_type='critical', is_active=True).count(),
+                'log': OltAlarm.objects.filter(alarm_type='log', is_active=True).count(),
+            },
+            'last_update': OltAlarm.objects.first().collected_at if OltAlarm.objects.exists() else None
+        }
+        
+        return Response(stats)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao obter estatísticas dos alarmes: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def collect_alarms(request):
+    """
+    Endpoint para forçar coleta de alarmes
+    """
+    try:
+        from .utils import olt_connector
+        
+        connector = olt_connector()
+        collected_count = connector.collect_all_alarms()
+        
+        return Response({
+            'message': 'Coleta de alarmes iniciada com sucesso',
+            'collected_count': collected_count
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao iniciar coleta de alarmes: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

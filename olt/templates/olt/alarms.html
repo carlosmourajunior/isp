@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <h2><i class="fas fa-exclamation-triangle text-warning"></i> {{ title }}</h2>
+            <p class="text-muted">{{ description }}</p>
+            
+            <!-- Estatísticas dos Alarmes -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Total de Alarmes</h5>
+                            <h3>{{ stats.total }}</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Alarmes Ativos</h5>
+                            <h3>{{ stats.active }}</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-danger text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Críticos</h5>
+                            <h3>{{ stats.critical }}</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-white">
+                        <div class="card-body">
+                            <h5 class="card-title">Major</h5>
+                            <h3>{{ stats.major }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filtros -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Filtros</h5>
+                </div>
+                <div class="card-body">
+                    <form method="get" class="form-inline">
+                        <div class="form-group mr-3">
+                            <label for="type" class="mr-2">Tipo:</label>
+                            <select name="type" id="type" class="form-control">
+                                <option value="all" {% if alarm_type == 'all' %}selected{% endif %}>Todos</option>
+                                <option value="current" {% if alarm_type == 'current' %}selected{% endif %}>Atuais</option>
+                                <option value="major" {% if alarm_type == 'major' %}selected{% endif %}>Major</option>
+                                <option value="critical" {% if alarm_type == 'critical' %}selected{% endif %}>Críticos</option>
+                                <option value="log" {% if alarm_type == 'log' %}selected{% endif %}>Log</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group mr-3">
+                            <label for="severity" class="mr-2">Severidade:</label>
+                            <select name="severity" id="severity" class="form-control">
+                                <option value="all" {% if severity == 'all' %}selected{% endif %}>Todas</option>
+                                <option value="critical" {% if severity == 'critical' %}selected{% endif %}>Critical</option>
+                                <option value="major" {% if severity == 'major' %}selected{% endif %}>Major</option>
+                                <option value="minor" {% if severity == 'minor' %}selected{% endif %}>Minor</option>
+                                <option value="warning" {% if severity == 'warning' %}selected{% endif %}>Warning</option>
+                                <option value="clear" {% if severity == 'clear' %}selected{% endif %}>Clear</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group mr-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="active_only" value="true" 
+                                       id="active_only" {% if active_only %}checked{% endif %}>
+                                <label class="form-check-label" for="active_only">
+                                    Apenas Ativos
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group mr-3">
+                            <input type="text" name="search" class="form-control" placeholder="Buscar..." value="{{ search_query }}">
+                        </div>
+                        
+                        <div class="form-group mr-3">
+                            <label for="per_page" class="mr-2">Por página:</label>
+                            <select name="per_page" id="per_page" class="form-control">
+                                <option value="25" {% if items_per_page == 25 %}selected{% endif %}>25</option>
+                                <option value="50" {% if items_per_page == 50 %}selected{% endif %}>50</option>
+                                <option value="100" {% if items_per_page == 100 %}selected{% endif %}>100</option>
+                            </select>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Filtrar</button>
+                        <a href="{% url 'olt:alarms' %}" class="btn btn-secondary ml-2">Limpar</a>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Tabela de Alarmes -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5>Alarmes ({{ alarms.paginator.count }} total)</h5>
+                    <button type="button" class="btn btn-sm btn-info" onclick="forceCollectAlarms()">
+                        <i class="fas fa-sync"></i> Coletar Alarmes
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if alarms %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="thead-dark">
+                                <tr>
+                                    <th>Severidade</th>
+                                    <th>Tipo</th>
+                                    <th>ID</th>
+                                    <th>Entidade</th>
+                                    <th>Descrição</th>
+                                    <th>Data/Hora Alarme</th>
+                                    <th>Coletado em</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for alarm in alarms %}
+                                <tr>
+                                    <td>
+                                        {% if alarm.severity == 'critical' %}
+                                            <span class="badge badge-danger">{{ alarm.get_severity_display }}</span>
+                                        {% elif alarm.severity == 'major' %}
+                                            <span class="badge badge-warning">{{ alarm.get_severity_display }}</span>
+                                        {% elif alarm.severity == 'minor' %}
+                                            <span class="badge badge-info">{{ alarm.get_severity_display }}</span>
+                                        {% elif alarm.severity == 'warning' %}
+                                            <span class="badge badge-secondary">{{ alarm.get_severity_display }}</span>
+                                        {% else %}
+                                            <span class="badge badge-success">{{ alarm.get_severity_display }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ alarm.get_alarm_type_display }}</td>
+                                    <td>{{ alarm.alarm_id|default:"-" }}</td>
+                                    <td>{{ alarm.entity|default:"-" }}</td>
+                                    <td>
+                                        <span title="{{ alarm.description }}">
+                                            {{ alarm.description|truncatechars:80 }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if alarm.alarm_time %}
+                                            {{ alarm.alarm_time|date:"d/m/Y H:i:s" }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ alarm.collected_at|date:"d/m/Y H:i:s" }}</td>
+                                    <td>
+                                        {% if alarm.is_active %}
+                                            <span class="badge badge-success">Ativo</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">Inativo</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Paginação -->
+                    {% if alarms.has_other_pages %}
+                    <nav aria-label="Alarmes pagination">
+                        <ul class="pagination justify-content-center">
+                            {% if alarms.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ alarms.previous_page_number }}&type={{ alarm_type }}&severity={{ severity }}&active_only={{ active_only }}&search={{ search_query }}&per_page={{ items_per_page }}">Anterior</a>
+                                </li>
+                            {% endif %}
+                            
+                            {% for num in alarms.paginator.page_range %}
+                                {% if alarms.number == num %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ num }}</span>
+                                    </li>
+                                {% elif num > alarms.number|add:'-3' and num < alarms.number|add:'3' %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ num }}&type={{ alarm_type }}&severity={{ severity }}&active_only={{ active_only }}&search={{ search_query }}&per_page={{ items_per_page }}">{{ num }}</a>
+                                    </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if alarms.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ alarms.next_page_number }}&type={{ alarm_type }}&severity={{ severity }}&active_only={{ active_only }}&search={{ search_query }}&per_page={{ items_per_page }}">Próximo</a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    
+                    {% else %}
+                    <div class="alert alert-info" role="alert">
+                        <i class="fas fa-info-circle"></i> Nenhum alarme encontrado com os filtros aplicados.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% csrf_token %}
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function forceCollectAlarms() {
+    if (confirm('Deseja forçar a coleta de alarmes da OLT? Isso pode levar alguns minutos.')) {
+        const csrftoken = getCookie('csrftoken');
+        
+        // Fazer a requisição
+        fetch('/api/olt/alarms/collect/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrftoken,
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.message) {
+                alert('Coleta iniciada: ' + data.message);
+                window.location.reload();
+            } else {
+                alert('Erro: ' + (data.error || 'Erro desconhecido'));
+            }
+        })
+        .catch(error => {
+            console.error('Erro na requisição:', error);
+            alert('Erro na requisição: ' + error.message);
+        });
+    }
+}
+</script>
+{% endblock %}

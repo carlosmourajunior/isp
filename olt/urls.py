@@ -36,4 +36,5 @@ urlpatterns = [
     path('clients-signal-below-27/', views.list_onus_signal_between_27_and_29, name='clients_signal_below_27'),
     path('clients-signal-below-29/', views.clients_signal_below_29, name='clients_signal_below_29'),
     path('ftth-boxes/', views.list_ftth_boxes_by_occupancy, name='list_ftth_boxes_by_occupancy'),
+    path('alarms/', views.alarms_view, name='alarms'),
 ]

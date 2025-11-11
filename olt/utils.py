@@ -3,7 +3,7 @@ import base64
 from datetime import datetime
 import time
 from netmiko import ConnectHandler
-from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
+from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltAlarm
 import re
 from dotenv import load_dotenv
 import os
@@ -80,7 +80,7 @@ class olt_connector():
         olts = OltUsers.objects.all()
         olts.delete()
 
-        for slot in range(3):
+        for slot in range(1, 3):  # Slots 1 e 2 apenas
             for pon in range(17):
                 command = f"show equipment ont status pon 1/1/{slot}/{pon}"
                 try:
@@ -103,18 +103,44 @@ class olt_connector():
         return old_values
 
     def update_all_ports(self):
-        for slot in range(3):
-            for pon in range(17):
-                self.update_port(slot, pon)
+        """
+        Coleta dados de TODOS os PONs e depois faz limpeza baseada no resultado completo
+        """
+        print("Iniciando coleta completa de todos os PONs...")
+        
+        # Lista para armazenar TODOS os seriais encontrados na OLT
+        all_found_serials = []
+        
+        # Primeiro: coletar dados de TODOS os PONs sem fazer limpeza
+        for slot in range(1, 3):  # slots 1, 2
+            for pon in range(17):  # pons 0-16
+                try:
+                    pon_id = f"1/1/{slot}/{pon}"
+                    
+                    net_connect = self.connect()
+                    command = f"show equipment ont status pon {pon_id}"
+                    output = net_connect.send_command(command)
+                    self.disconnect(net_connect)
+                    
+                    # Processar dados SEM fazer limpeza
+                    found_serials = self.update_values_smart_no_cleanup(output, pon_id)
+                    all_found_serials.extend(found_serials)
+                    
+                except Exception as e:
+                    print(f"Erro ao coletar PON 1/1/{slot}/{pon}: {str(e)}")
+                    continue
+        
+        print(f"Coleta completa finalizada. ONUs encontradas: {len(all_found_serials)}")
+        
+        # Segundo: fazer limpeza baseada em TODAS as ONUs encontradas
+        self.cleanup_missing_onus(all_found_serials)
 
     def update_port(self, slot, pon):
-        old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
-        old_values.delete()
         net_connect = self.connect()
         command = f"show equipment ont status pon 1/1/{slot}/{pon}"
         try:
             output = net_connect.send_command(command)
-            self.update_values(output)
+            self.update_values_smart(output, f"1/1/{slot}/{pon}")
         except Exception:
             pass
         finally:
@@ -190,6 +216,237 @@ class olt_connector():
             new_onu.desc1 = data['desc1']
             new_onu.desc2 = data['desc2']
             new_onu.save()
+
+    def update_values_smart_no_cleanup(self, output, pon_id):
+        """
+        Processa ONUs de um PON específico SEM fazer limpeza.
+        Retorna listas de serials e MACs encontrados.
+        """
+        from django.utils import timezone
+        
+        data_dict = {}
+        try:
+            data_dict = self.create_dict_from_result(output)
+        except:
+            pass
+
+        # Lista para retornar os seriais encontrados
+        found_serials = []
+        
+        # Processar cada ONU encontrada
+        for data in data_dict:
+            try:
+                found_serials.append(data['sernum'])
+                
+                # Encontrar ONU existente apenas pelo SERIAL
+                existing_onu = ONU.objects.filter(serial=data['sernum']).first()
+                
+                if existing_onu:
+                    # Atualizar ONU existente
+                    existing_onu.pon = data['pon']
+                    existing_onu.position = data['position']
+                    existing_onu.serial = data['sernum']
+                    # MAC não é atualizado aqui - processo separado
+                    existing_onu.admin_state = data['admin_status']
+                    existing_onu.oper_state = data['oper_status']
+                    try:
+                        existing_onu.olt_rx_sig = float(data['olt_rx_sig'])
+                    except (ValueError, TypeError):
+                        existing_onu.olt_rx_sig = None
+                    existing_onu.ont_olt = data['ont_olt']
+                    existing_onu.desc1 = data['desc1']
+                    existing_onu.desc2 = data['desc2']
+                    
+                    # Verificar cliente fibra
+                    try:
+                        has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
+                        existing_onu.cliente_fibra = True
+                    except:
+                        existing_onu.cliente_fibra = False
+                    
+                    existing_onu.save()
+                else:
+                    # Criar nova ONU
+                    new_onu = ONU()
+                    new_onu.pon = data['pon']
+                    new_onu.position = data['position']
+                    new_onu.serial = data['sernum']
+                    # MAC será preenchido em processo separado
+                    new_onu.mac = ""  # Campo vazio inicialmente
+                    new_onu.admin_state = data['admin_status']
+                    new_onu.oper_state = data['oper_status']
+                    try:
+                        new_onu.olt_rx_sig = float(data['olt_rx_sig'])
+                    except (ValueError, TypeError):
+                        new_onu.olt_rx_sig = None
+                    new_onu.ont_olt = data['ont_olt']
+                    new_onu.desc1 = data['desc1']
+                    new_onu.desc2 = data['desc2']
+                    
+                    # Verificar cliente fibra
+                    try:
+                        has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
+                        new_onu.cliente_fibra = True
+                    except:
+                        new_onu.cliente_fibra = False
+                    
+                    new_onu.save()
+                    
+            except Exception as e:
+                print(f"Erro ao processar ONU {data.get('sernum', 'unknown')}: {str(e)}")
+                continue
+        
+        return found_serials
+
+    def update_values_smart(self, output, pon_filter=None):
+        """
+        Atualização inteligente de ONUs:
+        - Atualiza ONUs existentes
+        - Cria novas ONUs encontradas
+        - Remove ONUs não encontradas na busca atual
+        """
+        from django.utils import timezone
+        
+        data_dict = {}
+        try:
+            data_dict = self.create_dict_from_result(output)
+        except:
+            pass
+
+        # Lista de identificadores únicos encontrados na busca atual (serial e MAC)
+        current_serials = [data['sernum'] for data in data_dict]
+        current_macs = [data['mac'] for data in data_dict]
+        
+        # Processar cada ONU encontrada
+        for data in data_dict:
+            try:
+                # Tentar encontrar ONU existente pelo SERIAL (identificador único)
+                # O serial é o identificador mais confiável da ONU
+                existing_onu = ONU.objects.filter(
+                    serial=data['sernum']
+                ).first()
+                
+                # Se não encontrar pelo serial, tentar pelo MAC (fallback)
+                if not existing_onu and 'mac' in data and data['mac']:
+                    existing_onu = ONU.objects.filter(
+                        mac=data['mac']
+                    ).first()
+                
+                if existing_onu:
+                    # Atualizar ONU existente (incluindo posição que pode ter mudado)
+                    existing_onu.pon = data['pon']  # Atualizar posição também
+                    existing_onu.position = data['position']  # Atualizar posição também
+                    existing_onu.serial = data['sernum']
+                    existing_onu.mac = data['mac']  # Atualizar MAC também
+                    existing_onu.admin_state = data['admin_status']
+                    existing_onu.oper_state = data['oper_status']
+                    try:
+                        existing_onu.olt_rx_sig = float(data['olt_rx_sig'])
+                    except (ValueError, TypeError):
+                        existing_onu.olt_rx_sig = None
+                    existing_onu.ont_olt = data['ont_olt']
+                    existing_onu.desc1 = data['desc1']
+                    existing_onu.desc2 = data['desc2']
+                    
+                    # Verificar cliente fibra
+                    try:
+                        has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
+                        existing_onu.cliente_fibra = True
+                    except:
+                        existing_onu.cliente_fibra = False
+                    
+                    existing_onu.save()
+                else:
+                    # Criar nova ONU
+                    new_onu = ONU()
+                    new_onu.pon = data['pon']
+                    new_onu.position = data['position']
+                    new_onu.serial = data['sernum']
+                    new_onu.mac = data['mac']  # Definir MAC também
+                    new_onu.admin_state = data['admin_status']
+                    new_onu.oper_state = data['oper_status']
+                    try:
+                        new_onu.olt_rx_sig = float(data['olt_rx_sig'])
+                    except (ValueError, TypeError):
+                        new_onu.olt_rx_sig = None
+                    new_onu.ont_olt = data['ont_olt']
+                    new_onu.desc1 = data['desc1']
+                    new_onu.desc2 = data['desc2']
+                    
+                    # Verificar cliente fibra
+                    try:
+                        has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
+                        new_onu.cliente_fibra = True
+                    except:
+                        new_onu.cliente_fibra = False
+                    
+                    new_onu.save()
+                    
+            except Exception as e:
+                print(f"Erro ao processar ONU {data.get('sernum', 'unknown')}: {str(e)}")
+                continue
+        
+        # Remover ONUs que não foram encontradas na busca atual (baseado no SERIAL e MAC)
+        if pon_filter:
+            # Se especificou um PON, remover apenas ONUs desse PON que não foram encontradas
+            old_onus = ONU.objects.filter(pon=pon_filter)
+            for onu in old_onus:
+                # ONU deve ser removida apenas se nem serial nem MAC foram encontrados na busca atual
+                # Considerar campos vazios/nulos como não encontrados
+                serial_not_found = not onu.serial or onu.serial not in current_serials
+                mac_not_found = not onu.mac or onu.mac not in current_macs
+                
+                if serial_not_found and mac_not_found:
+                    print(f"Removendo ONU não encontrada no PON {pon_filter}: {onu.serial} - {onu.pon}/{onu.position}")
+                    onu.delete()
+                else:
+                    print(f"Mantendo ONU encontrada no PON {pon_filter}: {onu.serial} - {onu.pon}/{onu.position}")
+        else:
+            # CUIDADO: Se não especificou PON específico, significa que coletamos dados de TODOS os PONs
+            # Só devemos remover ONUs se temos certeza de que coletamos dados completos
+            # Por segurança, não vamos remover nenhuma ONU quando não há filtro de PON
+            # pois pode significar que não coletamos dados completos de todos os PONs
+            print("Aviso: Coleta sem filtro de PON detectada. Por segurança, não removendo ONUs automaticamente.")
+            print(f"ONUs encontradas nesta coleta: {len(current_serials)}")
+            
+            # Se quiser habilitar remoção automática sem filtro, descomente as linhas abaixo:
+            # all_onus = ONU.objects.all()
+            # for onu in all_onus:
+            #     serial_not_found = not onu.serial or onu.serial not in current_serials
+            #     mac_not_found = not onu.mac or onu.mac not in current_macs
+            #     
+            #     if serial_not_found and mac_not_found:
+            #         print(f"Removendo ONU não encontrada: {onu.serial} - {onu.pon}/{onu.position}")
+            #         onu.delete()
+            #     else:
+            #         print(f"Mantendo ONU encontrada: {onu.serial} - {onu.pon}/{onu.position}")
+
+    def cleanup_missing_onus(self, all_found_serials):
+        """
+        Remove ONUs que estão no banco de dados mas não foram encontradas na coleta completa da OLT
+        Utiliza apenas o SERIAL para identificação (MAC é atualizado em processo separado)
+        """
+        print("Iniciando limpeza de ONUs não encontradas na OLT...")
+        
+        # Buscar todas as ONUs no banco de dados
+        all_db_onus = ONU.objects.all()
+        removed_count = 0
+        kept_count = 0
+        
+        for onu in all_db_onus:
+            # Verificar se a ONU foi encontrada na coleta (apenas por SERIAL)
+            serial_found = onu.serial and onu.serial in all_found_serials
+            
+            if not serial_found:
+                # ONU não foi encontrada na OLT - deve ser removida
+                print(f"Removendo ONU não encontrada na OLT: {onu.serial} - {onu.pon}/{onu.position}")
+                onu.delete()
+                removed_count += 1
+            else:
+                # ONU encontrada - manter no banco
+                kept_count += 1
+        
+        print(f"Limpeza concluída. ONUs removidas: {removed_count}, ONUs mantidas: {kept_count}")
             
     def remove_onu(self, pon):
         net_connect = self.connect()
@@ -276,11 +533,12 @@ class olt_connector():
             1/1/1/14   1/1/1/14/118   ALCL:FBE0EB05 up       up       -23.2       0.7           departamentoeducacao                              departamentoeducacao                              undefined
 
         '''
-
+        
         pattern = r'\s*(\d+/\d+/\d+/\d+)\s+(\d+/\d+/\d+/\d+/\d+)\s+(\w+:\w+)\s+(\w+)\s+(\w+|invalid)\s+([-.\d]+|invalid)\s+([-.\d]+|invalid)\s+(.*?)\s+(.*?)\s+(.*?)\s*'
 
         data_list = []
         matches = re.findall(pattern, data)
+        
         for match in matches:
             pon = match[0]
             position = match[1].split("/")[-1]
@@ -296,6 +554,7 @@ class olt_connector():
                 'pon': pon,
                 'position': position,
                 'sernum': sernum,
+                # MAC não é processado aqui - será atualizado em processo separado
                 'admin_status': admin_status,
                 'oper_status': oper_status,
                 'olt_rx_sig': olt_rx_sig,
@@ -304,6 +563,365 @@ class olt_connector():
                 'desc2': desc2
             })
         return data_list
+
+    def collect_all_alarms(self):
+        """
+        Coleta todos os tipos de alarmes da OLT
+        """
+        from olt.models import OltAlarm
+        from django.utils import timezone
+        import re
+        
+        alarm_commands = {
+            'major': 'show alarm delta-log major',
+            'critical': 'show alarm delta-log critical', 
+            'log': 'show alarm log table',
+            'current': 'show alarm current table'
+        }
+        
+        net_connect = self.connect()
+        collected_count = 0
+        
+        try:
+            for alarm_type, command in alarm_commands.items():
+                try:
+                    print(f"Coletando alarmes {alarm_type}...")
+                    output = net_connect.send_command(command)
+                    alarms = self._parse_alarm_output(output, alarm_type)
+                    
+                    # Salvar alarmes no banco
+                    for alarm_data in alarms:
+                        OltAlarm.objects.create(**alarm_data)
+                        collected_count += 1
+                        
+                except Exception as e:
+                    print(f"Erro ao coletar alarmes {alarm_type}: {str(e)}")
+                    continue
+                    
+        finally:
+            self.disconnect(net_connect)
+            
+        # Limpar alarmes antigos
+        OltAlarm.cleanup_old_records()
+        
+        print(f"Coleta de alarmes concluída. {collected_count} alarmes coletados.")
+        return collected_count
+    
+    def _parse_alarm_output(self, output, alarm_type):
+        """
+        Processa a saída dos comandos de alarme com parsing melhorado
+        """
+        from django.utils import timezone
+        from datetime import datetime
+        import re
+        
+        alarms = []
+        
+        if not output or 'invalid token' in output.lower():
+            return alarms
+            
+        lines = output.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('=') or line.startswith('-'):
+                continue
+                
+            try:
+                # Parse específico baseado no tipo de alarme detectado
+                alarm_data = self._parse_specific_alarm_format(line, alarm_type)
+                
+                if alarm_data:
+                    alarms.append(alarm_data)
+                
+            except Exception as e:
+                print(f"Erro ao processar linha de alarme: {line} - {str(e)}")
+                continue
+                
+        return alarms
+    
+    def _parse_specific_alarm_format(self, line, alarm_type):
+        """
+        Parse específico para diferentes formatos de alarme
+        """
+        from django.utils import timezone
+        import re
+        
+        # Formato: [72/09/26 17:08:14] major alarm cleared for ONU RCMG:19896C04 (goretegomes) - P…
+        major_alarm_pattern = r'(\[[\d/\s:]+\])\s*(major|critical|minor|warning)\s*alarm\s*(cleared|raised)?\s*for\s*(?:ONU\s+)?([A-Z0-9:]+)\s*\(([^)]+)\)\s*-\s*(.*)'
+        
+        match = re.match(major_alarm_pattern, line, re.IGNORECASE)
+        if match:
+            timestamp_str = match.group(1)
+            severity = match.group(2).lower()
+            action = match.group(3) or 'active'  # 'cleared' ou 'raised' ou default 'active'
+            onu_serial = match.group(4)
+            client_name = match.group(5)
+            remaining_content = match.group(6)
+            
+            # Extrair timestamp
+            alarm_time = self._extract_timestamp_from_brackets(timestamp_str)
+            
+            # Montar entidade e descrição conforme especificação
+            entity = f"{timestamp_str} {severity} alarm {action} for {onu_serial} ({client_name})"
+            description = remaining_content.strip()
+            
+            return {
+                'alarm_type': alarm_type,
+                'severity': severity if severity in ['critical', 'major', 'minor', 'warning'] else 'minor',
+                'entity': entity,
+                'description': description,
+                'alarm_time': alarm_time,
+                'collected_at': timezone.now(),
+                'is_active': action != 'cleared'  # Se foi 'cleared', não está ativo
+            }
+        
+        # Fallback para o parsing antigo se não coincidir com o novo formato
+        return self._parse_generic_alarm_format(line, alarm_type)
+    
+    def _parse_generic_alarm_format(self, line, alarm_type):
+        """
+        Parse genérico para alarmes que não seguem o formato específico
+        """
+        from django.utils import timezone
+        
+        # Processar descrição melhorada
+        enhanced_description = self._enhance_alarm_description(line)
+        
+        # Parse básico para diferentes formatos de alarme
+        alarm_data = {
+            'alarm_type': alarm_type,
+            'description': enhanced_description,
+            'collected_at': timezone.now(),
+            'is_active': True
+        }
+        
+        # Extrair severidade do texto do alarme
+        severity = self._extract_severity_from_text(line)
+        if severity:
+            alarm_data['severity'] = severity
+        else:
+            alarm_data['severity'] = 'minor'  # padrão
+        
+        # Extrair entidade (posição ONT se disponível)
+        entity = self._extract_entity_from_text(line)
+        if entity:
+            alarm_data['entity'] = entity
+        
+        # Extrair timestamp se disponível
+        alarm_time = self._extract_timestamp_from_text(line)
+        if alarm_time:
+            alarm_data['alarm_time'] = alarm_time
+        
+        # Extrair ID do alarme se disponível
+        alarm_id = self._extract_alarm_id_from_text(line)
+        if alarm_id:
+            alarm_data['alarm_id'] = alarm_id
+        
+        return alarm_data
+    
+    def _extract_timestamp_from_brackets(self, timestamp_str):
+        """
+        Extrai timestamp do formato [72/09/26 17:08:14]
+        """
+        import re
+        from datetime import datetime
+        
+        # Remover colchetes
+        clean_timestamp = re.sub(r'[\[\]]', '', timestamp_str).strip()
+        
+        try:
+            # Formato: 72/09/26 17:08:14
+            if '/' in clean_timestamp and len(clean_timestamp.split('/')[0]) == 2:
+                return datetime.strptime(f"20{clean_timestamp}", '%Y/%m/%d %H:%M:%S')
+        except:
+            pass
+        
+        return None
+    
+    def _parse_severity(self, severity_str):
+        """
+        Converte string de severidade para choices do modelo
+        """
+        severity_map = {
+            'cr': 'critical',
+            'critical': 'critical',
+            'mj': 'major', 
+            'major': 'major',
+            'mn': 'minor',
+            'minor': 'minor',
+            'wa': 'warning',
+            'warning': 'warning',
+            'cl': 'clear',
+            'clear': 'clear'
+        }
+        
+        return severity_map.get(severity_str.lower(), 'minor')
+
+    def _enhance_alarm_description(self, raw_description):
+        """
+        Melhora a descrição do alarme traduzindo posições ONT para informações da ONU
+        """
+        import re
+        
+        enhanced = raw_description
+        
+        # Procurar por padrão ont 1/1/slot/pon/position
+        ont_pattern = r'ont (\d+/\d+/\d+/\d+/\d+)'
+        matches = re.finditer(ont_pattern, enhanced)
+        
+        for match in matches:
+            ont_position = match.group(1)
+            try:
+                # Extrair slot, pon e position da string
+                parts = ont_position.split('/')
+                if len(parts) >= 5:
+                    slot = parts[2]
+                    pon_num = parts[3] 
+                    position = parts[4]
+                    
+                    # Montar string PON no formato usado no banco
+                    pon_string = f"1/1/{slot}/{pon_num}"
+                    
+                    # Buscar ONU no banco
+                    try:
+                        onu = ONU.objects.get(pon=pon_string, position=int(position))
+                        # Substituir ont position por informações da ONU
+                        onu_info = f"ONU {onu.serial}"
+                        if onu.desc1:
+                            onu_info += f" ({onu.desc1})"
+                        onu_info += f" - PON {pon_string}/{position}"
+                        
+                        enhanced = enhanced.replace(f"ont {ont_position}", onu_info)
+                        
+                    except ONU.DoesNotExist:
+                        # Se não encontrou a ONU, pelo menos melhorar o formato
+                        enhanced = enhanced.replace(f"ont {ont_position}", f"ONT PON {pon_string}/{position}")
+                        
+            except Exception as e:
+                print(f"Erro ao processar posição ONT {ont_position}: {str(e)}")
+                continue
+        
+        # Limpar formatação e melhorar legibilidade
+        enhanced = self._clean_alarm_description(enhanced)
+        
+        return enhanced
+    
+    def _clean_alarm_description(self, description):
+        """
+        Limpa e melhora a formatação da descrição do alarme
+        """
+        import re
+        
+        # Remover linhas que são apenas contadores
+        if re.match(r'^\s*\d+\s+ont-ani\s+', description):
+            return f"Evento ONT-ANI: {description}"
+        
+        if re.match(r'^table count\s*:', description):
+            return f"Contagem de tabela: {description}"
+        
+        # Melhorar formato de timestamp no início
+        timestamp_pattern = r'^(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s*'
+        match = re.match(timestamp_pattern, description)
+        if match:
+            timestamp = match.group(1)
+            rest = description[len(match.group(0)):]
+            return f"[{timestamp}] {rest}"
+        
+        return description
+    
+    def _extract_severity_from_text(self, text):
+        """
+        Extrai a severidade do texto do alarme
+        """
+        import re
+        
+        # Padrões para identificar severidade
+        if re.search(r'\bcritical\b', text, re.IGNORECASE):
+            return 'critical'
+        elif re.search(r'\bmajor\b', text, re.IGNORECASE):
+            return 'major'
+        elif re.search(r'\bminor\b', text, re.IGNORECASE):
+            return 'minor'
+        elif re.search(r'\bwarning\b', text, re.IGNORECASE):
+            return 'warning'
+        elif re.search(r'\bclear\b', text, re.IGNORECASE):
+            return 'clear'
+        
+        return None
+    
+    def _extract_entity_from_text(self, text):
+        """
+        Extrai a entidade do texto do alarme
+        """
+        import re
+        
+        # Procurar por padrão ont position
+        ont_match = re.search(r'ont (\d+/\d+/\d+/\d+/\d+)', text)
+        if ont_match:
+            return ont_match.group(1)
+        
+        # Procurar por outros padrões de entidade
+        entity_patterns = [
+            r'(ont-ani)',
+            r'(pon \d+/\d+/\d+/\d+)',
+            r'(slot \d+)',
+        ]
+        
+        for pattern in entity_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    def _extract_timestamp_from_text(self, text):
+        """
+        Extrai timestamp do texto do alarme
+        """
+        import re
+        from datetime import datetime
+        
+        # Padrão para timestamp no formato da OLT
+        timestamp_patterns = [
+            r'(\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})',
+            r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})',
+            r'(\d{4}-\d{2}-\d{2}:\d{2}:\d{2}:\d{2})'
+        ]
+        
+        for pattern in timestamp_patterns:
+            match = re.search(pattern, text)
+            if match:
+                timestamp_str = match.group(1)
+                try:
+                    # Tentar diferentes formatos
+                    if '/' in timestamp_str:
+                        # Formato: 72/09/26 16:55:30
+                        return datetime.strptime(f"20{timestamp_str}", '%Y/%m/%d %H:%M:%S')
+                    elif ':' in timestamp_str and '-' in timestamp_str:
+                        if len(timestamp_str) > 16:
+                            # Formato: 1972-09-26:16:28:13
+                            return datetime.strptime(timestamp_str, '%Y-%m-%d:%H:%M:%S')
+                        else:
+                            # Formato: 2024-09-26 16:28:13
+                            return datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                except:
+                    continue
+        
+        return None
+    
+    def _extract_alarm_id_from_text(self, text):
+        """
+        Extrai ID do alarme do texto
+        """
+        import re
+        
+        # Procurar por números no início da linha que podem ser IDs
+        match = re.match(r'^(\d+)\s+', text)
+        if match:
+            return match.group(1)
+        
+        return None
         
 
 def connect_to_mikrotik(hostname, username, password, port):
@@ -497,20 +1115,72 @@ class OltSystemCollector:
             self.disconnect(net_connect)
     
     def collect_all_system_data(self):
-        """Coleta todas as informações do sistema"""
+        """Coleta todas as informações do sistema e salva no histórico"""
         try:
+            # Importações necessárias
+            from olt.models import OltSystemStats
+            from django.db.models import Avg, Max
+            
             sys_data = self.collect_system_info()
             slots = self.collect_slot_info()
             temperatures = self.collect_temperature_info()
             
+            # Extrair dados
+            system_info = sys_data.get('system_info') if isinstance(sys_data, dict) else sys_data
+            cpu_percent = sys_data.get('cpu_percent') if isinstance(sys_data, dict) else None
+            cpu_load = sys_data.get('cpu_load') if isinstance(sys_data, dict) else None
+            mem_percent = sys_data.get('mem_percent') if isinstance(sys_data, dict) else None
+            model = sys_data.get('model') if isinstance(sys_data, dict) else None
+            
+            # Calcular estatísticas de slots e temperatura
+            total_slots = slots.count() if slots else 0
+            operational_slots = slots.filter(
+                enabled=True, 
+                availability='available', 
+                error_status='no-error'
+            ).count() if slots else 0
+            
+            # Estatísticas de temperatura
+            if temperatures and hasattr(temperatures, 'aggregate'):
+                temp_stats = temperatures.aggregate(
+                    avg_temp=Avg('actual_temp'),
+                    max_temp=Max('actual_temp')
+                )
+                critical_temps = temperatures.filter(actual_temp__gte=75).count()
+                warning_temps = temperatures.filter(actual_temp__gte=70, actual_temp__lt=75).count()
+            else:
+                temp_stats = {'avg_temp': None, 'max_temp': None}
+                critical_temps = 0
+                warning_temps = 0
+            
+            # Salvar no histórico
+            
+            stats_record = OltSystemStats.objects.create(
+                cpu_percent=cpu_percent,
+                cpu_load=cpu_load,
+                mem_percent=mem_percent,
+                model=model or "FX-4",
+                uptime_days=system_info.uptime_days if system_info else 0,
+                total_slots=total_slots,
+                operational_slots=operational_slots,
+                avg_temperature=temp_stats.get('avg_temp'),
+                max_temperature=temp_stats.get('max_temp'),
+                critical_temps=critical_temps,
+                warning_temps=warning_temps
+            )
+            
+            # Limpar registros antigos (mais de 7 dias)
+            OltSystemStats.cleanup_old_records()
+            
             return {
-                'system_info': sys_data.get('system_info') if isinstance(sys_data, dict) else sys_data,
-                'cpu_percent': sys_data.get('cpu_percent') if isinstance(sys_data, dict) else None,
-                'cpu_load': sys_data.get('cpu_load') if isinstance(sys_data, dict) else None,
-                'mem_percent': sys_data.get('mem_percent') if isinstance(sys_data, dict) else None,
-                'model': sys_data.get('model') if isinstance(sys_data, dict) else None,
+                'system_info': system_info,
+                'cpu_percent': cpu_percent,
+                'cpu_load': cpu_load,
+                'mem_percent': mem_percent,
+                'model': model,
                 'slots': slots,
-                'temperatures': temperatures
+                'temperatures': temperatures,
+                'stats_record': stats_record
             }
         except Exception as e:
             print(f"Erro ao coletar dados do sistema: {str(e)}")
