@@ -245,90 +245,66 @@ class OltSfpDiagnosticsListAPIView(generics.ListAPIView):
 @permission_classes([IsAuthenticated])
 def olt_system_stats(request):
     """
-    Estatísticas completas do sistema OLT - mostra última medição do histórico
+    Estatísticas completas do sistema OLT - versão simplificada e segura
     """
     try:
-        from olt.models import OltSystemStats
-        from olt.serializers import OltSystemStatsHistorySerializer
+        # Inicializar variáveis básicas
+        system_info = OltSystemInfo.objects.first()
         
-        # Buscar última medição do histórico
-        latest_stats = OltSystemStats.get_latest()
+        # Estatísticas de temperatura (sempre usar dados atuais)
+        all_temps = OltTemperature.objects.all()
+        critical_temps = all_temps.filter(actual_temp__gte=75).count()
+        warning_temps = all_temps.filter(actual_temp__gte=70, actual_temp__lt=75).count()
+        normal_temps = all_temps.count() - critical_temps - warning_temps
         
-        if latest_stats:
-            # Usar dados do histórico
-            system_info = OltSystemInfo.objects.first()
-            
-            # Dados da última medição
-            response_data = {
-                'system_info': OltSystemInfoSerializer(system_info).data if system_info else None,
-                'cpu_percent': latest_stats.cpu_percent,
-                'cpu_load': latest_stats.cpu_load,
-                'mem_percent': latest_stats.mem_percent,
-                'model': latest_stats.model,
-                'slots_stats': {
-                    'total_slots': latest_stats.total_slots,
-                    'operational_slots': latest_stats.operational_slots,
-                    'offline_slots': latest_stats.total_slots - latest_stats.operational_slots,
-                    'operational_percentage': round((latest_stats.operational_slots / latest_stats.total_slots * 100), 2) if latest_stats.total_slots > 0 else 0
-                },
-                'temperature_stats': {
-                    'critical_temperatures': latest_stats.critical_temps,
-                    'warning_temperatures': latest_stats.warning_temps,
-                    'average_temperature': round(latest_stats.avg_temperature, 1) if latest_stats.avg_temperature else 0,
-                    'max_temperature': latest_stats.max_temperature or 0,
-                },
-                'last_updated': latest_stats.measured_at,
-                'latest_measurement': OltSystemStatsHistorySerializer(latest_stats).data
-            }
-        else:
-            # Fallback para o método antigo se não houver dados no histórico
-            collector = OltSystemCollector()
-            result = collector.collect_all_system_data()
-            system_info = result.get('system_info') if result else None
-            
-            # Estatísticas dos slots  
-            total_slots = result['slots'].count() if result and result['slots'] else 0
-            operational_slots = OltSlot.objects.filter(
-                enabled=True, 
-                availability='available', 
-                error_status='no-error'
-            ).count()
-            offline_slots = total_slots - operational_slots
-            
-            slots_by_type = OltSlot.objects.values('actual_type').annotate(
-                count=Count('id')
-            ).order_by('actual_type')
-            
-            # Estatísticas de temperatura
-            temps = result['temperatures'] if result and result['temperatures'] else OltTemperature.objects.all()
-            critical_temps = temps.filter(actual_temp__gte=75).count() if hasattr(temps, 'filter') else 0
-            warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count() if hasattr(temps, 'filter') else 0
-            temp_stats = temps.aggregate(
-                avg_temp=Avg('actual_temp'),
-                max_temp=Max('actual_temp'),
-                min_temp=Min('actual_temp')
-            ) if hasattr(temps, 'aggregate') else {'avg_temp': 0, 'max_temp': 0, 'min_temp': 0}
+        temp_stats = all_temps.aggregate(
+            avg_temp=Avg('actual_temp'),
+            max_temp=Max('actual_temp'),
+            min_temp=Min('actual_temp')
+        )
         
         # Temperaturas por slot
-        temp_by_slot = temps.values('slot_name').annotate(
+        temp_by_slot = all_temps.values('slot_name').annotate(
             avg_temp=Avg('actual_temp'),
             max_temp=Max('actual_temp'),
             sensor_count=Count('id')
         ).order_by('slot_name')
         
+        # Estatísticas dos slots
+        total_slots = OltSlot.objects.count()
+        operational_slots = OltSlot.objects.filter(
+            enabled=True, 
+            availability='available', 
+            error_status='no-error'
+        ).count()
+        
+        slots_by_type = OltSlot.objects.values('actual_type').annotate(
+            count=Count('id')
+        ).order_by('actual_type')
+        
+        # Tentar obter dados do histórico mais recente
+        latest_stats = None
+        try:
+            from olt.models import OltSystemStats
+            from olt.serializers import OltSystemStatsHistorySerializer
+            latest_stats = OltSystemStats.get_latest()
+        except:
+            pass  # Se não conseguir obter, usar dados básicos
+        
+        # Resposta base
         response_data = {
             'system_info': OltSystemInfoSerializer(system_info).data if system_info else None,
             'slots_stats': {
                 'total_slots': total_slots,
                 'operational_slots': operational_slots,
-                'offline_slots': offline_slots,
+                'offline_slots': total_slots - operational_slots,
                 'slots_by_type': list(slots_by_type),
                 'operational_percentage': round((operational_slots / total_slots * 100), 2) if total_slots > 0 else 0
             },
             'temperature_stats': {
                 'critical_temperatures': critical_temps,
                 'warning_temperatures': warning_temps,
-                'normal_temperatures': temps.count() - critical_temps - warning_temps,
+                'normal_temperatures': normal_temps,
                 'average_temperature': round(temp_stats['avg_temp'], 1) if temp_stats['avg_temp'] else 0,
                 'max_temperature': temp_stats['max_temp'] or 0,
                 'min_temperature': temp_stats['min_temp'] or 0,
@@ -336,6 +312,17 @@ def olt_system_stats(request):
             },
             'last_updated': system_info.last_updated if system_info else None
         }
+        
+        # Adicionar dados do histórico se disponível
+        if latest_stats:
+            response_data.update({
+                'cpu_percent': latest_stats.cpu_percent,
+                'cpu_load': latest_stats.cpu_load,
+                'mem_percent': latest_stats.mem_percent,
+                'model': latest_stats.model,
+                'latest_measurement': OltSystemStatsHistorySerializer(latest_stats).data,
+                'last_updated': latest_stats.measured_at
+            })
         
         return Response(response_data)
         
