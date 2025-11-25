@@ -18,33 +18,6 @@ if not os.path.exists(log_dir):
 
 django.setup()
 
-def test_direct_execution():
-    """Testa execução direta da task SEM RQ"""
-    print("=" * 60)
-    print("🔍 TESTE 1: Execução DIRETA (sem RQ)")
-    print("=" * 60)
-    
-    try:
-        from olt.tasks import scheduled_complete_update_task
-        
-        print("\n🚀 Chamando scheduled_complete_update_task DIRETAMENTE...")
-        result = scheduled_complete_update_task(
-            user="Teste Direto",
-            menu_item="Debug Test"
-        )
-        
-        print(f"\n✅ Execução direta bem-sucedida!")
-        print(f"   Resultado: {result}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"\n❌ Erro na execução direta:")
-        print(f"   Tipo: {type(e).__name__}")
-        print(f"   Mensagem: {str(e)}")
-        print(f"\n📋 Traceback completo:")
-        traceback.print_exc()
-        return False
 
 def test_rq_execution():
     """Testa execução via RQ"""
@@ -146,33 +119,19 @@ if __name__ == '__main__':
         print("   Verifique se o container 'redis' está rodando")
         sys.exit(1)
     
-    # Teste 1: Execução direta
-    direct_ok = test_direct_execution()
-    
-    # Teste 2: Execução via RQ
-    if direct_ok:
-        rq_ok = test_rq_execution()
-    else:
-        print("\n⚠️  Pulando teste RQ pois execução direta falhou")
-        rq_ok = False
-    
-    # Resumo
+    # Teste via RQ
+    rq_ok = test_rq_execution()
     print("\n" + "=" * 60)
-    print("📊 RESUMO DOS TESTES")
+    print("📊 RESUMO DO TESTE RQ")
     print("=" * 60)
     print(f"   Redis:           {'✅ OK' if redis_ok else '❌ FALHOU'}")
-    print(f"   Execução Direta: {'✅ OK' if direct_ok else '❌ FALHOU'}")
     print(f"   Execução RQ:     {'✅ OK' if rq_ok else '❌ FALHOU' if rq_ok is False else '⏰ TIMEOUT'}")
     print("=" * 60)
-    
-    if not direct_ok:
-        print("\n💡 DIAGNÓSTICO: O problema está na task em si, não no RQ")
-        print("   Revise o código da função scheduled_complete_update_task")
-    elif not rq_ok:
-        print("\n💡 DIAGNÓSTICO: A task funciona diretamente mas falha via RQ")
+    if not rq_ok:
+        print("\n💡 DIAGNÓSTICO: A task falhou via RQ")
         print("   Possíveis causas:")
         print("   1. Worker RQ não tem as mesmas permissões")
         print("   2. Configuração do RQ está incorreta")
         print("   3. Middleware Django está bloqueando")
     else:
-        print("\n✅ SUCESSO: Tudo funcionando corretamente!")
+        print("\n✅ SUCESSO: Task via RQ funcionando corretamente!")
