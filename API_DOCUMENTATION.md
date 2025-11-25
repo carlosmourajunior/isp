@@ -459,52 +459,52 @@ gpon-olt_1/1/1/1 → gpon-olt_1%2F1%2F1%2F1
 
 ```bash
 # 1. Obter token
-curl -X POST http://177.22.126.77:8000/api/auth/login/ \
+curl -X POST http://177.22.126.78:8000/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "password"}'
 
 # 2. Usar o token para acessar dados
-curl -X GET http://177.22.126.77:8000/api/onus/ \
+curl -X GET http://177.22.126.78:8000/api/onus/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 3. Filtrar ONUs online
-curl -X GET "http://177.22.126.77:8000/api/onus/?oper_state=up" \
+curl -X GET "http://177.22.126.78:8000/api/onus/?oper_state=up" \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 4. Obter informações do sistema OLT
-curl -X GET http://177.22.126.77:8000/api/olt/system-info/ \
+curl -X GET http://177.22.126.78:8000/api/olt/system-info/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 5. Obter estatísticas completas da OLT
-curl -X GET http://177.22.126.77:8000/api/olt/system-stats/ \
+curl -X GET http://177.22.126.78:8000/api/olt/system-stats/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 6. Listar alarmes da OLT
-curl -X GET http://177.22.126.77:8000/api/olt/alarms/ \
+curl -X GET http://177.22.126.78:8000/api/olt/alarms/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 7. Filtrar alarmes major ativos
-curl -X GET "http://177.22.126.77:8000/api/olt/alarms/?severity=major&active_only=true" \
+curl -X GET "http://177.22.126.78:8000/api/olt/alarms/?severity=major&active_only=true" \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 8. Obter estatísticas dos alarmes
-curl -X GET http://177.22.126.77:8000/api/olt/alarms/stats/ \
+curl -X GET http://177.22.126.78:8000/api/olt/alarms/stats/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 9. Coletar novos alarmes
-curl -X POST http://177.22.126.77:8000/api/olt/alarms/collect/ \
+curl -X POST http://177.22.126.78:8000/api/olt/alarms/collect/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 10. Listar ONUs de uma PON específica
-curl -X GET "http://177.22.126.77:8000/api/onus/pon/1%2F1%2F1%2F1/" \
+curl -X GET "http://177.22.126.78:8000/api/onus/pon/1%2F1%2F1%2F1/" \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 11. Filtrar ONUs UP de uma PON
-curl -X GET "http://177.22.126.77:8000/api/onus/pon/1%2F1%2F1%2F1/?oper_state=up" \
+curl -X GET "http://177.22.126.78:8000/api/onus/pon/1%2F1%2F1%2F1/?oper_state=up" \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 12. Atualizar dados do sistema OLT
-curl -X POST http://177.22.126.77:8000/api/olt/update-system-data/ \
+curl -X POST http://177.22.126.78:8000/api/olt/update-system-data/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 ```
 
@@ -514,7 +514,7 @@ curl -X POST http://177.22.126.77:8000/api/olt/update-system-data/ \
 import requests
 
 # 1. Obter token
-login_url = "http://177.22.126.77:8000/api/auth/login/"
+login_url = "http://177.22.126.78:8000/api/auth/login/"
 login_data = {"username": "admin", "password": "password"}
 response = requests.post(login_url, json=login_data)
 tokens = response.json()
@@ -524,7 +524,7 @@ access_token = tokens['access']
 headers = {"Authorization": f"Bearer {access_token}"}
 
 # 3. Buscar ONUs
-onus_url = "http://177.22.126.77:8000/api/onus/"
+onus_url = "http://177.22.126.78:8000/api/onus/"
 onus_response = requests.get(onus_url, headers=headers)
 onus_data = onus_response.json()
 
@@ -533,7 +533,7 @@ for onu in onus_data['results']:
     print(f"ONU {onu['serial']}: {onu['oper_state']}")
 
 # 4. Obter informações do sistema OLT
-system_url = "http://177.22.126.77:8000/api/olt/system-info/"
+system_url = "http://177.22.126.78:8000/api/olt/system-info/"
 system_response = requests.get(system_url, headers=headers)
 system_data = system_response.json()
 
@@ -541,7 +541,7 @@ print(f"Versão OLT: {system_data['isam_release']}")
 print(f"Uptime: {system_data['uptime_days']} dias")
 
 # 5. Obter estatísticas completas da OLT
-stats_url = "http://177.22.126.77:8000/api/olt/system-stats/"
+stats_url = "http://177.22.126.78:8000/api/olt/system-stats/"
 stats_response = requests.get(stats_url, headers=headers)
 stats_data = stats_response.json()
 
@@ -549,7 +549,7 @@ print(f"Slots operacionais: {stats_data['slots_stats']['operational_slots']}")
 print(f"Temperatura média: {stats_data['temperature_stats']['average_temperature']}°C")
 
 # 6. Buscar alarmes da OLT
-alarms_url = "http://177.22.126.77:8000/api/olt/alarms/"
+alarms_url = "http://177.22.126.78:8000/api/olt/alarms/"
 alarms_response = requests.get(alarms_url, headers=headers)
 alarms_data = alarms_response.json()
 
@@ -558,14 +558,14 @@ for alarm in alarms_data['results'][:5]:  # Mostrar apenas os 5 primeiros
     print(f"Alarme {alarm['severity']}: {alarm['entity'][:50]}...")
 
 # 7. Buscar alarmes major ativos
-major_alarms_url = "http://177.22.126.77:8000/api/olt/alarms/?severity=major&active_only=true"
+major_alarms_url = "http://177.22.126.78:8000/api/olt/alarms/?severity=major&active_only=true"
 major_response = requests.get(major_alarms_url, headers=headers)
 major_data = major_response.json()
 
 print(f"Alarmes major ativos: {major_data['count']}")
 
 # 8. Obter estatísticas dos alarmes
-stats_alarms_url = "http://177.22.126.77:8000/api/olt/alarms/stats/"
+stats_alarms_url = "http://177.22.126.78:8000/api/olt/alarms/stats/"
 stats_alarms_response = requests.get(stats_alarms_url, headers=headers)
 stats_alarms_data = stats_alarms_response.json()
 
@@ -574,14 +574,14 @@ print(f"Alarmes ativos: {stats_alarms_data['active_alarms']}")
 print("Por severidade:", stats_alarms_data['by_severity'])
 
 # 9. Coletar novos alarmes
-collect_url = "http://177.22.126.77:8000/api/olt/alarms/collect/"
+collect_url = "http://177.22.126.78:8000/api/olt/alarms/collect/"
 collect_response = requests.post(collect_url, headers=headers)
 collect_data = collect_response.json()
 
 print(f"Coleta de alarmes: {collect_data['message']}")
 
 # 10. Atualizar dados do sistema OLT
-update_url = "http://177.22.126.77:8000/api/olt/update-system-data/"
+update_url = "http://177.22.126.78:8000/api/olt/update-system-data/"
 update_response = requests.post(update_url, headers=headers)
 update_data = update_response.json()
 
@@ -592,7 +592,7 @@ import urllib.parse
 
 pon = "1/1/1/1"  # PON original
 encoded_pon = urllib.parse.quote(pon, safe='')  # Codificação para URL
-onu_pon_url = f"http://177.22.126.77:8000/api/onus/pon/{encoded_pon}/"
+onu_pon_url = f"http://177.22.126.78:8000/api/onus/pon/{encoded_pon}/"
 onu_pon_response = requests.get(onu_pon_url, headers=headers)
 onu_pon_data = onu_pon_response.json()
 
@@ -606,7 +606,7 @@ if onu_pon_data['count'] > 0:
             print(f"  - {onu['serial']}: {onu['oper_state']} ({onu['desc1']})")
 
 # 12. Filtrar ONUs por estado na PON
-filter_url = f"http://177.22.126.77:8000/api/onus/pon/{encoded_pon}/?oper_state=up"
+filter_url = f"http://177.22.126.78:8000/api/onus/pon/{encoded_pon}/?oper_state=up"
 filter_response = requests.get(filter_url, headers=headers)
 filter_data = filter_response.json()
 
@@ -623,7 +623,7 @@ from datetime import datetime
 
 def monitor_alarms():
     # Configuração
-    base_url = "http://177.22.126.77:8000/api"
+    base_url = "http://177.22.126.78:8000/api"
     
     # Obter token (implementar renovação automática em produção)
     login_response = requests.post(f"{base_url}/auth/login/", 
@@ -676,7 +676,7 @@ import requests
 import urllib.parse
 
 def test_different_pon_formats():
-    base_url = "http://177.22.126.77:8000/api"
+    base_url = "http://177.22.126.78:8000/api"
     headers = {"Authorization": "Bearer YOUR_TOKEN_HERE"}
     
     # Diferentes formatos de PON para testar
@@ -725,7 +725,7 @@ import requests
 from datetime import datetime, timedelta
 
 def advanced_alarm_filtering():
-    base_url = "http://177.22.126.77:8000/api"
+    base_url = "http://177.22.126.78:8000/api"
     headers = {"Authorization": "Bearer YOUR_TOKEN_HERE"}
     
     # 1. Alarmes das últimas 24 horas

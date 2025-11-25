@@ -17,7 +17,7 @@ Middleware customizado que:
 
 ### 2. `isp/settings.py`
 Configurações adicionadas:
-- **ALLOWED_HOSTS**: Inclui `177.22.126.77` (IP do servidor)
+- **ALLOWED_HOSTS**: Inclui `177.22.126.78` (IP do servidor)
 - **ALLOWED_IPS**: Lista de IPs/ranges permitidos
 - **MIDDLEWARE**: Inclui o `IPWhitelistMiddleware` como primeiro middleware
 
@@ -33,7 +33,7 @@ Variáveis de ambiente para Docker:
 ALLOWED_IPS = [
     '127.0.0.1',        # Localhost
     '::1',              # Localhost IPv6
-    '177.22.126.77',    # Servidor
+    '177.22.126.78',    # Servidor
     '172.16.0.0/12',    # Redes Docker privadas
     '192.168.0.0/16',   # Redes privadas locais
     '10.0.0.0/8',       # Redes privadas

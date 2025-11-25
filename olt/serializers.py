@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     ONU, OltUsers, PlacaOnu, ClienteFibraIxc, 
-    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltSystemStats, OltAlarm
+    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltSystemStats, OltAlarm,
+    OrdemServicoIxc
 )
 
 
@@ -215,3 +216,89 @@ class OltAlarmSerializer(serializers.ModelSerializer):
             'collected_at',
             'is_active'
         ]
+
+
+class OrdemServicoIxcSerializer(serializers.ModelSerializer):
+    """Serializer para Ordens de Serviço do IXC"""
+    
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    prioridade_display = serializers.CharField(source='get_prioridade_display', read_only=True)
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    mes_abertura = serializers.CharField(source='get_mes_abertura', read_only=True)
+    
+    class Meta:
+        model = OrdemServicoIxc
+        fields = [
+            'id',
+            'id_ixc',
+            'protocolo',
+            'tipo',
+            'tipo_display',
+            'status',
+            'status_display',
+            'prioridade',
+            'prioridade_display',
+            'id_cliente',
+            'id_contrato',
+            'id_assunto',
+            'assunto_nome',
+            'mensagem',
+            'mensagem_resposta',
+            'id_tecnico',
+            'tecnico_nome',
+            'endereco',
+            'bairro',
+            'cidade',
+            'referencia',
+            'data_abertura',
+            'data_agenda',
+            'data_execucao',
+            'data_fechamento',
+            'data_prazo_limite',
+            'valor_total',
+            'valor_comissao',
+            'mes_abertura',
+            'sincronizado_em',
+            'criado_em'
+        ]
+
+
+class OrdemServicoResumoSerializer(serializers.ModelSerializer):
+    """Serializer resumido para listagens de OS"""
+    
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    prioridade_display = serializers.CharField(source='get_prioridade_display', read_only=True)
+    
+    class Meta:
+        model = OrdemServicoIxc
+        fields = [
+            'id',
+            'id_ixc',
+            'protocolo',
+            'tipo',
+            'tipo_display',
+            'status',
+            'status_display',
+            'prioridade',
+            'prioridade_display',
+            'assunto_nome',
+            'tecnico_nome',
+            'data_abertura',
+            'data_agenda',
+            'data_execucao',
+            'endereco',
+            'valor_total'
+        ]
+
+
+class OrdemServicoGraficoSerializer(serializers.Serializer):
+    """Serializer para dados do gráfico de OS por mês/assunto"""
+    
+    mes = serializers.CharField()
+    assunto_nome = serializers.CharField()
+    total_os = serializers.IntegerField()
+    os_abertas = serializers.IntegerField()
+    os_fechadas = serializers.IntegerField()
+    os_executadas = serializers.IntegerField()
+    valor_total = serializers.DecimalField(max_digits=15, decimal_places=2, allow_null=True)

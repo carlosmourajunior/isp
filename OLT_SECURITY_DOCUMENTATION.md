@@ -76,7 +76,7 @@ curl -X POST http://localhost:8000/api/olt/update-system-data/ \
 ### **2. Acesso Externo Direto (BLOQUEADO)**
 ```bash
 # API externa tentando acessar
-curl -X POST http://177.22.126.77:8000/api/olt/update-system-data/ \
+curl -X POST http://177.22.126.78:8000/api/olt/update-system-data/ \
   -H "Authorization: Bearer TOKEN_JWT_ADMIN" \
   -H "Content-Type: application/json"
 

@@ -29,9 +29,31 @@ show_env:
 
 help: ## Mostrar esta ajuda
 	@echo "$(CYAN)Sistema ISP - Comandos Disponíveis$(RESET)"
-	@echo "=================================="
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
+	@echo "============================================"
+	@echo ""
+	@echo "$(YELLOW)🚀 COMANDOS PRINCIPAIS:$(RESET)"
+	@echo "$(GREEN)  make start$(RESET)          - Iniciar sistema completo (modo produção)"
+	@echo "$(GREEN)  make quick-start$(RESET)    - Iniciar sistema rápido (desenvolvimento)"
+	@echo "$(GREEN)  make stop$(RESET)           - Parar sistema completo"
+	@echo "$(GREEN)  make restart$(RESET)        - Reiniciar sistema completo"
+	@echo ""
+	@echo "$(YELLOW)📊 MONITORAMENTO:$(RESET)"
+	@echo "$(GREEN)  make status$(RESET)         - Status dos serviços"
+	@echo "$(GREEN)  make health$(RESET)         - Verificar saúde dos serviços"
+	@echo "$(GREEN)  make logs$(RESET)           - Ver logs do sistema"
+	@echo "$(GREEN)  make logs-app$(RESET)       - Ver logs apenas da aplicação"
+	@echo ""
+	@echo "$(YELLOW)⏰ SCHEDULER:$(RESET)"
+	@echo "$(GREEN)  make logs-scheduler$(RESET) - Ver logs do scheduler"
+	@echo "$(GREEN)  make stop-scheduler$(RESET) - Parar scheduler"
+	@echo "$(GREEN)  make start-scheduler$(RESET)- Iniciar scheduler"
+	@echo "$(GREEN)  make manual-update$(RESET)  - Atualização manual completa"
+	@echo ""
+	@echo "$(YELLOW)🔧 DESENVOLVIMENTO:$(RESET)"
+	@echo "$(GREEN)  make build$(RESET)          - Construir imagens Docker"
+	@echo "$(GREEN)  make dev-restart$(RESET)    - Restart rápido (desenvolvimento)"
+	@echo ""
+	@echo "$(BLUE)💡 DICA: Use 'make start' para produção e 'make quick-start' para desenvolvimento$(RESET)"
 
 # ==================== SISTEMA COMPLETO ====================
 
@@ -40,17 +62,36 @@ install: ## Instalar e configurar sistema completo
 	@python start_system.py
 
 start: show_env ## Iniciar sistema completo com monitoramento
-	@echo "$(GREEN)▶️  Iniciando sistema completo...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} up -d
-	@echo "$(GREEN)✅ Sistema iniciado!$(RESET)"
-	@make health
+	@echo "$(GREEN)🚀 Iniciando sistema completo...$(RESET)"
+	@echo "$(BLUE)📋 Subindo serviços principais...$(RESET)"
+	@docker-compose -f docker-compose.yml -f docker-compose.security.yml -f docker-compose.firewall.yml up -d
+	@echo "$(YELLOW)⏳ Aguardando serviços inicializarem...$(RESET)"
+	@sleep 15
+	@echo "$(BLUE)📊 Verificando dados do sistema...$(RESET)"
+	@make _check_initial_data
+	@echo "$(CYAN)⏰ Iniciando scheduler automático...$(RESET)"
+	@docker-compose -f docker-compose.scheduler.yml up -d
+	@echo "$(GREEN)🎉 Sistema iniciado com sucesso!$(RESET)"
+	@make _show_system_info
 
 up: start ## Alias para start
 
+quick-start: show_env ## Iniciar sistema rápido (sem scheduler, para desenvolvimento)
+	@echo "$(GREEN)⚡ Iniciando sistema modo rápido...$(RESET)"
+	@echo "$(BLUE)📋 Subindo apenas serviços principais...$(RESET)"
+	@docker-compose -f docker-compose.yml -f docker-compose.security.yml up -d
+	@echo "$(YELLOW)⏳ Aguardando serviços básicos...$(RESET)"
+	@sleep 10
+	@echo "$(GREEN)✅ Sistema básico iniciado!$(RESET)"
+	@make health
+
 stop: show_env ## Parar sistema completo
-	@echo "$(YELLOW)⏹️  Parando sistema...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} down
-	@echo "$(YELLOW)✅ Sistema parado!$(RESET)"
+	@echo "$(YELLOW)⏹️  Parando sistema completo...$(RESET)"
+	@echo "$(YELLOW)📋 Parando serviços principais...$(RESET)"
+	@docker-compose -f docker-compose.yml -f docker-compose.security.yml -f docker-compose.firewall.yml down
+	@echo "$(YELLOW)⏰ Parando scheduler...$(RESET)"
+	@docker-compose -f docker-compose.scheduler.yml down
+	@echo "$(YELLOW)✅ Sistema completamente parado!$(RESET)"
 
 restart: show_env ## Reiniciar sistema completo
 	@echo "$(CYAN)🔄 Reiniciando sistema...$(RESET)"
@@ -249,6 +290,65 @@ production-check: ## Verificar configurações para produção
 	@grep -q "SECRET_KEY=" .env && echo "✅ SECRET_KEY configurado" || echo "❌ SECRET_KEY não configurado"
 	@echo "$(WHITE)Verificando HTTPS...$(RESET)"
 	@grep -q "SECURE_SSL_REDIRECT" .env && echo "✅ SSL configurado" || echo "⚠️  Configure SSL para produção"
+
+# ==================== FUNÇÕES AUXILIARES ====================
+
+_check_initial_data: ## Verificar e fazer atualização inicial se necessário
+	@RECORD_COUNT=$$(docker-compose exec -T web python manage.py shell -c "from olt.models import OltSystemStats; print(OltSystemStats.objects.count())" 2>/dev/null | tail -1 | tr -d '\r\n'); \
+	if [ -z "$$RECORD_COUNT" ] || [ "$$RECORD_COUNT" -lt "1" ]; then \
+		echo "$(YELLOW)🔄 Nenhum dado encontrado, fazendo atualização inicial COMPLETA...$(RESET)"; \
+		echo "$(YELLOW)   (Isso pode levar alguns minutos - ONUs, Clientes, Portas, OLT...)$(RESET)"; \
+		docker-compose exec web python manage.py collect_olt_periodic --once; \
+	else \
+		echo "$(GREEN)✅ Dados do sistema encontrados: $$RECORD_COUNT registros da OLT$(RESET)"; \
+	fi
+
+_show_system_info: ## Mostrar informações do sistema após inicialização
+	@echo ""
+	@echo "$(CYAN)📊 Status dos serviços principais:$(RESET)"
+	@docker-compose ps
+	@echo ""
+	@echo "$(CYAN)⚡ Status do scheduler:$(RESET)"
+	@docker-compose -f docker-compose.scheduler.yml ps
+	@echo ""
+	@echo "$(GREEN)🔗 Acessos disponíveis:$(RESET)"
+	@echo "$(WHITE)   🖥️  Dashboard OLT: http://localhost:8000$(RESET)"
+	@echo "$(WHITE)   📊 Grafana: http://localhost:3000 (admin/admin)$(RESET)"
+	@echo "$(WHITE)   🔍 Prometheus: http://localhost:9090$(RESET)"
+	@echo ""
+	@echo "$(GREEN)📋 Funcionalidades ativas:$(RESET)"
+	@echo "$(WHITE)   ✅ Atualização automática COMPLETA: A cada 1 hora$(RESET)"
+	@echo "$(WHITE)   ✅ Inclui: ONUs, Clientes, Portas, Dados OLT, MACs$(RESET)"
+	@echo "$(WHITE)   ✅ Gráficos de performance: CPU e memória$(RESET)"
+	@echo "$(WHITE)   ✅ Histórico: 7 dias de dados$(RESET)"
+	@echo "$(WHITE)   ✅ Dashboard otimizado: Sem coleta automática$(RESET)"
+	@echo ""
+	@echo "$(BLUE)🛠  Comandos úteis:$(RESET)"
+	@echo "$(WHITE)   Ver logs scheduler: make logs-scheduler$(RESET)"
+	@echo "$(WHITE)   Atualização manual completa: make manual-update$(RESET)"
+	@echo "$(WHITE)   Parar scheduler: make stop-scheduler$(RESET)"
+
+# ==================== COMANDOS AUXILIARES ====================
+
+logs-scheduler: ## Ver logs do scheduler
+	@docker-compose -f docker-compose.scheduler.yml logs -f
+
+manual-update: ## Executar atualização manual completa
+	@echo "$(BLUE)🔄 Executando atualização manual completa...$(RESET)"
+	@docker-compose exec web python manage.py collect_olt_periodic --once
+
+stop-scheduler: ## Parar apenas o scheduler
+	@echo "$(YELLOW)⏸️  Parando scheduler...$(RESET)"
+	@docker-compose -f docker-compose.scheduler.yml down
+
+start-scheduler: ## Iniciar apenas o scheduler
+	@echo "$(GREEN)▶️  Iniciando scheduler...$(RESET)"
+	@docker-compose -f docker-compose.scheduler.yml up -d
+
+restart-scheduler: ## Reiniciar apenas o scheduler
+	@make stop-scheduler
+	@sleep 2
+	@make start-scheduler
 
 # ==================== ALIASES ====================
 

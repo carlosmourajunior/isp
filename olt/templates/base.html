@@ -75,6 +75,19 @@
                     <a class="nav-link" href="{% url 'olt:view_tasks' %}">Tarefas</a>
                 </li>
                 <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="dropdownKPI" data-toggle="dropdown" aria-haspopup="true"
+                        aria-expanded="false"><i class="fas fa-chart-pie"></i> KPI</a>
+                    <div class="dropdown-menu" aria-labelledby="dropdownKPI">
+                        <a class="dropdown-item" href="{% url 'olt:ordens_servico_dashboard' %}">
+                            <i class="fas fa-clipboard-list"></i> Ordens de Serviço
+                        </a>
+                        <div class="dropdown-divider"></div>
+                        <a class="dropdown-item" href="{% url 'olt:ordens_servico_list' %}">
+                            <i class="fas fa-list"></i> Lista de OS
+                        </a>
+                    </div>
+                </li>
+                <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" id="dropdown01" data-toggle="dropdown" aria-haspopup="true"
                         aria-expanded="false">Atualizações</a>
                     <div class="dropdown-menu" aria-labelledby="dropdown01">

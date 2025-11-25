@@ -386,3 +386,95 @@ class OltAlarm(models.Model):
         deleted_count = cls.objects.filter(collected_at__lt=cutoff_date).delete()[0]
         return deleted_count
 
+
+class OrdemServicoIxc(models.Model):
+    """
+    Modelo para Ordens de Serviço do IXC
+    """
+    STATUS_CHOICES = (
+        ('A', 'Aberta'),
+        ('X', 'Executada'),
+        ('F', 'Fechada'),
+        ('C', 'Cancelada'),
+        ('P', 'Pausada'),
+        ('R', 'Reagendada'),
+    )
+    
+    PRIORIDADE_CHOICES = (
+        ('B', 'Baixa'),
+        ('N', 'Normal'),
+        ('A', 'Alta'),
+        ('U', 'Urgente'),
+    )
+    
+    TIPO_CHOICES = (
+        ('I', 'Instalação'),
+        ('M', 'Manutenção'),
+        ('C', 'Corretiva'),
+        ('R', 'Retirada'),
+        ('V', 'Visita'),
+        ('O', 'Outros'),
+    )
+    
+    # Campos principais do IXC
+    id_ixc = models.IntegerField(unique=True, verbose_name="ID IXC")
+    protocolo = models.CharField(max_length=50, verbose_name="Protocolo", null=True, blank=True)
+    tipo = models.CharField(max_length=1, choices=TIPO_CHOICES, verbose_name="Tipo", default='M')
+    status = models.CharField(max_length=1, choices=STATUS_CHOICES, verbose_name="Status", default='A')
+    prioridade = models.CharField(max_length=1, choices=PRIORIDADE_CHOICES, verbose_name="Prioridade", default='N')
+    
+    # Informações do cliente
+    id_cliente = models.IntegerField(verbose_name="ID Cliente", null=True, blank=True)
+    id_contrato = models.IntegerField(verbose_name="ID Contrato", null=True, blank=True)
+    
+    # Assunto/descrição
+    id_assunto = models.IntegerField(verbose_name="ID Assunto", null=True, blank=True)
+    assunto_nome = models.CharField(max_length=200, verbose_name="Nome do Assunto", null=True, blank=True)
+    mensagem = models.TextField(verbose_name="Mensagem", null=True, blank=True)
+    mensagem_resposta = models.TextField(verbose_name="Mensagem Resposta", null=True, blank=True)
+    
+    # Técnico
+    id_tecnico = models.IntegerField(verbose_name="ID Técnico", null=True, blank=True)
+    tecnico_nome = models.CharField(max_length=200, verbose_name="Nome do Técnico", null=True, blank=True)
+    
+    # Endereço
+    endereco = models.CharField(max_length=300, verbose_name="Endereço", null=True, blank=True)
+    bairro = models.CharField(max_length=100, verbose_name="Bairro", null=True, blank=True)
+    cidade = models.CharField(max_length=100, verbose_name="Cidade", null=True, blank=True)
+    referencia = models.CharField(max_length=200, verbose_name="Referência", null=True, blank=True)
+    
+    # Datas importantes
+    data_abertura = models.DateTimeField(verbose_name="Data Abertura", null=True, blank=True)
+    data_agenda = models.DateTimeField(verbose_name="Data Agendamento", null=True, blank=True)
+    data_execucao = models.DateTimeField(verbose_name="Data Execução", null=True, blank=True)
+    data_fechamento = models.DateTimeField(verbose_name="Data Fechamento", null=True, blank=True)
+    data_prazo_limite = models.DateTimeField(verbose_name="Prazo Limite", null=True, blank=True)
+    
+    # Valores financeiros
+    valor_total = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor Total", null=True, blank=True)
+    valor_comissao = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Valor Comissão", null=True, blank=True)
+    
+    # Controle interno
+    sincronizado_em = models.DateTimeField(auto_now=True, verbose_name="Sincronizado em")
+    criado_em = models.DateTimeField(auto_now_add=True, verbose_name="Criado em")
+    
+    class Meta:
+        verbose_name = "Ordem de Serviço IXC"
+        verbose_name_plural = "Ordens de Serviço IXC"
+        ordering = ['-data_abertura', '-id_ixc']
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['data_abertura']),
+            models.Index(fields=['id_assunto']),
+            models.Index(fields=['id_tecnico']),
+        ]
+    
+    def __str__(self):
+        return f"OS #{self.protocolo or self.id_ixc} - {self.get_status_display()}"
+    
+    def get_mes_abertura(self):
+        """Retorna mês/ano da abertura para agrupamento"""
+        if self.data_abertura:
+            return self.data_abertura.strftime('%Y-%m')
+        return None
+

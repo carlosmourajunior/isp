@@ -37,4 +37,10 @@ urlpatterns = [
     path('clients-signal-below-29/', views.clients_signal_below_29, name='clients_signal_below_29'),
     path('ftth-boxes/', views.list_ftth_boxes_by_occupancy, name='list_ftth_boxes_by_occupancy'),
     path('alarms/', views.alarms_view, name='alarms'),
+    
+    # Ordens de Serviço IXC
+    path('ordens-servico/', views.ordens_servico_dashboard, name='ordens_servico_dashboard'),
+    path('ordens-servico/lista/', views.ordens_servico_list, name='ordens_servico_list'),
+    path('ordens-servico/visitas-tecnicas/', views.visitas_tecnicas_list, name='visitas_tecnicas_list'),
+    path('ordens-servico/sincronizar/', views.sincronizar_ordens_servico_view, name='sincronizar_ordens_servico'),
 ]

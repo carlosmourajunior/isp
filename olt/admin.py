@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, OltUsers, PlacaOnu, AllowedIP
+from olt.models import ONU, OltUsers, PlacaOnu, AllowedIP, OrdemServicoIxc
 from olt.utils import olt_connector
 
 
@@ -98,3 +98,65 @@ class AllowedIPAdmin(admin.ModelAdmin):
             messages.success(request, f'IP {obj.ip_address} atualizado com sucesso!')
         else:
             messages.success(request, f'IP {obj.ip_address} adicionado com sucesso!')
+
+
+@register(OrdemServicoIxc)
+class OrdemServicoIxcAdmin(admin.ModelAdmin):
+    """Admin para Ordens de Serviço do IXC"""
+    
+    list_display = [
+        'id_ixc', 'protocolo', 'status', 'tipo', 'prioridade', 
+        'assunto_nome', 'tecnico_nome', 'data_abertura', 'data_agenda'
+    ]
+    
+    list_filter = [
+        'status', 'tipo', 'prioridade', 'data_abertura', 'data_agenda',
+        'data_execucao', 'data_fechamento', 'sincronizado_em'
+    ]
+    
+    search_fields = [
+        'protocolo', 'assunto_nome', 'tecnico_nome', 'endereco', 
+        'mensagem', 'id_ixc', 'id_cliente'
+    ]
+    
+    readonly_fields = ['id_ixc', 'sincronizado_em', 'criado_em']
+    
+    ordering = ['-data_abertura', '-id_ixc']
+    
+    date_hierarchy = 'data_abertura'
+    
+    fieldsets = (
+        ('Informações Básicas', {
+            'fields': ('id_ixc', 'protocolo', 'status', 'tipo', 'prioridade')
+        }),
+        ('Cliente e Contrato', {
+            'fields': ('id_cliente', 'id_contrato')
+        }),
+        ('Assunto e Descrição', {
+            'fields': ('id_assunto', 'assunto_nome', 'mensagem', 'mensagem_resposta')
+        }),
+        ('Técnico', {
+            'fields': ('id_tecnico', 'tecnico_nome')
+        }),
+        ('Endereço', {
+            'fields': ('endereco', 'bairro', 'cidade', 'referencia')
+        }),
+        ('Datas', {
+            'fields': ('data_abertura', 'data_agenda', 'data_execucao', 'data_fechamento', 'data_prazo_limite')
+        }),
+        ('Valores', {
+            'fields': ('valor_total', 'valor_comissao')
+        }),
+        ('Controle do Sistema', {
+            'fields': ('sincronizado_em', 'criado_em'),
+            'classes': ('collapse',)
+        })
+    )
+    
+    def has_add_permission(self, request):
+        """Não permite adicionar OS pelo admin - apenas via sincronização"""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Permite deletar apenas para superusers"""
+        return request.user.is_superuser

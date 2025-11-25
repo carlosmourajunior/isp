@@ -7,10 +7,11 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count, Avg, Max, Min
+from django.db.models import Q, Count, Avg, Max, Min, Sum
 from .models import (
     ONU, OltUsers, PlacaOnu, ClienteFibraIxc,
-    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltAlarm
+    OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OltAlarm,
+    OrdemServicoIxc
 )
 from .serializers import (
     ONUSerializer, 
@@ -23,7 +24,9 @@ from .serializers import (
     OltTemperatureSerializer,
     OltSfpDiagnosticsSerializer,
     OltAlarmSerializer,
-    OltSystemStatsSerializer
+    OltSystemStatsSerializer,
+    OrdemServicoIxcSerializer,
+    OrdemServicoResumoSerializer
 )
 from .utils import OltSystemCollector
 from .security import frontend_only, olt_admin_required
@@ -637,5 +640,247 @@ def collect_alarms(request):
     except Exception as e:
         return Response(
             {'error': f'Erro ao iniciar coleta de alarmes: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# =========== ORDENS DE SERVIÇO IXC API VIEWS ===========
+
+class OrdemServicoIxcListAPIView(generics.ListAPIView):
+    """
+    Lista Ordens de Serviço do IXC com filtros e paginação
+    """
+    queryset = OrdemServicoIxc.objects.all().order_by('-data_abertura', '-id_ixc')
+    serializer_class = OrdemServicoResumoSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status', 'tipo', 'prioridade', 'id_assunto', 'id_tecnico']
+    search_fields = ['protocolo', 'assunto_nome', 'tecnico_nome', 'endereco', 'mensagem']
+    ordering_fields = ['data_abertura', 'data_agenda', 'data_execucao', 'protocolo', 'valor_total']
+
+
+class OrdemServicoIxcDetailAPIView(generics.RetrieveAPIView):
+    """
+    Detalhes de uma Ordem de Serviço específica
+    """
+    queryset = OrdemServicoIxc.objects.all()
+    serializer_class = OrdemServicoIxcSerializer
+    permission_classes = [IsAuthenticated]
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ordens_servico_stats(request):
+    """
+    Estatísticas gerais das Ordens de Serviço
+    """
+    try:
+        from django.db.models import Count, Sum, Avg
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Estatísticas gerais
+        total_os = OrdemServicoIxc.objects.count()
+        os_abertas = OrdemServicoIxc.objects.filter(status='A').count()
+        os_executadas = OrdemServicoIxc.objects.filter(status='X').count()
+        os_fechadas = OrdemServicoIxc.objects.filter(status='F').count()
+        os_canceladas = OrdemServicoIxc.objects.filter(status='C').count()
+        
+        # Estatísticas por período
+        hoje = timezone.now().date()
+        inicio_mes = hoje.replace(day=1)
+        inicio_semana = hoje - timedelta(days=hoje.weekday())
+        
+        os_mes = OrdemServicoIxc.objects.filter(data_abertura__date__gte=inicio_mes).count()
+        os_semana = OrdemServicoIxc.objects.filter(data_abertura__date__gte=inicio_semana).count()
+        os_hoje = OrdemServicoIxc.objects.filter(data_abertura__date=hoje).count()
+        
+        # Estatísticas por tipo
+        os_por_tipo = OrdemServicoIxc.objects.values('tipo').annotate(
+            total=Count('id'),
+            tipo_nome=Count('id')  # Será substituído abaixo
+        ).order_by('-total')
+        
+        # Converter códigos de tipo para nomes
+        tipos_dict = dict(OrdemServicoIxc.TIPO_CHOICES)
+        for item in os_por_tipo:
+            item['tipo_nome'] = tipos_dict.get(item['tipo'], item['tipo'])
+        
+        # Top 5 assuntos
+        top_assuntos = OrdemServicoIxc.objects.filter(
+            assunto_nome__isnull=False
+        ).exclude(
+            assunto_nome=''
+        ).values('assunto_nome').annotate(
+            total=Count('id')
+        ).order_by('-total')[:5]
+        
+        # Valor total das OS em aberto
+        valor_total_abertas = OrdemServicoIxc.objects.filter(
+            status='A', 
+            valor_total__isnull=False
+        ).aggregate(total=Sum('valor_total'))['total'] or 0
+        
+        stats = {
+            'total_os': total_os,
+            'by_status': {
+                'abertas': os_abertas,
+                'executadas': os_executadas,
+                'fechadas': os_fechadas,
+                'canceladas': os_canceladas
+            },
+            'by_period': {
+                'hoje': os_hoje,
+                'semana': os_semana,
+                'mes': os_mes
+            },
+            'by_type': list(os_por_tipo),
+            'top_assuntos': list(top_assuntos),
+            'valor_total_abertas': float(valor_total_abertas),
+            'ultima_sincronizacao': OrdemServicoIxc.objects.aggregate(
+                ultima=Max('sincronizado_em')
+            )['ultima']
+        }
+        
+        return Response(stats)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao obter estatísticas das OS: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ordens_servico_grafico_dados(request):
+    """
+    Dados para gráfico de OS por mês e assunto
+    """
+    try:
+        from django.db.models import Count, Sum
+        from django.db.models.functions import TruncMonth
+        
+        # Parâmetros opcionais
+        meses_limite = int(request.GET.get('meses', 12))  # Últimos 12 meses por padrão
+        top_assuntos = int(request.GET.get('top_assuntos', 10))  # Top 10 assuntos
+        
+        # Filtrar por data se especificado
+        queryset = OrdemServicoIxc.objects.filter(data_abertura__isnull=False)
+        
+        if meses_limite:
+            from django.utils import timezone
+            from datetime import timedelta
+            data_limite = timezone.now() - timedelta(days=meses_limite * 30)
+            queryset = queryset.filter(data_abertura__gte=data_limite)
+        
+        # Agrupar por mês e assunto
+        dados_grafico = queryset.annotate(
+            mes=TruncMonth('data_abertura')
+        ).values(
+            'mes', 'assunto_nome'
+        ).annotate(
+            total_os=Count('id'),
+            os_abertas=Count('id', filter=Q(status='A')),
+            os_fechadas=Count('id', filter=Q(status='F')),
+            os_executadas=Count('id', filter=Q(status='X')),
+            valor_total=Sum('valor_total')
+        ).filter(
+            assunto_nome__isnull=False
+        ).exclude(
+            assunto_nome=''
+        ).order_by('mes', '-total_os')
+        
+        # Converter para formato adequado para gráfico
+        dados_formatados = []
+        for item in dados_grafico:
+            dados_formatados.append({
+                'mes': item['mes'].strftime('%Y-%m') if item['mes'] else None,
+                'mes_nome': item['mes'].strftime('%B %Y') if item['mes'] else None,
+                'assunto_nome': item['assunto_nome'] or 'Sem Assunto',
+                'total_os': item['total_os'],
+                'os_abertas': item['os_abertas'],
+                'os_fechadas': item['os_fechadas'],
+                'os_executadas': item['os_executadas'],
+                'valor_total': float(item['valor_total']) if item['valor_total'] else 0
+            })
+        
+        # Obter lista dos principais assuntos para filtrar
+        principais_assuntos = list(
+            OrdemServicoIxc.objects.filter(
+                assunto_nome__isnull=False
+            ).exclude(
+                assunto_nome=''
+            ).values('assunto_nome').annotate(
+                total=Count('id')
+            ).order_by('-total')[:top_assuntos].values_list('assunto_nome', flat=True)
+        )
+        
+        # Filtrar apenas os principais assuntos
+        dados_filtrados = [
+            item for item in dados_formatados 
+            if item['assunto_nome'] in principais_assuntos
+        ]
+        
+        return Response({
+            'dados': dados_filtrados,
+            'principais_assuntos': principais_assuntos,
+            'total_registros': len(dados_filtrados),
+            'parametros': {
+                'meses_limite': meses_limite,
+                'top_assuntos': top_assuntos
+            }
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao obter dados do gráfico: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@authentication_classes([JWTAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+@olt_admin_required
+def sincronizar_ordens_servico(request):
+    """
+    Endpoint para sincronizar Ordens de Serviço do IXC
+    """
+    try:
+        from .client_utils import IxcOSClient
+        from django_rq import get_queue
+        
+        # Parâmetros opcionais
+        limite_paginas = request.data.get('limite_paginas', 10)  # Aumentado padrão
+        sync_all = request.data.get('sync_all', False)  # Sincronização completa
+        
+        # Verificar se já existe uma sincronização em andamento
+        queue = get_queue('default')
+        
+        # Determinar timeout baseado no tipo de sync
+        timeout = 3600 if sync_all else 1800  # 1 hora para sync completo, 30 min para limitado
+        
+        # Executar em background
+        job = queue.enqueue(
+            'olt.tasks.sincronizar_os_task',
+            limite_paginas=limite_paginas,
+            sync_all=sync_all,
+            user=request.user.username,
+            job_timeout=timeout
+        )
+        
+        return Response({
+            'message': 'Sincronização de OS iniciada com sucesso',
+            'job_id': job.id,
+            'limite_paginas': limite_paginas,
+            'sync_all': sync_all,
+            'timeout': timeout,
+            'aviso': 'Sincronização completa pode demorar mais de 1 hora' if sync_all else None
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao iniciar sincronização de OS: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

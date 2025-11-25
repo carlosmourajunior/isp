@@ -2,7 +2,7 @@ from django.http import HttpResponse
 from django.template import loader
 from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector, OltSystemCollector
 from django.shortcuts import render, redirect
-from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltAlarm
+from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltAlarm, OrdemServicoIxc
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
 from routeros_api import RouterOsApiPool
@@ -998,3 +998,234 @@ def alarms_view(request):
     }
     
     return render(request, 'olt/alarms.html', context)
+
+
+# =========== ORDENS DE SERVIÇO IXC VIEWS ===========
+
+@login_required
+def ordens_servico_dashboard(request):
+    """Dashboard principal das Ordens de Serviço"""
+    from .models import OrdemServicoIxc
+    from django.db.models import Count, Sum, Avg
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    # Estatísticas gerais
+    total_os = OrdemServicoIxc.objects.count()
+    os_abertas = OrdemServicoIxc.objects.filter(status='A').count()
+    os_executadas = OrdemServicoIxc.objects.filter(status='X').count()
+    os_fechadas = OrdemServicoIxc.objects.filter(status='F').count()
+    
+    # Estatísticas por período
+    hoje = timezone.now().date()
+    inicio_mes = hoje.replace(day=1)
+    inicio_semana = hoje - timedelta(days=hoje.weekday())
+    
+    os_mes = OrdemServicoIxc.objects.filter(data_abertura__date__gte=inicio_mes).count()
+    os_semana = OrdemServicoIxc.objects.filter(data_abertura__date__gte=inicio_semana).count()
+    os_hoje = OrdemServicoIxc.objects.filter(data_abertura__date=hoje).count()
+    
+    # Top 5 assuntos
+    top_assuntos = OrdemServicoIxc.objects.filter(
+        assunto_nome__isnull=False
+    ).exclude(
+        assunto_nome=''
+    ).values('assunto_nome').annotate(
+        total=Count('id')
+    ).order_by('-total')[:5]
+    
+    # Estatísticas de Visita Técnica
+    os_visita_tecnica = OrdemServicoIxc.objects.filter(assunto_nome__icontains='visita')
+    visita_total = os_visita_tecnica.count()
+    visita_abertas = os_visita_tecnica.filter(status='A').count()
+    visita_fechadas = os_visita_tecnica.filter(status='F').count()
+    
+    # Últimas 5 OS de Visita Técnica
+    ultimas_visita = os_visita_tecnica.order_by('-data_abertura')[:5]
+    
+    # Valor total das OS em aberto
+    valor_total_abertas = OrdemServicoIxc.objects.filter(
+        status='A', 
+        valor_total__isnull=False
+    ).aggregate(total=Sum('valor_total'))['total'] or 0
+    
+    # Última sincronização
+    ultima_sincronizacao = OrdemServicoIxc.objects.aggregate(
+        ultima=Max('sincronizado_em')
+    )['ultima']
+    
+    context = {
+        'title': 'Ordens de Serviço - Dashboard',
+        'description': 'Monitoramento das Ordens de Serviço do IXC',
+        'stats': {
+            'total_os': total_os,
+            'os_abertas': os_abertas,
+            'os_executadas': os_executadas,
+            'os_fechadas': os_fechadas,
+            'os_mes': os_mes,
+            'os_semana': os_semana,
+            'os_hoje': os_hoje,
+            'valor_total_abertas': valor_total_abertas,
+            'ultima_sincronizacao': ultima_sincronizacao
+        },
+        'top_assuntos': top_assuntos,
+        'visita_tecnica': {
+            'total': visita_total,
+            'abertas': visita_abertas,
+            'fechadas': visita_fechadas,
+            'ultimas': ultimas_visita
+        }
+    }
+    
+    return render(request, 'olt/ordens_servico_dashboard.html', context)
+
+
+@login_required 
+def ordens_servico_list(request):
+    """Lista de Ordens de Serviço com filtros"""
+    from .models import OrdemServicoIxc
+    
+    # Filtros
+    status_filter = request.GET.get('status', '')
+    tipo_filter = request.GET.get('tipo', '')
+    assunto_filter = request.GET.get('assunto', '')
+    search_query = request.GET.get('search', '')
+    items_per_page = int(request.GET.get('items_per_page', 20))
+    
+    # Query base
+    queryset = OrdemServicoIxc.objects.all().order_by('-data_abertura', '-id_ixc')
+    
+    # Aplicar filtros
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+    
+    if tipo_filter:
+        queryset = queryset.filter(tipo=tipo_filter)
+        
+    if assunto_filter:
+        queryset = queryset.filter(id_assunto=assunto_filter)
+    
+    if search_query:
+        queryset = queryset.filter(
+            Q(protocolo__icontains=search_query) |
+            Q(assunto_nome__icontains=search_query) |
+            Q(tecnico_nome__icontains=search_query) |
+            Q(endereco__icontains=search_query) |
+            Q(mensagem__icontains=search_query)
+        )
+    
+    # Paginação
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    # Opções para filtros
+    status_choices = OrdemServicoIxc.STATUS_CHOICES
+    tipo_choices = OrdemServicoIxc.TIPO_CHOICES
+    
+    # Assuntos disponíveis
+    assuntos_disponiveis = OrdemServicoIxc.objects.filter(
+        assunto_nome__isnull=False
+    ).exclude(
+        assunto_nome=''
+    ).values('id_assunto', 'assunto_nome').distinct().order_by('assunto_nome')
+    
+    context = {
+        'title': 'Ordens de Serviço - Lista',
+        'ordens_servico': page_obj,
+        'status_choices': status_choices,
+        'tipo_choices': tipo_choices,
+        'assuntos_disponiveis': assuntos_disponiveis,
+        'status_filter': status_filter,
+        'tipo_filter': tipo_filter,
+        'assunto_filter': assunto_filter,
+        'search_query': search_query,
+        'items_per_page': items_per_page
+    }
+    
+    return render(request, 'olt/ordens_servico_list.html', context)
+
+
+@login_required
+def sincronizar_ordens_servico_view(request):
+    """View para sincronizar OS do IXC"""
+    if request.method == 'POST':
+        try:
+            from django_rq import get_queue
+            from .tasks import sincronizar_os_task
+            
+            limite_paginas = int(request.POST.get('limite_paginas', 5))
+            
+            # Executar em background
+            queue = get_queue('default')
+            job = queue.enqueue(
+                sincronizar_os_task,
+                limite_paginas=limite_paginas,
+                user=request.user.username,
+                job_timeout=1800
+            )
+            
+            messages.success(
+                request, 
+                f'Sincronização de OS iniciada com sucesso! Job ID: {job.id}. '
+                f'Processando até {limite_paginas} páginas.'
+            )
+            
+        except Exception as e:
+            messages.error(request, f'Erro ao iniciar sincronização: {str(e)}')
+    
+    return redirect('olt:ordens_servico_dashboard')
+
+
+@login_required 
+def visitas_tecnicas_list(request):
+    """Lista específica das OS de Visita Técnica"""
+    from .models import OrdemServicoIxc
+    
+    # Filtros
+    status_filter = request.GET.get('status', '')
+    search_query = request.GET.get('search', '')
+    items_per_page = int(request.GET.get('items_per_page', 20))
+    
+    # Query base - apenas visitas técnicas
+    queryset = OrdemServicoIxc.objects.filter(
+        assunto_nome__icontains='visita'
+    ).order_by('-data_abertura', '-id_ixc')
+    
+    # Aplicar filtros
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+    
+    if search_query:
+        queryset = queryset.filter(
+            Q(protocolo__icontains=search_query) |
+            Q(tecnico_nome__icontains=search_query) |
+            Q(endereco__icontains=search_query) |
+            Q(mensagem__icontains=search_query)
+        )
+    
+    # Paginação
+    paginator = Paginator(queryset, items_per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    # Estatísticas
+    stats = {
+        'total': queryset.count(),
+        'abertas': queryset.filter(status='A').count(),
+        'executadas': queryset.filter(status='X').count(),
+        'fechadas': queryset.filter(status='F').count(),
+    }
+    
+    context = {
+        'title': 'Visitas Técnicas - Lista Completa',
+        'ordens_servico': page_obj,
+        'stats': stats,
+        'status_choices': OrdemServicoIxc.STATUS_CHOICES,
+        'status_filter': status_filter,
+        'search_query': search_query,
+        'items_per_page': items_per_page,
+        'is_visita_tecnica': True
+    }
+    
+    return render(request, 'olt/ordens_servico_list.html', context)

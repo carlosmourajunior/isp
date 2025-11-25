@@ -194,3 +194,132 @@ def comprehensive_update_task(user=None, menu_item=None):
         for conn in connections.all():
             conn.close()
         raise
+
+
+@django_rq.job('default', timeout=3600)
+def scheduled_complete_update_task(user=None, menu_item=None):
+    """
+    Task ESPECIAL para agendamento automático - NÃO requer autenticação
+    Executa atualização completa de TODOS os dados do sistema
+    """
+    from django.db import connections
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Fecha conexões antes de iniciar
+    for conn in connections.all():
+        conn.close()
+    
+    queue = get_queue('default')
+    job = rq.get_current_job()
+    
+    # Adiciona metadados sem verificações de autenticação
+    job.meta['user'] = user or 'Sistema Automático'
+    job.meta['menu_item'] = menu_item or 'Atualização Periódica Completa'
+    job.meta['started_at'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    job.meta['current_step'] = "Iniciando atualização completa automática"
+    job.save_meta()
+    
+    logger.info(f"[SCHEDULER] Iniciando atualização completa automática - User: {job.meta['user']}")
+    
+    try:
+        # Executa as tasks em sequência
+        logger.info("[SCHEDULER] → Agendando atualização do sistema OLT...")
+        queue.enqueue(update_olt_system_task, user=user, menu_item="Atualização Sistema OLT", job_timeout=300, at_front=False)
+        sleep(2)
+        
+        logger.info("[SCHEDULER] → Agendando atualização de portas...")
+        queue.enqueue(update_port_occupation_task, user=user, menu_item="Atualização de Portas", job_timeout=1200, at_front=False)
+        sleep(2)
+        
+        logger.info("[SCHEDULER] → Agendando atualização de ONUs...")
+        queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=False)
+        sleep(2)
+        
+        logger.info("[SCHEDULER] → Agendando atualização de MACs...")
+        queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=False)
+        sleep(2)
+        
+        logger.info("[SCHEDULER] → Agendando atualização de clientes...")
+        queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
+        
+        job.meta['current_step'] = "Sequência de atualizações completa agendada com sucesso"
+        job.save_meta()
+        
+        logger.info("[SCHEDULER] ✓ Atualização completa automática agendada com sucesso")
+        return "Sequência de atualizações automática completa iniciada"
+    
+    except Exception as e:
+        error_msg = f"Erro ao agendar atualização completa: {str(e)}"
+        logger.error(f"[SCHEDULER] ✗ {error_msg}")
+        job.meta['current_step'] = error_msg
+        job.save_meta()
+        
+        # Fecha conexões em caso de erro
+        for conn in connections.all():
+            conn.close()
+        raise
+
+
+@django_rq.job
+def sincronizar_os_task(limite_paginas=None, user=None, menu_item=None, sync_all=False):
+    """Task para sincronizar Ordens de Serviço do IXC
+    
+    Args:
+        limite_paginas: Limite de páginas a processar (None = todas)
+        user: Usuário que iniciou a tarefa
+        menu_item: Item do menu
+        sync_all: Se True, sincroniza todas as OS (ignora limite_paginas)
+    """
+    from .client_utils import IxcOSClient
+    from django.db import connections
+    
+    job = rq.get_current_job()
+    add_metadata(job, user, menu_item or "Sincronização de Ordens de Serviço IXC")
+    
+    try:
+        job.meta['current_step'] = "Iniciando sincronização com IXC"
+        job.save_meta()
+        
+        # Criar cliente IXC
+        ixc_client = IxcOSClient()
+        
+        # Determinar limite de páginas
+        if sync_all:
+            limite_final = None
+            job.meta['current_step'] = "Sincronizando TODAS as OS (sem limite)"
+        elif limite_paginas:
+            limite_final = limite_paginas
+            job.meta['current_step'] = f"Sincronizando até {limite_paginas} páginas de OS"
+        else:
+            limite_final = None
+            job.meta['current_step'] = "Sincronizando todas as OS disponíveis"
+        
+        job.save_meta()
+        
+        # Executar sincronização
+        sucesso = ixc_client.sincronizar_ordens_servico(limite_paginas=limite_final)
+        
+        if sucesso:
+            job.meta['current_step'] = "Sincronização concluída com sucesso"
+            job.save_meta()
+            
+            if sync_all:
+                return "Sincronização COMPLETA de OS concluída - todas as páginas processadas"
+            elif limite_final:
+                return f"Sincronização de OS concluída - processadas até {limite_final} páginas"
+            else:
+                return "Sincronização de OS concluída - todas as páginas disponíveis processadas"
+        else:
+            job.meta['current_step'] = "Erro na sincronização"
+            job.save_meta()
+            return "Erro na sincronização de OS"
+    
+    except Exception as e:
+        job.meta['current_step'] = f"Erro na sincronização: {str(e)}"
+        job.save_meta()
+        # Fecha conexões em caso de erro
+        for conn in connections.all():
+            conn.close()
+        raise

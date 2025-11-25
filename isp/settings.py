@@ -36,7 +36,7 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
 ALLOWED_IPS = [
     '127.0.0.1',        # Localhost
     '::1',              # Localhost IPv6
-    '177.22.126.77',    # Servidor
+    '177.22.126.78',    # Servidor
     '172.16.0.0/12',    # Redes Docker privadas
     '192.168.0.0/16',   # Redes privadas locais
     '10.0.0.0/8',       # Redes privadas

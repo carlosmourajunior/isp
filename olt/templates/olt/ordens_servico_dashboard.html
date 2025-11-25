@@ -1,0 +1,620 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2><i class="fas fa-clipboard-list"></i> {{ title }}</h2>
+                    <p class="text-muted">{{ description }}</p>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#sincronizarModal">
+                        <i class="fas fa-sync"></i> Sincronizar IXC
+                    </button>
+                    <a href="{% url 'olt:ordens_servico_list' %}" class="btn btn-secondary">
+                        <i class="fas fa-list"></i> Ver Lista
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cards de Estatísticas -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ stats.total_os }}</h4>
+                            <p>Total de OS</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-clipboard-list fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-white bg-warning">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ stats.os_abertas }}</h4>
+                            <p>OS Abertas</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-folder-open fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-white bg-success">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ stats.os_executadas }}</h4>
+                            <p>OS Executadas</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-white bg-info">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>R$ {{ stats.valor_total_abertas|floatformat:2 }}</h4>
+                            <p>Valor OS Abertas</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-dollar-sign fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Estatísticas por Período -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Hoje</h5>
+                    <h3 class="text-primary">{{ stats.os_hoje }}</h3>
+                    <p class="text-muted">OS abertas hoje</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Esta Semana</h5>
+                    <h3 class="text-warning">{{ stats.os_semana }}</h3>
+                    <p class="text-muted">OS abertas esta semana</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Este Mês</h5>
+                    <h3 class="text-success">{{ stats.os_mes }}</h3>
+                    <p class="text-muted">OS abertas este mês</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Seção de Visita Técnica -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-user-cog"></i> Visita Técnica - Resumo Executivo
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Estatísticas de Visita Técnica -->
+                        <div class="col-md-3">
+                            <div class="card border-primary">
+                                <div class="card-body text-center">
+                                    <h3 class="text-primary">{{ visita_tecnica.total }}</h3>
+                                    <p class="mb-0">Total Visitas</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-warning">
+                                <div class="card-body text-center">
+                                    <h3 class="text-warning">{{ visita_tecnica.abertas }}</h3>
+                                    <p class="mb-0">Em Andamento</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-success">
+                                <div class="card-body text-center">
+                                    <h3 class="text-success">{{ visita_tecnica.fechadas }}</h3>
+                                    <p class="mb-0">Concluídas</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-info">
+                                <div class="card-body text-center">
+                                    <h3 class="text-info">
+                                        {% if visita_tecnica.total > 0 %}
+                                            {% widthratio visita_tecnica.fechadas visita_tecnica.total 100 %}%
+                                        {% else %}
+                                            0%
+                                        {% endif %}
+                                    </h3>
+                                    <p class="mb-0">Taxa Conclusão</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Lista das Últimas Visitas Técnicas -->
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2">
+                                <i class="fas fa-clock"></i> Últimas Visitas Técnicas
+                            </h6>
+                            {% if visita_tecnica.ultimas %}
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Protocolo</th>
+                                                <th>Data Abertura</th>
+                                                <th>Status</th>
+                                                <th>Cliente/Endereço</th>
+                                                <th>Técnico</th>
+                                                <th>Ações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for os in visita_tecnica.ultimas %}
+                                            <tr>
+                                                <td>
+                                                    <strong class="text-primary">{{ os.protocolo }}</strong>
+                                                </td>
+                                                <td>
+                                                    <small>{{ os.data_abertura|date:"d/m/Y H:i" }}</small>
+                                                </td>
+                                                <td>
+                                                    {% if os.status == 'A' %}
+                                                        <span class="badge badge-warning">Aberta</span>
+                                                    {% elif os.status == 'F' %}
+                                                        <span class="badge badge-success">Fechada</span>
+                                                    {% elif os.status == 'X' %}
+                                                        <span class="badge badge-info">Executada</span>
+                                                    {% else %}
+                                                        <span class="badge badge-secondary">{{ os.status }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <div>
+                                                        <strong>Cliente:</strong> {{ os.id_cliente|default:"N/A" }}
+                                                    </div>
+                                                    <small class="text-muted">
+                                                        {{ os.endereco|default:"Endereço não informado"|truncatechars:40 }}
+                                                    </small>
+                                                </td>
+                                                <td>
+                                                    <small>{{ os.tecnico_nome|default:"Não atribuído" }}</small>
+                                                </td>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" 
+                                                            data-toggle="modal" 
+                                                            data-target="#detalhesModal{{ os.id }}"
+                                                            title="Ver detalhes">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="text-center mt-2">
+                                    <a href="{% url 'olt:visitas_tecnicas_list' %}" class="btn btn-sm btn-outline-info">
+                                        <i class="fas fa-list"></i> Ver Todas as Visitas Técnicas
+                                    </a>
+                                </div>
+                            {% else %}
+                                <div class="text-center py-4">
+                                    <i class="fas fa-info-circle fa-2x text-muted"></i>
+                                    <p class="text-muted mt-2">Nenhuma visita técnica encontrada</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Gráfico de OS por Mês/Assunto -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar"></i> OS por Mês e Assunto</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="graficoOSMesAssunto" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Assuntos -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-list-ol"></i> Top 5 Assuntos</h5>
+                </div>
+                <div class="card-body">
+                    {% if top_assuntos %}
+                        {% for assunto in top_assuntos %}
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-truncate" title="{{ assunto.assunto_nome }}">
+                                {{ assunto.assunto_nome|truncatechars:30 }}
+                            </span>
+                            <span class="badge badge-primary">{{ assunto.total }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">Nenhum assunto encontrado</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Informações da Última Sincronização -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">Última Sincronização</h6>
+                            <small class="text-muted">
+                                {% if stats.ultima_sincronizacao %}
+                                    {{ stats.ultima_sincronizacao|date:"d/m/Y H:i:s" }}
+                                {% else %}
+                                    Nunca sincronizado
+                                {% endif %}
+                            </small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.location.reload()">
+                            <i class="fas fa-refresh"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de Sincronização -->
+<div class="modal fade" id="sincronizarModal" tabindex="-1" aria-labelledby="sincronizarModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'olt:sincronizar_ordens_servico' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sincronizarModalLabel">
+                        <i class="fas fa-sync"></i> Sincronizar Ordens de Serviço
+                    </h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="limite_paginas">Limite de páginas para sincronizar:</label>
+                        <select class="form-control" id="limite_paginas" name="limite_paginas">
+                            <option value="1">1 página (~100 OS)</option>
+                            <option value="5" selected>5 páginas (~500 OS)</option>
+                            <option value="10">10 páginas (~1000 OS)</option>
+                            <option value="20">20 páginas (~2000 OS)</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            A sincronização será executada em background. Mais páginas = mais tempo de processamento.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sync"></i> Iniciar Sincronização
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modals de Detalhes das Visitas Técnicas -->
+{% for os in visita_tecnica.ultimas %}
+<div class="modal fade" id="detalhesModal{{ os.id }}" tabindex="-1" aria-labelledby="detalhesModalLabel{{ os.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="detalhesModalLabel{{ os.id }}">
+                    <i class="fas fa-user-cog"></i> Detalhes da Visita Técnica
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-primary">Informações Gerais</h6>
+                        <table class="table table-sm table-borderless">
+                            <tr>
+                                <td><strong>Protocolo:</strong></td>
+                                <td>{{ os.protocolo }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Status:</strong></td>
+                                <td>
+                                    {% if os.status == 'A' %}
+                                        <span class="badge badge-warning">Aberta</span>
+                                    {% elif os.status == 'F' %}
+                                        <span class="badge badge-success">Fechada</span>
+                                    {% elif os.status == 'X' %}
+                                        <span class="badge badge-info">Executada</span>
+                                    {% else %}
+                                        <span class="badge badge-secondary">{{ os.status }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Data Abertura:</strong></td>
+                                <td>{{ os.data_abertura|date:"d/m/Y H:i:s" }}</td>
+                            </tr>
+                            {% if os.data_agenda %}
+                            <tr>
+                                <td><strong>Data Agenda:</strong></td>
+                                <td>{{ os.data_agenda|date:"d/m/Y H:i:s" }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if os.data_fechamento %}
+                            <tr>
+                                <td><strong>Data Fechamento:</strong></td>
+                                <td>{{ os.data_fechamento|date:"d/m/Y H:i:s" }}</td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-primary">Cliente e Localização</h6>
+                        <table class="table table-sm table-borderless">
+                            <tr>
+                                <td><strong>Cliente ID:</strong></td>
+                                <td>{{ os.id_cliente|default:"N/A" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Contrato ID:</strong></td>
+                                <td>{{ os.id_contrato|default:"N/A" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Endereço:</strong></td>
+                                <td>{{ os.endereco|default:"Não informado" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Bairro:</strong></td>
+                                <td>{{ os.bairro|default:"N/A" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Cidade:</strong></td>
+                                <td>{{ os.cidade|default:"N/A" }}</td>
+                            </tr>
+                            {% if os.referencia %}
+                            <tr>
+                                <td><strong>Referência:</strong></td>
+                                <td>{{ os.referencia }}</td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="text-primary">Técnico e Valores</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <td><strong>Técnico:</strong></td>
+                                        <td>{{ os.tecnico_nome|default:"Não atribuído" }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Tipo:</strong></td>
+                                        <td>
+                                            {% if os.tipo == 'C' %}Corretiva
+                                            {% elif os.tipo == 'P' %}Preventiva  
+                                            {% elif os.tipo == 'I' %}Instalação
+                                            {% else %}{{ os.tipo }}{% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Prioridade:</strong></td>
+                                        <td>
+                                            {% if os.prioridade == 'A' %}Alta
+                                            {% elif os.prioridade == 'M' %}Média
+                                            {% elif os.prioridade == 'B' %}Baixa
+                                            {% else %}{{ os.prioridade }}{% endif %}
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    {% if os.valor_total %}
+                                    <tr>
+                                        <td><strong>Valor Total:</strong></td>
+                                        <td>R$ {{ os.valor_total|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                    {% if os.valor_comissao %}
+                                    <tr>
+                                        <td><strong>Comissão:</strong></td>
+                                        <td>R$ {{ os.valor_comissao|floatformat:2 }}</td>
+                                    </tr>
+                                    {% endif %}
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if os.mensagem %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="text-primary">Descrição do Problema</h6>
+                        <div class="alert alert-light">
+                            {{ os.mensagem|linebreaks }}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if os.mensagem_resposta %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6 class="text-success">Solução/Resposta</h6>
+                        <div class="alert alert-success">
+                            {{ os.mensagem_resposta|linebreaks }}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+                <a href="{% url 'olt:ordens_servico_list' %}?search={{ os.protocolo }}" class="btn btn-primary">
+                    <i class="fas fa-external-link-alt"></i> Ver na Lista
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Carregar dados do gráfico via API
+    fetch('/api/ordens-servico/grafico-dados/?meses=12&top_assuntos=5')
+        .then(response => response.json())
+        .then(data => {
+            if (data.dados && data.dados.length > 0) {
+                criarGraficoOSMesAssunto(data.dados);
+            } else {
+                document.getElementById('graficoOSMesAssunto').innerHTML = 
+                    '<p class="text-center text-muted">Nenhum dado disponível para o gráfico</p>';
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao carregar dados do gráfico:', error);
+            document.getElementById('graficoOSMesAssunto').innerHTML = 
+                '<p class="text-center text-danger">Erro ao carregar gráfico</p>';
+        });
+});
+
+function criarGraficoOSMesAssunto(dados) {
+    const ctx = document.getElementById('graficoOSMesAssunto').getContext('2d');
+    
+    // Agrupar dados por mês
+    const dadosAgrupados = {};
+    const assuntos = new Set();
+    
+    dados.forEach(item => {
+        if (!dadosAgrupados[item.mes]) {
+            dadosAgrupados[item.mes] = {};
+        }
+        dadosAgrupados[item.mes][item.assunto_nome] = item.total_os;
+        assuntos.add(item.assunto_nome);
+    });
+    
+    const meses = Object.keys(dadosAgrupados).sort();
+    const assuntosArray = Array.from(assuntos);
+    
+    // Cores para os datasets
+    const cores = [
+        'rgba(255, 99, 132, 0.8)',
+        'rgba(54, 162, 235, 0.8)', 
+        'rgba(255, 205, 86, 0.8)',
+        'rgba(75, 192, 192, 0.8)',
+        'rgba(153, 102, 255, 0.8)'
+    ];
+    
+    const datasets = assuntosArray.map((assunto, index) => ({
+        label: assunto,
+        data: meses.map(mes => dadosAgrupados[mes][assunto] || 0),
+        backgroundColor: cores[index % cores.length],
+        borderColor: cores[index % cores.length].replace('0.8', '1'),
+        borderWidth: 1
+    }));
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: meses.map(mes => {
+                const [ano, mesNum] = mes.split('-');
+                const data = new Date(ano, mesNum - 1);
+                return data.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+            }),
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: true,
+                    text: 'Ordens de Serviço por Mês e Assunto'
+                }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

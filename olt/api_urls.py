@@ -55,6 +55,13 @@ urlpatterns = [
     path('olt/alarms/stats/', api_views.alarms_stats, name='alarms_stats'),
     path('olt/alarms/collect/', api_views.collect_alarms, name='collect_alarms'),
     
+    # Ordens de Serviço IXC
+    path('ordens-servico/', api_views.OrdemServicoIxcListAPIView.as_view(), name='ordens_servico_list'),
+    path('ordens-servico/<int:pk>/', api_views.OrdemServicoIxcDetailAPIView.as_view(), name='ordens_servico_detail'),
+    path('ordens-servico/stats/', api_views.ordens_servico_stats, name='ordens_servico_stats'),
+    path('ordens-servico/grafico-dados/', api_views.ordens_servico_grafico_dados, name='ordens_servico_grafico_dados'),
+    path('ordens-servico/sincronizar/', api_views.sincronizar_ordens_servico, name='sincronizar_ordens_servico'),
+    
     # ⚠️ ENDPOINTS QUE ACESSAM A OLT DIRETAMENTE (FRONTEND ONLY) ⚠️
     path('olt/update-system-data/', api_views.update_olt_system_data, name='update_olt_system_data'),
 ]

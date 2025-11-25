@@ -43,14 +43,14 @@ class Command(BaseCommand):
         try:
             self.stdout.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Iniciando atualização COMPLETA do sistema...")
             
-            # Usar a task completa que já existe (inclui ONUs, clientes, portas, OLT, etc.)
-            from olt.tasks import update_all_data_task
+            # Usar a task de atualização completa via RQ
+            from olt.tasks import scheduled_complete_update_task
             import django_rq
             
-            # Executar task completa
+            # Executar task completa via RQ
             queue = django_rq.get_queue('default')
             job = queue.enqueue(
-                update_all_data_task,
+                scheduled_complete_update_task,
                 user="Sistema Automático",
                 menu_item="Atualização Periódica Completa",
                 job_timeout=3600  # 1 hora de timeout
@@ -59,7 +59,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] "
-                    f"Atualização completa iniciada - Job ID: {job.id}"
+                    f"Atualização completa agendada - Job ID: {job.id}"
                 )
             )
             
