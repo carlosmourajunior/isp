@@ -200,7 +200,7 @@ def comprehensive_update_task(user=None, menu_item=None):
 def scheduled_complete_update_task(user=None, menu_item=None):
     """
     Task ESPECIAL para agendamento automático - NÃO requer autenticação
-    Executa atualização completa de TODOS os dados do sistema
+    Executa atualização completa de TODOS os dados do sistema DIRETAMENTE
     """
     from django.db import connections
     import logging
@@ -209,57 +209,137 @@ def scheduled_complete_update_task(user=None, menu_item=None):
     
     # Fecha conexões antes de iniciar
     for conn in connections.all():
-        conn.close()
+        try:
+            conn.close()
+        except:
+            pass
     
-    queue = get_queue('default')
     job = rq.get_current_job()
     
     # Adiciona metadados sem verificações de autenticação
-    job.meta['user'] = user or 'Sistema Automático'
-    job.meta['menu_item'] = menu_item or 'Atualização Periódica Completa'
-    job.meta['started_at'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    job.meta['current_step'] = "Iniciando atualização completa automática"
-    job.save_meta()
+    if job:
+        job.meta['user'] = user or 'Sistema Automático'
+        job.meta['menu_item'] = menu_item or 'Atualização Periódica Completa'
+        job.meta['started_at'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        job.meta['current_step'] = "Iniciando atualização completa automática"
+        job.save_meta()
     
-    logger.info(f"[SCHEDULER] Iniciando atualização completa automática - User: {job.meta['user']}")
+    logger.info(f"[SCHEDULER] Iniciando atualização completa automática")
+    
+    resultados = {
+        'olt_system': False,
+        'port_occupation': False,
+        'onus': False,
+        'macs': False,
+        'clientes': False
+    }
     
     try:
-        # Executa as tasks em sequência
-        logger.info("[SCHEDULER] → Agendando atualização do sistema OLT...")
-        queue.enqueue(update_olt_system_task, user=user, menu_item="Atualização Sistema OLT", job_timeout=300, at_front=False)
-        sleep(2)
+        # 1. Atualizar Sistema OLT
+        try:
+            if job:
+                job.meta['current_step'] = "Atualizando Sistema OLT..."
+                job.save_meta()
+            
+            logger.info("[SCHEDULER] → Atualizando Sistema OLT...")
+            collector = OltSystemCollector()
+            result = collector.collect_all_system_data()
+            resultados['olt_system'] = result is not None
+            logger.info(f"[SCHEDULER] ✓ Sistema OLT: {'Sucesso' if resultados['olt_system'] else 'Falha'}")
+        except Exception as e:
+            logger.error(f"[SCHEDULER] ✗ Erro no Sistema OLT: {str(e)}")
         
-        logger.info("[SCHEDULER] → Agendando atualização de portas...")
-        queue.enqueue(update_port_occupation_task, user=user, menu_item="Atualização de Portas", job_timeout=1200, at_front=False)
-        sleep(2)
+        # 2. Atualizar Ocupação de Portas
+        try:
+            if job:
+                job.meta['current_step'] = "Atualizando Ocupação de Portas..."
+                job.save_meta()
+            
+            logger.info("[SCHEDULER] → Atualizando Ocupação de Portas...")
+            connector = olt_connector()
+            connector.update_port_ocupation(read_timeout=600, expect_string='typ:isadmin>#')
+            resultados['port_occupation'] = True
+            logger.info("[SCHEDULER] ✓ Ocupação de Portas: Sucesso")
+        except Exception as e:
+            logger.error(f"[SCHEDULER] ✗ Erro em Ocupação de Portas: {str(e)}")
         
-        logger.info("[SCHEDULER] → Agendando atualização de ONUs...")
-        queue.enqueue(update_onus_task, user=user, menu_item="Atualização de ONUs", job_timeout=1200, at_front=False)
-        sleep(2)
+        # 3. Atualizar ONUs
+        try:
+            if job:
+                job.meta['current_step'] = "Atualizando ONUs..."
+                job.save_meta()
+            
+            logger.info("[SCHEDULER] → Atualizando ONUs...")
+            connector = olt_connector()
+            connector.update_all_ports()
+            resultados['onus'] = True
+            logger.info("[SCHEDULER] ✓ ONUs: Sucesso")
+        except Exception as e:
+            logger.error(f"[SCHEDULER] ✗ Erro em ONUs: {str(e)}")
         
-        logger.info("[SCHEDULER] → Agendando atualização de MACs...")
-        queue.enqueue(update_mac_task, user=user, menu_item="Atualização de MAC", job_timeout=1200, at_front=False)
-        sleep(2)
+        # 4. Atualizar MACs
+        try:
+            if job:
+                job.meta['current_step'] = "Atualizando MACs..."
+                job.save_meta()
+            
+            logger.info("[SCHEDULER] → Atualizando MACs...")
+            connector = olt_connector()
+            connector.get_mac_values()
+            resultados['macs'] = True
+            logger.info("[SCHEDULER] ✓ MACs: Sucesso")
+        except Exception as e:
+            logger.error(f"[SCHEDULER] ✗ Erro em MACs: {str(e)}")
         
-        logger.info("[SCHEDULER] → Agendando atualização de clientes...")
-        queue.enqueue(update_clientes_task, user=user, menu_item="Atualização de Clientes", job_timeout=1200, at_front=False)
+        # 5. Atualizar Clientes
+        try:
+            if job:
+                job.meta['current_step'] = "Atualizando Clientes Fibra..."
+                job.save_meta()
+            
+            logger.info("[SCHEDULER] → Atualizando Clientes Fibra...")
+            update_clientes()
+            resultados['clientes'] = True
+            logger.info("[SCHEDULER] ✓ Clientes Fibra: Sucesso")
+        except Exception as e:
+            logger.error(f"[SCHEDULER] ✗ Erro em Clientes: {str(e)}")
         
-        job.meta['current_step'] = "Sequência de atualizações completa agendada com sucesso"
-        job.save_meta()
+        # Resumo final
+        sucessos = sum(1 for v in resultados.values() if v)
+        total = len(resultados)
         
-        logger.info("[SCHEDULER] ✓ Atualização completa automática agendada com sucesso")
-        return "Sequência de atualizações automática completa iniciada"
+        if job:
+            job.meta['current_step'] = f"Atualização completa finalizada: {sucessos}/{total} sucessos"
+            job.save_meta()
+        
+        logger.info(f"[SCHEDULER] ✓ Atualização completa automática finalizada: {sucessos}/{total} sucessos")
+        logger.info(f"[SCHEDULER] Resultados: {resultados}")
+        
+        return f"Atualização automática completa: {sucessos}/{total} sucessos - {resultados}"
     
     except Exception as e:
-        error_msg = f"Erro ao agendar atualização completa: {str(e)}"
+        error_msg = f"Erro crítico na atualização completa: {str(e)}"
         logger.error(f"[SCHEDULER] ✗ {error_msg}")
-        job.meta['current_step'] = error_msg
-        job.save_meta()
+        
+        if job:
+            job.meta['current_step'] = error_msg
+            job.save_meta()
         
         # Fecha conexões em caso de erro
         for conn in connections.all():
-            conn.close()
+            try:
+                conn.close()
+            except:
+                pass
+        
         raise
+    finally:
+        # Sempre fecha conexões ao final
+        for conn in connections.all():
+            try:
+                conn.close()
+            except:
+                pass
 
 
 @django_rq.job
