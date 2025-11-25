@@ -204,6 +204,7 @@ def scheduled_complete_update_task(user=None, menu_item=None):
     """
     from django.db import connections
     import logging
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
     
     logger = logging.getLogger(__name__)
     
@@ -227,119 +228,174 @@ def scheduled_complete_update_task(user=None, menu_item=None):
     logger.info(f"[SCHEDULER] Iniciando atualização completa automática")
     
     resultados = {
-        'olt_system': False,
-        'port_occupation': False,
-        'onus': False,
-        'macs': False,
-        'clientes': False
+        'olt_system': {'status': False, 'error': None},
+        'port_occupation': {'status': False, 'error': None},
+        'onus': {'status': False, 'error': None},
+        'macs': {'status': False, 'error': None},
+        'clientes': {'status': False, 'error': None}
     }
     
+    def run_with_timeout(func, timeout_seconds, *args, **kwargs):
+        """Executa função com timeout usando ThreadPoolExecutor"""
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                return future.result(timeout=timeout_seconds)
+            except FutureTimeoutError:
+                future.cancel()
+                raise TimeoutError(f"Operação excedeu {timeout_seconds}s")
+    
+    # 1. Atualizar Sistema OLT
     try:
-        # 1. Atualizar Sistema OLT
-        try:
-            if job:
-                job.meta['current_step'] = "Atualizando Sistema OLT..."
-                job.save_meta()
-            
-            logger.info("[SCHEDULER] → Atualizando Sistema OLT...")
-            collector = OltSystemCollector()
-            result = collector.collect_all_system_data()
-            resultados['olt_system'] = result is not None
-            logger.info(f"[SCHEDULER] ✓ Sistema OLT: {'Sucesso' if resultados['olt_system'] else 'Falha'}")
-        except Exception as e:
-            logger.error(f"[SCHEDULER] ✗ Erro no Sistema OLT: {str(e)}")
+        if job:
+            job.meta['current_step'] = "Atualizando Sistema OLT..."
+            job.save_meta()
         
-        # 2. Atualizar Ocupação de Portas
-        try:
-            if job:
-                job.meta['current_step'] = "Atualizando Ocupação de Portas..."
-                job.save_meta()
+        logger.info("[SCHEDULER] → Atualizando Sistema OLT...")
+        
+        def update_olt_system():
+            collector = OltSystemCollector()
+            return collector.collect_all_system_data()
+        
+        result = run_with_timeout(update_olt_system, 300)  # 5 minutos
+        resultados['olt_system']['status'] = result is not None
+        logger.info(f"[SCHEDULER] ✓ Sistema OLT: {'Sucesso' if resultados['olt_system']['status'] else 'Falha'}")
             
-            logger.info("[SCHEDULER] → Atualizando Ocupação de Portas...")
+    except TimeoutError as e:
+        error_msg = str(e)
+        logger.error(f"[SCHEDULER] ✗ Timeout: {error_msg}")
+        resultados['olt_system']['error'] = error_msg
+    except Exception as e:
+        error_msg = f"Erro no Sistema OLT: {str(e)}"
+        logger.error(f"[SCHEDULER] ✗ {error_msg}")
+        resultados['olt_system']['error'] = error_msg
+    
+    # 2. Atualizar Ocupação de Portas
+    try:
+        if job:
+            job.meta['current_step'] = "Atualizando Ocupação de Portas..."
+            job.save_meta()
+        
+        logger.info("[SCHEDULER] → Atualizando Ocupação de Portas...")
+        
+        def update_ports():
             connector = olt_connector()
             connector.update_port_ocupation(read_timeout=600, expect_string='typ:isadmin>#')
-            resultados['port_occupation'] = True
-            logger.info("[SCHEDULER] ✓ Ocupação de Portas: Sucesso")
-        except Exception as e:
-            logger.error(f"[SCHEDULER] ✗ Erro em Ocupação de Portas: {str(e)}")
+            return True
         
-        # 3. Atualizar ONUs
-        try:
-            if job:
-                job.meta['current_step'] = "Atualizando ONUs..."
-                job.save_meta()
+        run_with_timeout(update_ports, 600)  # 10 minutos
+        resultados['port_occupation']['status'] = True
+        logger.info("[SCHEDULER] ✓ Ocupação de Portas: Sucesso")
             
-            logger.info("[SCHEDULER] → Atualizando ONUs...")
+    except TimeoutError as e:
+        error_msg = str(e)
+        logger.error(f"[SCHEDULER] ✗ Timeout: {error_msg}")
+        resultados['port_occupation']['error'] = error_msg
+    except Exception as e:
+        error_msg = f"Erro em Ocupação de Portas: {str(e)}"
+        logger.error(f"[SCHEDULER] ✗ {error_msg}")
+        resultados['port_occupation']['error'] = error_msg
+    
+    # 3. Atualizar ONUs
+    try:
+        if job:
+            job.meta['current_step'] = "Atualizando ONUs..."
+            job.save_meta()
+        
+        logger.info("[SCHEDULER] → Atualizando ONUs...")
+        
+        def update_onus():
             connector = olt_connector()
             connector.update_all_ports()
-            resultados['onus'] = True
-            logger.info("[SCHEDULER] ✓ ONUs: Sucesso")
-        except Exception as e:
-            logger.error(f"[SCHEDULER] ✗ Erro em ONUs: {str(e)}")
+            return True
         
-        # 4. Atualizar MACs
-        try:
-            if job:
-                job.meta['current_step'] = "Atualizando MACs..."
-                job.save_meta()
+        run_with_timeout(update_onus, 900)  # 15 minutos
+        resultados['onus']['status'] = True
+        logger.info("[SCHEDULER] ✓ ONUs: Sucesso")
             
-            logger.info("[SCHEDULER] → Atualizando MACs...")
+    except TimeoutError as e:
+        error_msg = str(e)
+        logger.error(f"[SCHEDULER] ✗ Timeout: {error_msg}")
+        resultados['onus']['error'] = error_msg
+    except Exception as e:
+        error_msg = f"Erro em ONUs: {str(e)}"
+        logger.error(f"[SCHEDULER] ✗ {error_msg}")
+        resultados['onus']['error'] = error_msg
+    
+    # 4. Atualizar MACs
+    try:
+        if job:
+            job.meta['current_step'] = "Atualizando MACs..."
+            job.save_meta()
+        
+        logger.info("[SCHEDULER] → Atualizando MACs...")
+        
+        def update_macs():
             connector = olt_connector()
             connector.get_mac_values()
-            resultados['macs'] = True
-            logger.info("[SCHEDULER] ✓ MACs: Sucesso")
-        except Exception as e:
-            logger.error(f"[SCHEDULER] ✗ Erro em MACs: {str(e)}")
+            return True
         
-        # 5. Atualizar Clientes
-        try:
-            if job:
-                job.meta['current_step'] = "Atualizando Clientes Fibra..."
-                job.save_meta()
+        run_with_timeout(update_macs, 600)  # 10 minutos
+        resultados['macs']['status'] = True
+        logger.info("[SCHEDULER] ✓ MACs: Sucesso")
             
-            logger.info("[SCHEDULER] → Atualizando Clientes Fibra...")
-            update_clientes()
-            resultados['clientes'] = True
-            logger.info("[SCHEDULER] ✓ Clientes Fibra: Sucesso")
-        except Exception as e:
-            logger.error(f"[SCHEDULER] ✗ Erro em Clientes: {str(e)}")
-        
-        # Resumo final
-        sucessos = sum(1 for v in resultados.values() if v)
-        total = len(resultados)
-        
-        if job:
-            job.meta['current_step'] = f"Atualização completa finalizada: {sucessos}/{total} sucessos"
-            job.save_meta()
-        
-        logger.info(f"[SCHEDULER] ✓ Atualização completa automática finalizada: {sucessos}/{total} sucessos")
-        logger.info(f"[SCHEDULER] Resultados: {resultados}")
-        
-        return f"Atualização automática completa: {sucessos}/{total} sucessos - {resultados}"
-    
+    except TimeoutError as e:
+        error_msg = str(e)
+        logger.error(f"[SCHEDULER] ✗ Timeout: {error_msg}")
+        resultados['macs']['error'] = error_msg
     except Exception as e:
-        error_msg = f"Erro crítico na atualização completa: {str(e)}"
+        error_msg = f"Erro em MACs: {str(e)}"
         logger.error(f"[SCHEDULER] ✗ {error_msg}")
-        
+        resultados['macs']['error'] = error_msg
+    
+    # 5. Atualizar Clientes
+    try:
         if job:
-            job.meta['current_step'] = error_msg
+            job.meta['current_step'] = "Atualizando Clientes Fibra..."
             job.save_meta()
         
-        # Fecha conexões em caso de erro
-        for conn in connections.all():
-            try:
-                conn.close()
-            except:
-                pass
+        logger.info("[SCHEDULER] → Atualizando Clientes Fibra...")
         
-        raise
-    finally:
-        # Sempre fecha conexões ao final
-        for conn in connections.all():
-            try:
-                conn.close()
-            except:
-                pass
+        def update_clients():
+            update_clientes()
+            return True
+        
+        run_with_timeout(update_clients, 300)  # 5 minutos
+        resultados['clientes']['status'] = True
+        logger.info("[SCHEDULER] ✓ Clientes Fibra: Sucesso")
+            
+    except TimeoutError as e:
+        error_msg = str(e)
+        logger.error(f"[SCHEDULER] ✗ Timeout: {error_msg}")
+        resultados['clientes']['error'] = error_msg
+    except Exception as e:
+        error_msg = f"Erro em Clientes: {str(e)}"
+        logger.error(f"[SCHEDULER] ✗ {error_msg}")
+        resultados['clientes']['error'] = error_msg
+    
+    # Resumo final
+    sucessos = sum(1 for v in resultados.values() if v['status'])
+    total = len(resultados)
+    
+    if job:
+        job.meta['current_step'] = f"Atualização completa finalizada: {sucessos}/{total} sucessos"
+        job.meta['resultados'] = resultados
+        job.save_meta()
+    
+    logger.info(f"[SCHEDULER] ✓ Atualização completa automática finalizada: {sucessos}/{total} sucessos")
+    for nome, resultado in resultados.items():
+        status_emoji = "✅" if resultado['status'] else "❌"
+        error_info = f" - {resultado['error']}" if resultado['error'] else ""
+        logger.info(f"[SCHEDULER]   {status_emoji} {nome}: {'OK' if resultado['status'] else 'FALHOU'}{error_info}")
+    
+    # Sempre fecha conexões ao final
+    for conn in connections.all():
+        try:
+            conn.close()
+        except:
+            pass
+    
+    return f"Atualização automática completa: {sucessos}/{total} sucessos"
 
 
 @django_rq.job
