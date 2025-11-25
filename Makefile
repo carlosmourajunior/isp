@@ -4,7 +4,7 @@ ARGS = $(filter-out $@,$(MAKECMDGOALS))
 MAKEFLAGS += --silent
 BASE_PATH=${PWD}
 PYTHON_EXEC=python
-DOCKER_COMPOSE_FILE=$(shell echo -f docker-compose.yml)
+DOCKER_COMPOSE_FILE=$(shell echo -f docker compose.yml)
 
 # Cores para output
 RED := \033[31m
@@ -64,13 +64,13 @@ install: ## Instalar e configurar sistema completo
 start: show_env ## Iniciar sistema completo com monitoramento
 	@echo "$(GREEN)🚀 Iniciando sistema completo...$(RESET)"
 	@echo "$(BLUE)📋 Subindo serviços principais...$(RESET)"
-	@docker-compose -f docker-compose.yml -f docker-compose.security.yml -f docker-compose.firewall.yml up -d
+	@docker compose -f docker compose.yml -f docker compose.security.yml -f docker compose.firewall.yml up -d
 	@echo "$(YELLOW)⏳ Aguardando serviços inicializarem...$(RESET)"
 	@sleep 15
 	@echo "$(BLUE)📊 Verificando dados do sistema...$(RESET)"
 	@make _check_initial_data
 	@echo "$(CYAN)⏰ Iniciando scheduler automático...$(RESET)"
-	@docker-compose -f docker-compose.scheduler.yml up -d
+	@docker compose -f docker compose.scheduler.yml up -d
 	@echo "$(GREEN)🎉 Sistema iniciado com sucesso!$(RESET)"
 	@make _show_system_info
 
@@ -79,7 +79,7 @@ up: start ## Alias para start
 quick-start: show_env ## Iniciar sistema rápido (sem scheduler, para desenvolvimento)
 	@echo "$(GREEN)⚡ Iniciando sistema modo rápido...$(RESET)"
 	@echo "$(BLUE)📋 Subindo apenas serviços principais...$(RESET)"
-	@docker-compose -f docker-compose.yml -f docker-compose.security.yml up -d
+	@docker compose -f docker compose.yml -f docker compose.security.yml up -d
 	@echo "$(YELLOW)⏳ Aguardando serviços básicos...$(RESET)"
 	@sleep 10
 	@echo "$(GREEN)✅ Sistema básico iniciado!$(RESET)"
@@ -88,9 +88,9 @@ quick-start: show_env ## Iniciar sistema rápido (sem scheduler, para desenvolvi
 stop: show_env ## Parar sistema completo
 	@echo "$(YELLOW)⏹️  Parando sistema completo...$(RESET)"
 	@echo "$(YELLOW)📋 Parando serviços principais...$(RESET)"
-	@docker-compose -f docker-compose.yml -f docker-compose.security.yml -f docker-compose.firewall.yml down
+	@docker compose -f docker compose.yml -f docker compose.security.yml -f docker compose.firewall.yml down
 	@echo "$(YELLOW)⏰ Parando scheduler...$(RESET)"
-	@docker-compose -f docker-compose.scheduler.yml down
+	@docker compose -f docker compose.scheduler.yml down
 	@echo "$(YELLOW)✅ Sistema completamente parado!$(RESET)"
 
 restart: show_env ## Reiniciar sistema completo
@@ -101,40 +101,40 @@ restart: show_env ## Reiniciar sistema completo
 
 _rebuild: show_env ## Rebuild completo dos containers
 	@echo "$(BLUE)🔨 Rebuild completo...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} down
-	@docker-compose ${DOCKER_COMPOSE_FILE} build --no-cache --force-rm
+	@docker compose ${DOCKER_COMPOSE_FILE} down
+	@docker compose ${DOCKER_COMPOSE_FILE} build --no-cache --force-rm
 	@make start
 
 build: show_env ## Construir imagens Docker
 	@echo "$(BLUE)🔨 Construindo imagens...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} build --no-cache
+	@docker compose ${DOCKER_COMPOSE_FILE} build --no-cache
 
 # ==================== STATUS E LOGS ====================
 
 status: show_env ## Mostrar status dos serviços
 	@echo "$(CYAN)📊 Status dos serviços:$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} ps
+	@docker compose ${DOCKER_COMPOSE_FILE} ps
 
 logs: show_env ## Mostrar logs em tempo real
 	@echo "$(CYAN)📋 Logs do sistema:$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f --tail 200
+	@docker compose ${DOCKER_COMPOSE_FILE} logs -f --tail 200
 
 log: show_env ## Logs apenas da aplicação web
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f --tail 200 web
+	@docker compose ${DOCKER_COMPOSE_FILE} logs -f --tail 200 web
 
 logs-app: show_env ## Mostrar logs apenas da aplicação
 	@echo "$(CYAN)📋 Logs da aplicação:$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f web rq_worker scheduler
+	@docker compose ${DOCKER_COMPOSE_FILE} logs -f web rq_worker scheduler
 
 logs-monitoring: show_env ## Mostrar logs do monitoramento
 	@echo "$(CYAN)📋 Logs do monitoramento:$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f prometheus grafana alertmanager
+	@docker compose ${DOCKER_COMPOSE_FILE} logs -f prometheus grafana alertmanager
 
 logs-db: show_env ## Logs do banco de dados
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f db
+	@docker compose ${DOCKER_COMPOSE_FILE} logs -f db
 
 logs-redis: show_env ## Logs do Redis
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f redis
+	@docker compose ${DOCKER_COMPOSE_FILE} logs -f redis
 
 # ==================== HEALTH CHECKS ====================
 
@@ -163,28 +163,28 @@ test-health: ## Testar todos os endpoints de health
 # ==================== DJANGO MANAGEMENT ====================
 
 sh: show_env ## Shell do container web
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web bash
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web bash
 
 shell_plus: show_env ## Django shell_plus
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py shell_plus
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py shell_plus
 
 manage: show_env ## Executar comando Django manage.py
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py ${ARGS}
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py ${ARGS}
 
 migrate: show_env ## Executar migrações do banco
 	@echo "$(BLUE)💾 Executando migrações...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
 
 makemigrations: show_env ## Criar migrações
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py makemigrations ${ARGS}
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py makemigrations ${ARGS}
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py migrate
 
 createsuperuser: show_env ## Criar superusuário
 	@echo "$(BLUE)👤 Criando superusuário...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py shell -c "from django.contrib.auth.models import User; User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@localhost', 'admin123'); print('Superuser: admin/admin123')"
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} ./manage.py shell -c "from django.contrib.auth.models import User; User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@localhost', 'admin123'); print('Superuser: admin/admin123')"
 
 collectstatic: show_env ## Coletar arquivos estáticos
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py collectstatic --no-input
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py collectstatic --no-input
 
 # ==================== MONITORAMENTO ====================
 
@@ -228,12 +228,12 @@ metrics: ## Mostrar métricas atuais
 backup: show_env ## Fazer backup do banco de dados
 	@echo "$(YELLOW)💾 Fazendo backup do banco...$(RESET)"
 	@mkdir -p backups
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec db pg_dump -U postgres postgres > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@docker compose ${DOCKER_COMPOSE_FILE} exec db pg_dump -U postgres postgres > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "$(GREEN)✅ Backup salvo em backups/$(RESET)"
 
 restore: show_env ## Restaurar backup do banco (use: make restore FILE=backup.sql)
 	@echo "$(YELLOW)📥 Restaurando backup...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec -T db psql -U postgres -d postgres < $(FILE)
+	@docker compose ${DOCKER_COMPOSE_FILE} exec -T db psql -U postgres -d postgres < $(FILE)
 	@echo "$(GREEN)✅ Backup restaurado!$(RESET)"
 
 # ==================== LIMPEZA ====================
@@ -241,7 +241,7 @@ restore: show_env ## Restaurar backup do banco (use: make restore FILE=backup.sq
 clean: show_env ## Limpar containers e imagens (PRESERVA VOLUMES DE DADOS)
 	@echo "$(RED)🧹 Limpando sistema (PRESERVANDO DADOS)...$(RESET)"
 	@echo "$(YELLOW)⚠️  Parando containers mas MANTENDO volumes de dados...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} down
+	@docker compose ${DOCKER_COMPOSE_FILE} down
 	@docker system prune -f
 	@echo "$(GREEN)✅ Limpeza concluída! (Dados preservados)$(RESET)"
 
@@ -250,7 +250,7 @@ clean-all: show_env ## ⚠️ PERIGOSO: Limpar TUDO incluindo volumes de dados
 	@echo "$(RED)Pressione Ctrl+C nos próximos 10 segundos para cancelar...$(RESET)"
 	@sleep 10
 	@echo "$(RED)🧹 Limpando sistema INCLUINDO VOLUMES DE DADOS...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} down -v
+	@docker compose ${DOCKER_COMPOSE_FILE} down -v
 	@docker system prune -f
 	@echo "$(GREEN)✅ Limpeza COMPLETA concluída! (TODOS OS DADOS FORAM PERDIDOS)$(RESET)"
 
@@ -275,11 +275,11 @@ dev-setup: ## Setup completo para desenvolvimento
 	@make urls
 
 dev-restart: show_env ## Restart rápido para desenvolvimento
-	@docker-compose ${DOCKER_COMPOSE_FILE} restart web rq_worker
+	@docker compose ${DOCKER_COMPOSE_FILE} restart web rq_worker
 
 test: show_env ## Executar testes
 	@echo "$(BLUE)🧪 Executando testes...$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py test
+	@docker compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py test
 
 # ==================== PRODUÇÃO ====================
 
@@ -294,11 +294,11 @@ production-check: ## Verificar configurações para produção
 # ==================== FUNÇÕES AUXILIARES ====================
 
 _check_initial_data: ## Verificar e fazer atualização inicial se necessário
-	@RECORD_COUNT=$$(docker-compose exec -T web python manage.py shell -c "from olt.models import OltSystemStats; print(OltSystemStats.objects.count())" 2>/dev/null | tail -1 | tr -d '\r\n'); \
+	@RECORD_COUNT=$$(docker compose exec -T web python manage.py shell -c "from olt.models import OltSystemStats; print(OltSystemStats.objects.count())" 2>/dev/null | tail -1 | tr -d '\r\n'); \
 	if [ -z "$$RECORD_COUNT" ] || [ "$$RECORD_COUNT" -lt "1" ]; then \
 		echo "$(YELLOW)🔄 Nenhum dado encontrado, fazendo atualização inicial COMPLETA...$(RESET)"; \
 		echo "$(YELLOW)   (Isso pode levar alguns minutos - ONUs, Clientes, Portas, OLT...)$(RESET)"; \
-		docker-compose exec web python manage.py collect_olt_periodic --once; \
+		docker compose exec web python manage.py collect_olt_periodic --once; \
 	else \
 		echo "$(GREEN)✅ Dados do sistema encontrados: $$RECORD_COUNT registros da OLT$(RESET)"; \
 	fi
@@ -306,10 +306,10 @@ _check_initial_data: ## Verificar e fazer atualização inicial se necessário
 _show_system_info: ## Mostrar informações do sistema após inicialização
 	@echo ""
 	@echo "$(CYAN)📊 Status dos serviços principais:$(RESET)"
-	@docker-compose ps
+	@docker compose ps
 	@echo ""
 	@echo "$(CYAN)⚡ Status do scheduler:$(RESET)"
-	@docker-compose -f docker-compose.scheduler.yml ps
+	@docker compose -f docker compose.scheduler.yml ps
 	@echo ""
 	@echo "$(GREEN)🔗 Acessos disponíveis:$(RESET)"
 	@echo "$(WHITE)   🖥️  Dashboard OLT: http://localhost:8000$(RESET)"
@@ -331,19 +331,19 @@ _show_system_info: ## Mostrar informações do sistema após inicialização
 # ==================== COMANDOS AUXILIARES ====================
 
 logs-scheduler: ## Ver logs do scheduler
-	@docker-compose -f docker-compose.scheduler.yml logs -f
+	@docker compose -f docker compose.scheduler.yml logs -f
 
 manual-update: ## Executar atualização manual completa
 	@echo "$(BLUE)🔄 Executando atualização manual completa...$(RESET)"
-	@docker-compose exec web python manage.py collect_olt_periodic --once
+	@docker compose exec web python manage.py collect_olt_periodic --once
 
 stop-scheduler: ## Parar apenas o scheduler
 	@echo "$(YELLOW)⏸️  Parando scheduler...$(RESET)"
-	@docker-compose -f docker-compose.scheduler.yml down
+	@docker compose -f docker compose.scheduler.yml down
 
 start-scheduler: ## Iniciar apenas o scheduler
 	@echo "$(GREEN)▶️  Iniciando scheduler...$(RESET)"
-	@docker-compose -f docker-compose.scheduler.yml up -d
+	@docker compose -f docker compose.scheduler.yml up -d
 
 restart-scheduler: ## Reiniciar apenas o scheduler
 	@make stop-scheduler
