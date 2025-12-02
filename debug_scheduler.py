@@ -40,7 +40,7 @@ def test_rq_execution():
             scheduled_complete_update_task,
             user="Teste RQ",
             menu_item="Debug RQ Test",
-            job_timeout=60
+            job_timeout=3600  # 1 hora de timeout
         )
         
         print(f"\n✅ Task agendada!")

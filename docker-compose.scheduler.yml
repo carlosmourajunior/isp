@@ -11,7 +11,7 @@ services:
     environment:
       - DEBUG=True
       - DATABASE_URL=postgresql://postgres:postgres@isp-db-1:5432/isp
-      - REDIS_URL=redis://isp-redis-1:6379/0
+      - REDIS_URL=redis://:Redis2025SecureAuth@isp-redis-1:6379/0
       - NOKIA_DEVICE_TYPE=${NOKIA_DEVICE_TYPE}
       - NOKIA_HOST=${NOKIA_HOST}
       - NOKIA_USERNAME=${NOKIA_USERNAME}

@@ -49,7 +49,7 @@ def home(request):
 
     # Informações da OLT (apenas dados históricos - não coleta automaticamente)
     try:
-        from olt.models import OltSystemStats, OltSystemInfo
+        from olt.models import OltSystemStats, OltSystemInfo, SystemUpdateLog
         from django.db.models import Avg, Max
         
         # Buscar dados históricos mais recentes (sem coletar novos)
@@ -84,6 +84,9 @@ def home(request):
         avg_temp = temps.aggregate(avg_temp=Avg('actual_temp'))['avg_temp']
         max_temp = temps.aggregate(max_temp=Max('actual_temp'))['max_temp']
         
+        # Última atualização completa do sistema
+        ultima_atualizacao = SystemUpdateLog.get_ultima_atualizacao_completa()
+        
     except Exception as e:
         print(f"Erro ao obter informações da OLT: {str(e)}")
         system_info = None
@@ -97,6 +100,7 @@ def home(request):
         warning_temps = 0
         avg_temp = 0
         max_temp = 0
+        ultima_atualizacao = None
 
     template = loader.get_template('olt/dashboard.html')
     context = {
@@ -118,6 +122,7 @@ def home(request):
         'warning_temps': warning_temps,
         'avg_temp': round(avg_temp, 1) if avg_temp else 0,
         'max_temp': max_temp or 0,
+        'ultima_atualizacao': ultima_atualizacao,
     }
     return HttpResponse(template.render(context, request))
 

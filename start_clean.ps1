@@ -11,6 +11,10 @@ docker compose -f docker-compose.yml -f docker-compose.security.yml -f docker-co
 Write-Host "⏳ Aguardando serviços inicializarem..." -ForegroundColor Yellow
 Start-Sleep -Seconds 15
 
+# 2.1. Aplicar migrations do banco de dados
+Write-Host "🔧 Aplicando migrations do banco de dados..." -ForegroundColor Yellow
+docker compose exec -T web python manage.py migrate --noinput
+
 # 3. Verificar se há dados do sistema
 Write-Host "📊 Verificando dados do sistema..." -ForegroundColor Yellow
 try {

@@ -478,3 +478,96 @@ class OrdemServicoIxc(models.Model):
             return self.data_abertura.strftime('%Y-%m')
         return None
 
+
+class SystemUpdateLog(models.Model):
+    """
+    Modelo para rastrear atualizações completas do sistema
+    """
+    TIPO_CHOICES = [
+        ('manual', 'Manual'),
+        ('automatico', 'Automático'),
+        ('agendado', 'Agendado'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('iniciado', 'Iniciado'),
+        ('em_progresso', 'Em Progresso'),
+        ('concluido', 'Concluído'),
+        ('falhou', 'Falhou'),
+        ('parcial', 'Parcialmente Concluído'),
+    ]
+    
+    # Informações básicas
+    tipo_atualizacao = models.CharField(max_length=20, choices=TIPO_CHOICES, verbose_name="Tipo de Atualização")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='iniciado', verbose_name="Status")
+    usuario = models.CharField(max_length=100, verbose_name="Usuário", default="Sistema")
+    job_id = models.CharField(max_length=100, null=True, blank=True, verbose_name="Job ID")
+    
+    # Timestamps
+    iniciado_em = models.DateTimeField(auto_now_add=True, verbose_name="Iniciado em")
+    concluido_em = models.DateTimeField(null=True, blank=True, verbose_name="Concluído em")
+    duracao_segundos = models.IntegerField(null=True, blank=True, verbose_name="Duração (segundos)")
+    
+    # Resultados das etapas
+    olt_system_ok = models.BooleanField(default=False, verbose_name="Sistema OLT OK")
+    port_occupation_ok = models.BooleanField(default=False, verbose_name="Ocupação Portas OK")
+    onus_ok = models.BooleanField(default=False, verbose_name="ONUs OK")
+    macs_ok = models.BooleanField(default=False, verbose_name="MACs OK")
+    clientes_ok = models.BooleanField(default=False, verbose_name="Clientes OK")
+    
+    # Contadores
+    sucessos = models.IntegerField(default=0, verbose_name="Sucessos")
+    total_etapas = models.IntegerField(default=5, verbose_name="Total de Etapas")
+    
+    # Observações e erros
+    observacoes = models.TextField(null=True, blank=True, verbose_name="Observações")
+    erros = models.JSONField(null=True, blank=True, verbose_name="Erros Detalhados")
+    
+    class Meta:
+        verbose_name = "Log de Atualização do Sistema"
+        verbose_name_plural = "Logs de Atualizações do Sistema"
+        ordering = ['-iniciado_em']
+        indexes = [
+            models.Index(fields=['tipo_atualizacao']),
+            models.Index(fields=['status']),
+            models.Index(fields=['iniciado_em']),
+        ]
+    
+    def __str__(self):
+        return f"{self.get_tipo_atualizacao_display()} - {self.get_status_display()} ({self.iniciado_em.strftime('%d/%m/%Y %H:%M')})"
+    
+    @classmethod
+    def get_ultima_atualizacao_completa(cls):
+        """Retorna a última atualização completa bem-sucedida"""
+        return cls.objects.filter(
+            status__in=['concluido', 'parcial']
+        ).first()
+    
+    @classmethod
+    def get_estatisticas_hoje(cls):
+        """Retorna estatísticas de atualizações de hoje"""
+        from django.utils import timezone
+        hoje = timezone.now().date()
+        
+        return cls.objects.filter(
+            iniciado_em__date=hoje
+        ).aggregate(
+            total=models.Count('id'),
+            sucessos=models.Count('id', filter=models.Q(status='concluido')),
+            falhas=models.Count('id', filter=models.Q(status='falhou'))
+        )
+    
+    def calcular_duracao(self):
+        """Calcula e salva a duração se a atualização foi concluída"""
+        if self.concluido_em and self.iniciado_em:
+            delta = self.concluido_em - self.iniciado_em
+            self.duracao_segundos = int(delta.total_seconds())
+            return self.duracao_segundos
+        return None
+    
+    def get_porcentagem_sucesso(self):
+        """Retorna a porcentagem de sucesso das etapas"""
+        if self.total_etapas > 0:
+            return round((self.sucessos / self.total_etapas) * 100, 1)
+        return 0
+

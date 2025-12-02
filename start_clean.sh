@@ -12,6 +12,10 @@ docker compose -f docker-compose.yml -f docker-compose.security.yml -f docker-co
 echo "⏳ Aguardando serviços inicializarem..."
 sleep 15
 
+# 2.1. Aplicar migrations do banco de dados
+echo "🔧 Aplicando migrations do banco de dados..."
+docker compose exec -T web python manage.py migrate --noinput
+
 # 3. Verificar se há dados históricos, se não houver, fazer atualização inicial
 echo "📊 Verificando dados do sistema..."
 RECORD_COUNT=$(docker compose exec -T web python manage.py shell -c "from olt.models import OltSystemStats; print(OltSystemStats.objects.count())" 2>/dev/null | tail -1 | tr -d '\r')

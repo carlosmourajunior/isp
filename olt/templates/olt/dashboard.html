@@ -63,10 +63,32 @@
                 <div class="card-header" style="background: rgba(108,117,125,.2)">
                     <h6>Atualização</h6>
                 </div>
-                <div class="card-body text-center">
-                    <a href="{% url 'olt:update_olt_system_data' %}" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-sync-alt"></i> Atualizar OLT
-                    </a>
+                <div class="card-body">
+                    {% if ultima_atualizacao %}
+                    <div class="mb-2">
+                        <small class="text-muted d-block">Última atualização completa:</small>
+                        <strong class="d-block">{{ ultima_atualizacao.iniciado_em|date:"d/m/Y H:i" }}</strong>
+                        {% if ultima_atualizacao.status == 'concluido' %}
+                            <span class="badge badge-success badge-sm">✅ Completa</span>
+                        {% elif ultima_atualizacao.status == 'parcial' %}
+                            <span class="badge badge-warning badge-sm">⚠️ Com erros</span>
+                        {% elif ultima_atualizacao.status == 'em_progresso' %}
+                            <span class="badge badge-info badge-sm">🔄 Executando</span>
+                        {% elif ultima_atualizacao.status == 'falhou' %}
+                            <span class="badge badge-danger badge-sm">❌ Falha</span>
+                        {% endif %}
+                        <small class="text-muted d-block">{{ ultima_atualizacao.tipo_atualizacao }} - {{ ultima_atualizacao.usuario }}</small>
+                    </div>
+                    {% else %}
+                    <div class="mb-2">
+                        <small class="text-muted">Nenhuma atualização registrada</small>
+                    </div>
+                    {% endif %}
+                    <div class="text-center">
+                        <a href="{% url 'olt:update_olt_system_data' %}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-sync-alt"></i> Atualizar OLT
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
