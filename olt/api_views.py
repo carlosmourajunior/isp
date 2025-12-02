@@ -240,6 +240,7 @@ class OltSfpDiagnosticsListAPIView(generics.ListAPIView):
     queryset = OltSfpDiagnostics.objects.all().order_by('interface')
     serializer_class = OltSfpDiagnosticsSerializer
     permission_classes = [IsAuthenticated]
+    
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     ordering_fields = ['interface', 'temperature', 'tx_power', 'rx_power']
 
