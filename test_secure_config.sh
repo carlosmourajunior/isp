@@ -19,7 +19,7 @@ fi
 # 2. Verificar se .env tem as variáveis necessárias
 echo ""
 echo "2. Verificando variáveis no .env..."
-VARS=("DB_PASSWORD" "REDIS_PASSWORD")
+VARS=("DB_PASSWORD" "REDIS_PASSWORD" "GRAFANA_ADMIN_PASSWORD" "GRAFANA_ADMIN_USER")
 for var in "${VARS[@]}"; do
     if grep -q "^$var=" .env; then
         echo "✅ $var encontrado"

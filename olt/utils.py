@@ -41,7 +41,7 @@ def extract_olt_info(line):
     """Extract PON, port, and MAC from OLT output line."""
     pattern = r'(\d+/\d+/\d+/\d+)/(\d+)/\d+\s+\d+\s+([0-9a-f:]+)'
     match = re.search(pattern, line, re.IGNORECASE)
-    
+
     if match:
         return {
             'pon': match.group(1),
@@ -64,7 +64,7 @@ class olt_connector():
 
     def disconnect(self, net_connect):
         net_connect.disconnect()
-    
+
     def get_onu_detail(self, item):
         net_connect = self.connect()
         ont_details = f'show vlan bridge-port-fdb {item}/14/1'
@@ -136,7 +136,7 @@ class olt_connector():
             logger.error(f"Falha ao atualizar PON 1/1/{slot}/{pon}: {e}")
         finally:
             self.disconnect(net_connect)
-    
+
     def get_mac_values(self):
         net_connect = self.connect()
         try:
@@ -150,7 +150,7 @@ class olt_connector():
             logger.error(f"Erro ao obter valores MAC: {e}")
         finally:
             self.disconnect(net_connect)
-    
+
     def update_mac(self, output):
         try:
             if not output:
@@ -163,7 +163,7 @@ class olt_connector():
                         parts = data['pon'].split('/')
                         pon = '/'.join(parts[:3])
                         position = parts[-1]
-        
+
                         onu = ONU.objects.filter(
                             pon=f"1/{pon}",
                             position=position
@@ -195,7 +195,7 @@ class olt_connector():
                 pass
             except ClienteFibraIxc.MultipleObjectsReturned as e:
                 logger.warning(f"MAC/nome duplicado em ClienteFibraIxc para serial {data['sernum']}: {e}")
-            
+
             new_onu.pon = data['pon']
             new_onu.position = data['position']
             new_onu.serial = data['sernum']
@@ -210,7 +210,7 @@ class olt_connector():
             new_onu.desc1 = data['desc1']
             new_onu.desc2 = data['desc2']
             new_onu.save()
-            
+
     def remove_onu(self, pon):
         net_connect = self.connect()
         try:
@@ -218,7 +218,7 @@ class olt_connector():
             net_connect.write_channel(command)
             time.sleep(2)
             net_connect.read_channel()
-            
+
             command = f"configure equipment ont no interface {pon}\n"
             net_connect.write_channel(command)
             time.sleep(2)
@@ -310,7 +310,7 @@ class olt_connector():
             ont_olt = match[6]
             desc1 = match[7]
             desc2 = match[8]
-            
+
             data_list.append( {
                 'pon': pon,
                 'position': position,
@@ -323,7 +323,7 @@ class olt_connector():
                 'desc2': desc2
             })
         return data_list
-        
+
 
 def connect_to_mikrotik(hostname, username, password, port):
     try:
@@ -351,20 +351,20 @@ def get_nat_rules(api):
 
 class OltSystemCollector:
     """Classe para coletar informações do sistema OLT"""
-    
+
     def __init__(self):
         self.nokia = build_nokia_connect_kwargs()
-    
+
     def connect(self):
         """Conecta à OLT"""
         net_connect = ConnectHandler(**self.nokia)
         net_connect.find_prompt()
         return net_connect
-    
+
     def disconnect(self, net_connect):
         """Desconecta da OLT"""
         net_connect.disconnect()
-    
+
     def collect_system_info(self):
         """Coleta informações do sistema (versão e uptime)"""
         net_connect = self.connect()
@@ -372,11 +372,11 @@ class OltSystemCollector:
             # Coletar versão do sistema
             version_output = net_connect.send_command("show software-mngt version etsi")
             isam_release = self._parse_isam_release(version_output)
-            
+
             # Coletar uptime
             uptime_output = net_connect.send_command("show core1-uptime")
             uptime_data = self._parse_uptime(uptime_output)
-            
+
             # Atualizar ou criar registro
             system_info, created = OltSystemInfo.objects.get_or_create(
                 id=1,  # Usando ID fixo pois só temos uma OLT
@@ -389,7 +389,7 @@ class OltSystemCollector:
                     'uptime_raw': uptime_data['raw']
                 }
             )
-            
+
             if not created:
                 system_info.isam_release = isam_release
                 system_info.uptime_days = uptime_data['days']
@@ -398,28 +398,28 @@ class OltSystemCollector:
                 system_info.uptime_seconds = uptime_data['seconds']
                 system_info.uptime_raw = uptime_data['raw']
                 system_info.save()
-            
+
             return system_info
-            
+
         except Exception as e:
             logger.error(f"Erro ao coletar informações do sistema: {e}")
             return None
         finally:
             self.disconnect(net_connect)
-    
+
     def collect_slot_info(self):
         """Coleta informações dos slots"""
         net_connect = self.connect()
         try:
             output = net_connect.send_command("show equipment slot")
             slots_data = self._parse_slots(output)
-            
+
             # Usar transação atômica para evitar perda de dados
             from django.db import transaction
             with transaction.atomic():
                 # Marcar todos como inativos primeiro
                 OltSlot.objects.all().update(is_active=False)
-                
+
                 # Inserir/atualizar novos dados
                 for slot_data in slots_data:
                     slot_data['is_active'] = True
@@ -427,32 +427,32 @@ class OltSystemCollector:
                         slot_name=slot_data.get('slot_name'),
                         defaults=slot_data
                     )
-                
+
                 # Remover apenas os que realmente não existem mais
                 # (opcional - pode manter histórico)
                 # OltSlot.objects.filter(is_active=False).delete()
-            
+
             return OltSlot.objects.filter(is_active=True)
-            
+
         except Exception as e:
             logger.error(f"Erro ao coletar informações dos slots: {e}")
             return None
         finally:
             self.disconnect(net_connect)
-    
+
     def collect_temperature_info(self):
         """Coleta informações de temperatura"""
         net_connect = self.connect()
         try:
             output = net_connect.send_command("show equipment temperature")
             temp_data = self._parse_temperature(output)
-            
+
             # Usar transação atômica para evitar perda de dados
             from django.db import transaction
             with transaction.atomic():
                 # Marcar todos como inativos primeiro
                 OltTemperature.objects.all().update(is_active=False)
-                
+
                 # Inserir/atualizar novos dados
                 for temp in temp_data:
                     temp['is_active'] = True
@@ -461,28 +461,28 @@ class OltSystemCollector:
                         sensor_id=temp.get('sensor_id'),
                         defaults=temp
                     )
-                
+
                 # Remover apenas os que realmente não existem mais
                 # (opcional - pode manter histórico)
                 # OltTemperature.objects.filter(is_active=False).delete()
-            
+
             return OltTemperature.objects.filter(is_active=True)
-            
+
             return OltTemperature.objects.all()
-            
+
         except Exception as e:
             logger.error(f"Erro ao coletar informações de temperatura: {e}")
             return None
         finally:
             self.disconnect(net_connect)
-    
+
     def collect_all_system_data(self):
         """Coleta todas as informações do sistema"""
         try:
             system_info = self.collect_system_info()
             slots = self.collect_slot_info()
             temperatures = self.collect_temperature_info()
-            
+
             return {
                 'system_info': system_info,
                 'slots': slots,
@@ -491,7 +491,7 @@ class OltSystemCollector:
         except Exception as e:
             logger.error(f"Erro ao coletar dados do sistema: {e}")
             return None
-    
+
     def _parse_isam_release(self, output):
         """Extrai a versão ISAM do output"""
         try:
@@ -499,7 +499,7 @@ class OltSystemCollector:
             return match.group(1) if match else "Unknown"
         except Exception:
             return "Unknown"
-    
+
     def _parse_uptime(self, output):
         """Extrai informações de uptime"""
         try:
@@ -529,7 +529,7 @@ class OltSystemCollector:
                 'seconds': 0,
                 'raw': "Parse Error"
             }
-    
+
     def _parse_slots(self, output):
         """Extrai informações dos slots"""
         slots = []
@@ -547,13 +547,13 @@ class OltSystemCollector:
                         slot_name = parts[0]
                         if not any(prefix in slot_name for prefix in ['acu:', 'nt-', 'lt:', 'vlt:']):
                             continue
-                            
+
                         actual_type = parts[1]
                         enabled = parts[2].lower() == 'yes'
                         error_status = parts[3]
                         availability = parts[4]
                         restart_count = int(parts[5]) if parts[5].isdigit() else 0
-                        
+
                         slots.append({
                             'slot_name': slot_name,
                             'actual_type': actual_type,
@@ -564,9 +564,9 @@ class OltSystemCollector:
                         })
         except Exception as e:
             logger.error(f"Erro ao fazer parse dos slots: {e}")
-        
+
         return slots
-    
+
     def _parse_temperature(self, output):
         """Extrai informações de temperatura"""
         temperatures = []
@@ -584,14 +584,14 @@ class OltSystemCollector:
                             # Verifica se é uma linha válida de dados
                             if not any(prefix in slot_name for prefix in ['nt-', 'lt:', 'acu:']):
                                 continue
-                                
+
                             sensor_id = int(parts[1])
                             actual_temp = int(parts[2])
                             tca_low = int(parts[3])
                             tca_high = int(parts[4])
                             shutdown_low = int(parts[5])
                             shutdown_high = int(parts[6])
-                            
+
                             temperatures.append({
                                 'slot_name': slot_name,
                                 'sensor_id': sensor_id,
@@ -606,5 +606,5 @@ class OltSystemCollector:
                             continue
         except Exception as e:
             logger.error(f"Erro ao fazer parse da temperatura: {e}")
-        
+
         return temperatures
