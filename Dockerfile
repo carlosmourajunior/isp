@@ -9,9 +9,30 @@ ENV PYTHONUNBUFFERED 1
 # Set work directory
 WORKDIR /code
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    netcat \
+    dos2unix \
+    curl \
+    wget \
+    procps \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY ./requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy project
 COPY . .
+
+# Create logs directory
+RUN mkdir -p /code/logs
+
+# Copy scripts and set permissions
+COPY entrypoint.sh /code/entrypoint.sh
+COPY init_app.sh /code/init_app.sh
+RUN chmod +x /code/entrypoint.sh /code/init_app.sh
+
+# Set entrypoint
+ENTRYPOINT ["/bin/bash", "/code/entrypoint.sh"]

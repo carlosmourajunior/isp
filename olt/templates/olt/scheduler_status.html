@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% load bootstrap5 %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="fas fa-clock"></i> {{ title }}</h2>
+    
+    {% if error %}
+        <div class="alert alert-danger">
+            <h5><i class="fas fa-exclamation-triangle"></i> Erro</h5>
+            <p>{{ error }}</p>
+        </div>
+    {% else %}
+        <!-- Status do Scheduler -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-cogs"></i> Status do Scheduler</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if scheduler.status == "running" %}
+                            <span class="badge bg-success fs-6">✅ Ativo</span>
+                            <p class="mt-2">O sistema de atualizações automáticas está funcionando normalmente.</p>
+                        {% elif scheduler.status == "stopped" %}
+                            <span class="badge bg-danger fs-6">⏹️ Parado</span>
+                            <p class="mt-2">O scheduler não está rodando.</p>
+                        {% else %}
+                            <span class="badge bg-warning fs-6">⚠️ {{ scheduler.status }}</span>
+                            <p class="mt-2">Status desconhecido do scheduler.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-list"></i> Fila de Jobs (RQ)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="stat-number text-warning">{{ queue.pending_jobs }}</div>
+                                <div class="stat-label">Pendentes</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-number text-danger">{{ queue.failed_jobs }}</div>
+                                <div class="stat-label">Falhas</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-number text-success">{{ queue.finished_jobs }}</div>
+                                <div class="stat-label">Concluídos</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Jobs Agendados -->
+        {% if scheduler.jobs %}
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-calendar-alt"></i> Jobs Agendados</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Próxima Execução</th>
+                                    <th>Configuração</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in scheduler.jobs %}
+                                <tr>
+                                    <td>
+                                        <i class="fas fa-sync-alt"></i> {{ job.name }}
+                                    </td>
+                                    <td>
+                                        {% if job.next_run %}
+                                            <span class="badge bg-info">{{ job.next_run }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Não agendado</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ job.trigger }}</small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% else %}
+            <div class="alert alert-warning">
+                <h5><i class="fas fa-exclamation-circle"></i> Nenhum Job Agendado</h5>
+                <p>Não há atualizações automáticas configuradas no momento.</p>
+            </div>
+        {% endif %}
+        
+        <!-- Informações Adicionais -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Informações</h5>
+            </div>
+            <div class="card-body">
+                <h6>Sequência de Atualizações:</h6>
+                <ol>
+                    <li><strong>Portas:</strong> Atualização da ocupação das portas OLT</li>
+                    <li><strong>ONUs:</strong> Atualização de todas as ONUs</li>
+                    <li><strong>MACs:</strong> Atualização de endereços MAC</li>
+                    <li><strong>Clientes:</strong> Atualização de dados dos clientes fibra</li>
+                </ol>
+                
+                <h6 class="mt-3">Frequência:</h6>
+                <p>As atualizações são executadas automaticamente <strong>a cada hora</strong> (no minuto 0).</p>
+                
+                <h6 class="mt-3">Monitoramento:</h6>
+                <p>
+                    <a href="/django-rq/" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-chart-bar"></i> Dashboard RQ
+                    </a>
+                    <button onclick="location.reload()" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-refresh"></i> Atualizar Página
+                    </button>
+                </p>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+}
+.stat-label {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+</style>
+
+<script>
+// Auto-refresh da página a cada 30 segundos
+setTimeout(function() {
+    location.reload();
+}, 30000);
+</script>
+{% endblock %}

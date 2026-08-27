@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% load define_action %}
+{% load static %}
+{% load olt_filters %}  <!-- Ensure the custom startswith filter is loaded -->
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ title }}</h2>
+    <p class="text-muted">{{ description }}</p>
+
+    <!-- Busca e Paginação -->
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <form method="get" class="form-inline">
+                <input type="text" name="search" class="form-control mr-2" placeholder="Buscar..." value="{{ search_query }}">
+                <select name="per_page" class="form-control mr-2" onchange="this.form.submit()">
+                    <option value="10" {% if items_per_page == '10' %}selected{% endif %}>10</option>
+                    <option value="25" {% if items_per_page == '25' %}selected{% endif %}>25</option>
+                    <option value="50" {% if items_per_page == '50' %}selected{% endif %}>50</option>
+                    <option value="100" {% if items_per_page == '100' %}selected{% endif %}>100</option>
+                </select>
+                <input type="hidden" name="sort" value="{{ sort_by }}">
+                <button type="submit" class="btn btn-primary">Buscar</button>
+            </form>
+        </div>
+        <div class="col-md-6 text-right">
+            <span class="badge badge-info">Total: {{ onus.paginator.count }}</span>
+        </div>
+    </div>
+
+    <!-- Tabela -->
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Serial</th>
+                    <th>MAC</th>
+                    <th>PON</th>
+                    <th>Posição</th>
+                    <th>Admin State</th>
+                    <th>Oper State</th>
+                    <th>OLT RX Signal</th>
+                    <th>Descrição 1</th>
+                    <th>Descrição 2</th>
+                    <th>Cliente Fibra</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for onu in onus %}
+                <tr>
+                    <td>{{ onu.serial }}</td>
+                    <td>{{ onu.mac }}</td>
+                    <td>{{ onu.pon }}</td>
+                    <td>{{ onu.position }}</td>
+                    <td>{{ onu.admin_state }}</td>
+                    <td>{{ onu.oper_state }}</td>
+                    <td>{{ onu.olt_rx_sig }}</td>
+                    <td>{{ onu.desc1 }}</td>
+                    <td>{{ onu.desc2 }}</td>
+                    <td>{{ onu.cliente_fibra|yesno:"Sim,Não" }}</td>
+                    <td>
+                        <a href="{% url 'olt:delete' slot=onu.get_slot port=onu.get_port position=onu.position %}" 
+                           class="btn btn-danger btn-sm" 
+                           onclick="return confirm('Tem certeza que deseja excluir esta ONU?');">
+                            <i class="fas fa-trash"></i> Excluir
+                        </a>
+                        <a href="{% url 'olt:reset_onu' slot=onu.get_slot port=onu.get_port position=onu.position %}" 
+                           class="btn btn-warning btn-sm" 
+                           onclick="return confirm('Tem certeza que deseja reiniciar esta ONU?');">
+                            <i class="fas fa-sync-alt"></i> Reset
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Paginação -->
+    {% if onus.has_other_pages %}
+        <nav>
+            <ul class="pagination justify-content-center">
+                {% if onus.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">&laquo;</a>
+                    </li>
+                {% endif %}
+
+                {% for num in onus.paginator.page_range %}
+                    {% if onus.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > onus.number|add:'-3' and num < onus.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">{{ num }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if onus.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ onus.next_page_number }}&search={{ search_query }}&per_page={{ items_per_page }}&sort={{ sort_by }}">&raquo;</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    {% endif %}
+</div>
+
+<script>
+function executeReboot(ponPosition) {
+    // Simulate the reboot command execution
+    alert(`Comando executado: admin equipment ont interface ${ponPosition} reboot with-active-image`);
+}
+</script>
+{% endblock %}
