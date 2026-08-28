@@ -91,6 +91,16 @@ logs-db: show_env ## Logs do banco de dados
 logs-redis: show_env ## Logs do Redis
 	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f redis
 
+logs-frontend: show_env ## Logs do frontend (nginx)
+	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f frontend
+
+# ==================== FRONTEND (React) ====================
+
+frontend-build: show_env ## Rebuild da imagem do frontend
+	@echo "$(BLUE)🔨 Construindo imagem do frontend...$(RESET)"
+	@docker-compose ${DOCKER_COMPOSE_FILE} build --no-cache frontend
+	@docker-compose ${DOCKER_COMPOSE_FILE} up -d frontend
+
 # ==================== HEALTH CHECKS ====================
 
 health: ## Verificar saúde dos serviços

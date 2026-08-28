@@ -1,0 +1,15 @@
+.git
+.gitignore
+frontend
+deploy
+data
+logs
+media
+staticfiles
+__pycache__
+*.pyc
+.env
+.env.local
+.venv
+venv
+*.sqlite3

@@ -85,6 +85,20 @@ services:
     networks:
       - app-network
 
+  # ==================== FRONTEND (React) ====================
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+    ports:
+      - "3000:80"
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - app-network
+
   # SCHEDULER DESABILITADO POR SEGURANÇA
   # scheduler:
   #   build: .
