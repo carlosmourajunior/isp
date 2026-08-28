@@ -1,11 +1,10 @@
 from django.http import HttpResponse
 from django.template import loader
-from olt.utils import connect_to_mikrotik, get_nat_rules, olt_connector, OltSystemCollector
+from olt.utils import olt_connector, OltSystemCollector
 from django.shortcuts import render, redirect
 from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.decorators import login_required
-from routeros_api import RouterOsApiPool
 from django_rq import get_queue
 from .tasks import (
     update_all_data_task,
@@ -726,25 +725,6 @@ def register(request):
     else:
         form = UserCreationForm()
     return render(request, 'register.html', {'form': form})
-
-
-@login_required
-def mikrotik_info(request):
-    """View para exibir informações do Mikrotik"""
-    mikrotik_host = os.getenv('MIKROTIK_HOST')
-    mikrotik_user = os.getenv('MIKROTIK_USERNAME')
-    mikrotik_pass = os.getenv('MIKROTIK_PASSWORD')
-    mikrotik_port = int(os.getenv('MIKROTIK_PORT', 8728))
-    
-    api = connect_to_mikrotik(mikrotik_host, mikrotik_user, mikrotik_pass, mikrotik_port)
-    nat_rules = get_nat_rules(api) if api else []
-    
-    context = {
-        'mikrotik_data': {
-            'nat_rules': nat_rules
-        }
-    }
-    return render(request, 'olt/mikrotik_info.html', context)
 
 
 @login_required

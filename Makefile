@@ -1,4 +1,4 @@
-# Makefile para Sistema ISP - Versão Completa com Monitoramento
+# Makefile para Sistema ISP
 SHELL:=/bin/bash
 ARGS = $(filter-out $@,$(MAKECMDGOALS))
 MAKEFLAGS += --silent
@@ -39,7 +39,7 @@ install: ## Instalar e configurar sistema completo
 	@echo "$(BLUE)🚀 Instalando Sistema ISP...$(RESET)"
 	@python start_system.py
 
-start: show_env ## Iniciar sistema completo com monitoramento
+start: show_env ## Iniciar sistema completo
 	@echo "$(GREEN)▶️  Iniciando sistema completo...$(RESET)"
 	@docker-compose ${DOCKER_COMPOSE_FILE} up -d
 	@echo "$(GREEN)✅ Sistema iniciado!$(RESET)"
@@ -85,10 +85,6 @@ logs-app: show_env ## Mostrar logs apenas da aplicação
 	@echo "$(CYAN)📋 Logs da aplicação:$(RESET)"
 	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f web rq_worker scheduler
 
-logs-monitoring: show_env ## Mostrar logs do monitoramento
-	@echo "$(CYAN)📋 Logs do monitoramento:$(RESET)"
-	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f prometheus grafana alertmanager
-
 logs-db: show_env ## Logs do banco de dados
 	@docker-compose ${DOCKER_COMPOSE_FILE} logs -f db
 
@@ -103,10 +99,6 @@ health: ## Verificar saúde dos serviços
 	@sleep 10
 	@echo "$(GREEN)📱 Django App:$(RESET)"
 	@curl -s http://localhost:8000/api/health/ | python -m json.tool 2>/dev/null || echo "❌ Não disponível"
-	@echo "\n$(GREEN)📊 Prometheus:$(RESET)"
-	@curl -s http://localhost:9090/-/healthy 2>/dev/null && echo "✅ Healthy" || echo "❌ Não disponível"
-	@echo "$(GREEN)📈 Grafana:$(RESET)"
-	@curl -s http://localhost:3000/api/health 2>/dev/null | python -m json.tool 2>/dev/null || echo "❌ Não disponível"
 
 test-health: ## Testar todos os endpoints de health
 	@echo "$(CYAN)🔍 Testando endpoints de saúde...$(RESET)"
@@ -145,8 +137,6 @@ createsuperuser: show_env ## Criar superusuário
 collectstatic: show_env ## Coletar arquivos estáticos
 	@docker-compose ${DOCKER_COMPOSE_FILE} exec web ${PYTHON_EXEC} manage.py collectstatic --no-input
 
-# ==================== MONITORAMENTO ====================
-
 urls: ## Mostrar URLs de acesso
 	@echo "$(MAGENTA)🌐 URLs de Acesso:$(RESET)"
 	@echo "$(WHITE)================================$(RESET)"
@@ -155,32 +145,6 @@ urls: ## Mostrar URLs de acesso
 	@echo "  • Admin:           http://localhost:8000/admin/ (admin/admin123)"
 	@echo "  • API:             http://localhost:8000/api/"
 	@echo "  • Health Check:    http://localhost:8000/api/health/"
-	@echo ""
-	@echo "$(GREEN)📊 Monitoramento:$(RESET)"
-	@echo "  • Grafana:         http://localhost:3000/ (admin/admin123)"
-	@echo "  • Prometheus:      http://localhost:9090/"
-	@echo "  • Alertmanager:    http://localhost:9093/"
-	@echo ""
-	@echo "$(GREEN)📋 Métricas:$(RESET)"
-	@echo "  • Métricas App:    http://localhost:8000/api/metrics/"
-	@echo "  • Node Exporter:   http://localhost:9100/metrics"
-	@echo "  • Redis Exporter:  http://localhost:9121/metrics"
-	@echo "  • PG Exporter:     http://localhost:9187/metrics"
-
-test-alerts: ## Testar sistema de alertas
-	@echo "$(CYAN)🚨 Testando alertas...$(RESET)"
-	@curl -X POST http://localhost:8000/api/alerts/test/ \
-		-H "Content-Type: application/json" \
-		-d '{"type": "test", "severity": "warning"}' | python -m json.tool
-
-monitor: ## Abrir interface de monitoramento
-	@echo "$(MAGENTA)📊 Abrindo interfaces de monitoramento...$(RESET)"
-	@echo "Abrindo Grafana em: http://localhost:3000"
-	@python -c "import webbrowser; webbrowser.open('http://localhost:3000')" 2>/dev/null || true
-
-metrics: ## Mostrar métricas atuais
-	@echo "$(CYAN)📊 Métricas atuais:$(RESET)"
-	@curl -s http://localhost:8000/api/metrics/ | head -50
 
 # ==================== BACKUP E RESTORE ====================
 

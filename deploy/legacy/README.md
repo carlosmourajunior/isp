@@ -10,6 +10,8 @@ Conteúdo movido para cá em 2026-08-27 durante a limpeza (Fase 0 do plano de mo
 - **`docker-compose.simple.yml`** — variante mínima alternativa da stack, sem uso identificado.
 - **`docker-compose.firewall.yml`** — overlay que fechava as portas do Prometheus/Grafana/exporters. Perdeu o sentido porque esses serviços foram removidos do `docker-compose.yml` (a equipe não usa a stack de observabilidade — decisão de 2026-08-27).
 - **`configure_firewall.sh`**, **`deploy_secure.sh`**, **`start_secure.sh`** — scripts de resposta a incidente/deploy que giravam em torno de proteger ou expor as portas do Grafana (3000) e Prometheus (9090), removidos pelo mesmo motivo.
+- **`prometheus_views.py`**, **`alert_views.py`** — views Django que expunham `/api/metrics/` e `/api/alerts/*` (Prometheus client + integração com Alertmanager). Reintroduzidas por engano num merge com o `origin/master` em 2026-08-27 (a origin tinha 71 commits que incluíam essa stack, criada antes da decisão de não usá-la); removidas de novo no mesmo dia, junto com a dependência `prometheus-client` do `requirements.txt` e o `PrometheusMiddleware` do `MIDDLEWARE`.
+- **`monitoring/`** — configs do Prometheus, Grafana (dashboards/provisioning) e Alertmanager que vieram junto no mesmo merge. Mesmo motivo.
 
 ## O que continua ativo
 

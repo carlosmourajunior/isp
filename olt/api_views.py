@@ -2,18 +2,20 @@ from rest_framework import generics, filters, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django_filters.rest_framework import DjangoFilterBackend
+from django_rq import get_queue
 from django.db.models import Q, Count, Avg, Max, Min
 from .models import (
     ONU, OltUsers, PlacaOnu, ClienteFibraIxc,
     OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
 )
 from .serializers import (
-    ONUSerializer, 
+    ONUSerializer,
     ONUDetailSerializer,
-    OltUsersSerializer, 
-    PlacaOnuSerializer, 
+    OltUsersSerializer,
+    PlacaOnuSerializer,
     ClienteFibraIxcSerializer,
     OltSystemInfoSerializer,
     OltSlotSerializer,
@@ -21,8 +23,16 @@ from .serializers import (
     OltSfpDiagnosticsSerializer,
     OltSystemStatsSerializer
 )
-from .utils import OltSystemCollector
+from .utils import OltSystemCollector, olt_connector
 from .security import frontend_only, olt_admin_required
+from .scheduler import get_scheduler_status
+from .tasks import (
+    update_port_occupation_task,
+    update_onus_task,
+    update_mac_task,
+    update_clientes_task,
+    comprehensive_update_task,
+)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -391,12 +401,212 @@ def olt_connection_status(request):
             
     except Exception as e:
         return Response(
-            {'error': f'Erro ao verificar status: {str(e)}'}, 
+            {'error': f'Erro ao verificar status: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-        
+
+
+# ==================== ENDPOINTS DO FRONTEND INTERNO (React) ====================
+# Portam ações que hoje só existem como views de template em olt/views.py.
+# NÃO fazem parte do contrato congelado de parceiros (API_DOCUMENTATION.md) -
+# essa distinção é só de uso/documentação, tecnicamente vivem no mesmo /api/.
+
+def _job_info(job, include_error=False):
+    info = {
+        'id': job.id,
+        'func_name': job.func_name,
+        'status': job.get_status(),
+        'created_at': job.created_at,
+        'user': job.meta.get('user', 'N/A'),
+        'menu_item': job.meta.get('menu_item', 'N/A'),
+        'started_at': job.meta.get('started_at', 'N/A'),
+        'current_step': job.meta.get('current_step', 'N/A'),
+    }
+    if include_error:
+        info['error_message'] = job.exc_info
+    return info
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def task_list(request):
+    """
+    Status das tarefas em background (RQ). Substitui a página tasks.html,
+    que hoje só se atualiza via full-page reload a cada 5s.
+    """
+    queue = get_queue('default')
+
+    running_jobs = []
+    for job_id in queue.started_job_registry.get_job_ids()[:5]:
+        job = queue.fetch_job(job_id)
+        if job is not None:
+            running_jobs.append(_job_info(job))
+
+    queued_jobs = []
+    for job in list(queue.jobs)[:5]:
+        if job is not None and job.get_status() in ['queued', 'deferred']:
+            queued_jobs.append(_job_info(job))
+
+    failed_jobs = []
+    for job_id in queue.failed_job_registry.get_job_ids()[:5]:
+        job = queue.fetch_job(job_id)
+        if job is not None:
+            failed_jobs.append(_job_info(job, include_error=True))
+
+    finished_jobs = []
+    for job_id in queue.finished_job_registry.get_job_ids()[:5]:
+        job = queue.fetch_job(job_id)
+        if job is not None:
+            finished_jobs.append(_job_info(job))
+
+    return Response({
+        'running_jobs': running_jobs,
+        'queued_jobs': queued_jobs,
+        'finished_jobs': finished_jobs,
+        'failed_jobs': failed_jobs,
+    })
+
+
+def _enqueue_task(request, task_func, menu_item):
+    job = task_func.delay(user=request.user.username, menu_item=menu_item)
+    return Response({'job_id': job.id, 'menu_item': menu_item}, status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_update_ports(request):
+    """Dispara a atualização de ocupação das portas OLT"""
+    return _enqueue_task(request, update_port_occupation_task, 'Atualização de Portas')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_update_onus(request):
+    """Dispara a atualização das ONUs"""
+    return _enqueue_task(request, update_onus_task, 'Atualização de ONUs')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_update_mac(request):
+    """Dispara a atualização dos endereços MAC"""
+    return _enqueue_task(request, update_mac_task, 'Atualização de MAC')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_sync_clientes(request):
+    """Dispara a sincronização de clientes fibra (IXC)"""
+    return _enqueue_task(request, update_clientes_task, 'Atualização de Clientes Fibra')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def trigger_update_all(request):
+    """Dispara a sequência completa de atualizações, incluindo dados da OLT"""
+    return _enqueue_task(request, comprehensive_update_task, 'Atualizar Todos os Dados Completo')
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def scheduler_status_api(request):
+    """Status do scheduler de atualizações automáticas"""
+    try:
+        scheduler_data = get_scheduler_status()
+        queue = get_queue('default')
+        return Response({
+            'scheduler': scheduler_data,
+            'queue': {
+                'pending_jobs': len(queue),
+                'failed_jobs': len(queue.failed_job_registry),
+                'finished_jobs': len(queue.finished_job_registry),
+            },
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+@frontend_only
+@olt_admin_required
+def remove_onu_view(request, slot, port, position):
+    """
+    Remove uma ONU: comando na OLT real + remoção do registro no banco.
+    Consolida o que hoje são duas views de template (remover_ont, que tem
+    um bug de path e não apaga do banco, e delete, que é a versão completa
+    e efetivamente usada pela UI) num único endpoint.
+    """
+    pon = f"1/1/{slot}/{port}/{position}"
+    connector = olt_connector()
+    try:
+        connector.remove_onu(pon)
     except Exception as e:
         return Response(
-            {'error': f'Erro ao obter alertas: {str(e)}'}, 
+            {'error': f'Erro ao remover ONU {pon}: {e}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+    deleted_count, _ = ONU.objects.filter(pon=f"1/1/{slot}/{port}", position=position).delete()
+    return Response({'message': f'ONU {pon} removida', 'deleted_from_db': deleted_count})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@frontend_only
+@olt_admin_required
+def reset_onu_view(request, slot, port, position):
+    """Reinicia uma ONU na OLT"""
+    pon = f"1/1/{slot}/{port}/{position}"
+    connector = olt_connector()
+    try:
+        connector.reset_onu(pon)
+    except Exception as e:
+        return Response(
+            {'error': f'Erro ao reiniciar ONU {pon}: {e}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    return Response({'message': f'ONU {pon} reiniciada com sucesso'})
+
+
+class DuplicatedOnuListAPIView(generics.ListAPIView):
+    """ONUs com número serial duplicado"""
+    serializer_class = ONUSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        duplicated_serials = (
+            ONU.objects.values('serial')
+            .annotate(total=Count('id'))
+            .filter(total__gt=1)
+            .values_list('serial', flat=True)
+        )
+        return ONU.objects.filter(serial__in=duplicated_serials).order_by('serial', 'pon')
+
+
+class MacAddressListAPIView(generics.ListAPIView):
+    """Lista de ONUs para consulta de endereços MAC, com busca"""
+    queryset = ONU.objects.all().order_by('mac')
+    serializer_class = ONUSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['mac', 'serial', 'desc1', 'desc2']
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ftth_boxes_by_occupancy(request):
+    """Caixas FTTH ordenadas por quantidade de clientes"""
+    search = request.GET.get('search', '')
+    queryset = ClienteFibraIxc.objects.values('id_caixa_ftth').annotate(
+        client_count=Count('id_caixa_ftth')
+    ).order_by('-client_count')
+
+    if search:
+        queryset = queryset.filter(id_caixa_ftth__icontains=search)
+
+    paginator = PageNumberPagination()
+    paginator.page_size = 50
+    page = paginator.paginate_queryset(list(queryset), request)
+    return paginator.get_paginated_response(page)

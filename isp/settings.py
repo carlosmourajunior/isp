@@ -31,6 +31,14 @@ DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
 
+# CORS - origem do frontend React (SPA separada, container próprio)
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('FRONTEND_URL', 'http://localhost:3000').split(',')
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
+
 # Lista de IPs permitidos para acessar o sistema
 # Suporta IPs individuais e ranges CIDR (ex: '192.168.1.0/24')
 ALLOWED_IPS = [
@@ -60,15 +68,16 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'corsheaders',
     'django_rq',  # Move this before your apps
     # 'django_rq_scheduler',  # Comentado temporariamente
     'olt',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Precisa vir antes do CommonMiddleware
     'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - reabilitado
     'olt.security.OltSecurityMiddleware',  # Segurança OLT - NOVO
-    'olt.prometheus_views.PrometheusMiddleware',  # Métricas Prometheus
     'isp.monitoring_middleware.MonitoringMiddleware',  # Monitoramento de APIs
     'isp.monitoring_middleware.MetricsCollectionMiddleware',  # Coleta de métricas
     'django.middleware.security.SecurityMiddleware',

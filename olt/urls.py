@@ -22,7 +22,6 @@ urlpatterns = [
     path('accounts/login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('accounts/logout/', auth_views.LogoutView.as_view(next_page='/'), name='logout'),
     path('accounts/register/', views.register, name='register'),
-    path('mikrotik_info/', views.mikrotik_info, name='mikrotik_info'),
     path('update-mac/', views.update_mac_values, name='update_mac'),
     path('tasks/', views.view_tasks, name='view_tasks'),
     path('update-all-data/', views.update_all_data, name='update_all_data'),
