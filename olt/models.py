@@ -59,8 +59,15 @@ class ONU(models.Model):
         return ''
 
     def update_cliente_fibra_status(self):
-        """Update the cliente_fibra field based on ClienteFibraIxc."""
-        existe = ClienteFibraIxc.objects.filter(mac=self.serial, nome=self.desc1).exists()
+        """Update the cliente_fibra field based on ClienteFibraIxc.
+
+        Casa só por serial (ClienteFibraIxc.mac == ONU.serial) - desc1 é um
+        campo livre digitado na OLT (às vezes nome do cliente, às vezes
+        modelo do aparelho, às vezes "undefined") e nunca corresponde de
+        fato ao nome cadastrado no IXC, então exigir os dois descartava
+        vínculos que já existiam por serial.
+        """
+        existe = ClienteFibraIxc.objects.filter(mac=self.serial).exists()
         self.cliente_fibra = existe
         self.save()
 

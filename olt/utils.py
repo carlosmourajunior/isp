@@ -247,14 +247,9 @@ class olt_connector():
 
         for data in data_dict:
             new_onu = ONU()
-            try:
-                has_cliente = ClienteFibraIxc.objects.get(mac=data['sernum'], nome=data['desc1'])
-                if has_cliente:
-                    new_onu.cliente_fibra = True
-            except ClienteFibraIxc.DoesNotExist:
-                pass
-            except ClienteFibraIxc.MultipleObjectsReturned as e:
-                logger.warning(f"MAC/nome duplicado em ClienteFibraIxc para serial {data['sernum']}: {e}")
+            # Casa só por serial - desc1 é um campo livre da OLT que não
+            # corresponde ao nome cadastrado no IXC (ver ONU.update_cliente_fibra_status).
+            new_onu.cliente_fibra = ClienteFibraIxc.objects.filter(mac=data['sernum']).exists()
 
             new_onu.pon = data['pon']
             new_onu.position = data['position']
