@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
+import { SelectFilter } from '@/components/SelectFilter'
+import { Badge } from '@/components/ui/badge'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
 
 interface ClienteFibra {
@@ -10,16 +12,19 @@ interface ClienteFibra {
   nome: string
   endereco: string
   id_caixa_ftth: string
+  vinculado: boolean
 }
 
 export function ClientesFibraPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [vinculado, setVinculado] = useState('')
 
   const { data, isLoading, isFetching } = usePaginatedApi<ClienteFibra>({
-    endpoint: '/clientes-fibra/',
+    endpoint: '/clientes-fibra/interno/',
     page,
     search,
+    filters: { vinculado },
   })
 
   const columns = useMemo<ColumnDef<ClienteFibra, unknown>[]>(
@@ -28,13 +33,22 @@ export function ClientesFibraPage() {
       { accessorKey: 'mac', header: 'MAC' },
       { accessorKey: 'endereco', header: 'Endereço', cell: ({ getValue }) => (getValue() as string) || '—' },
       { accessorKey: 'id_caixa_ftth', header: 'Caixa FTTH', cell: ({ getValue }) => (getValue() as string) || '—' },
+      {
+        accessorKey: 'vinculado',
+        header: 'Vinculado a contrato',
+        cell: ({ getValue }) =>
+          getValue() ? <Badge variant="success">Sim</Badge> : <Badge variant="warning">Não</Badge>,
+      },
     ],
     [],
   )
 
   return (
     <div>
-      <PageHeader title="Clientes Fibra" description="Lista de clientes fibra cadastrados no sistema (sincronizado do IXC)." />
+      <PageHeader
+        title="Clientes Fibra"
+        description="Lista de clientes fibra cadastrados no sistema (sincronizado do IXC). 'Vinculado' indica se o registro tem um contrato real no IXC por trás — sem isso, nome/endereço vêm do provisionamento da OLT, não do cadastro do cliente."
+      />
       <DataTable
         columns={columns}
         data={data?.results ?? []}
@@ -45,10 +59,24 @@ export function ClientesFibraPage() {
           setSearch(value)
           setPage(1)
         }}
-        searchPlaceholder="Buscar por nome, MAC…"
+        searchPlaceholder="Buscar por nome, MAC, endereço…"
         page={page}
         onPageChange={setPage}
         count={data?.count}
+        toolbar={
+          <SelectFilter
+            label="Vinculado"
+            value={vinculado}
+            onChange={(value) => {
+              setVinculado(value)
+              setPage(1)
+            }}
+            options={[
+              { label: 'Sim', value: 'true' },
+              { label: 'Não', value: 'false' },
+            ]}
+          />
+        }
       />
     </div>
   )

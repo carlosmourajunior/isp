@@ -32,6 +32,7 @@ urlpatterns = [
     
     # Clientes Fibra
     path('clientes-fibra/', api_views.ClienteFibraListAPIView.as_view(), name='clientes_fibra_list'),
+    path('clientes-fibra/interno/', api_views.ClienteFibraInternalListAPIView.as_view(), name='clientes_fibra_internal_list'),
     
     # Sistema OLT
     path('olt/system-info/', api_views.OltSystemInfoAPIView.as_view(), name='olt_system_info'),

@@ -4,18 +4,19 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Info } from 'lucide-react'
 import { DataTable } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
+import { SelectFilter } from '@/components/SelectFilter'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
 import type { OltUser } from '@/types/api'
 
 export function PortasPage() {
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  const [slot, setSlot] = useState('')
 
   const { data, isLoading, isFetching } = usePaginatedApi<OltUser>({
     endpoint: '/olt-users/',
     page,
-    search,
     ordering: '-users_connected',
+    filters: { slot },
   })
 
   const columns = useMemo<ColumnDef<OltUser, unknown>[]>(
@@ -55,15 +56,23 @@ export function PortasPage() {
         data={data?.results ?? []}
         isLoading={isLoading}
         isFetching={isFetching}
-        searchValue={search}
-        onSearchChange={(value) => {
-          setSearch(value)
-          setPage(1)
-        }}
-        searchPlaceholder="Buscar por slot, porta…"
         page={page}
         onPageChange={setPage}
         count={data?.count}
+        toolbar={
+          <SelectFilter
+            label="Slot"
+            value={slot}
+            onChange={(value) => {
+              setSlot(value)
+              setPage(1)
+            }}
+            options={[
+              { label: '1', value: '1' },
+              { label: '2', value: '2' },
+            ]}
+          />
+        }
       />
     </div>
   )

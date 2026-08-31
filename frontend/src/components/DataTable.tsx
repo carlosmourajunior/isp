@@ -9,8 +9,9 @@ interface DataTableProps<T> {
   data: T[]
   isLoading?: boolean
   isFetching?: boolean
-  searchValue: string
-  onSearchChange: (value: string) => void
+  /** Omita searchValue/onSearchChange para esconder a busca (ex: listagens sem backend de busca). */
+  searchValue?: string
+  onSearchChange?: (value: string) => void
   searchPlaceholder?: string
   page: number
   onPageChange: (page: number) => void
@@ -35,11 +36,13 @@ export function DataTable<T>({
   emptyMessage = 'Nenhum resultado encontrado.',
   toolbar,
 }: DataTableProps<T>) {
-  const [localSearch, setLocalSearch] = useState(searchValue)
+  const searchEnabled = searchValue !== undefined && onSearchChange !== undefined
+  const [localSearch, setLocalSearch] = useState(searchValue ?? '')
 
-  useEffect(() => setLocalSearch(searchValue), [searchValue])
+  useEffect(() => setLocalSearch(searchValue ?? ''), [searchValue])
 
   useEffect(() => {
+    if (!searchEnabled) return
     const timeout = setTimeout(() => {
       if (localSearch !== searchValue) onSearchChange(localSearch)
     }, 400)
@@ -58,15 +61,19 @@ export function DataTable<T>({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={localSearch}
-            onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="pl-8"
-          />
-        </div>
+        {searchEnabled ? (
+          <div className="relative w-full max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="pl-8"
+            />
+          </div>
+        ) : (
+          <div />
+        )}
         {toolbar}
       </div>
 

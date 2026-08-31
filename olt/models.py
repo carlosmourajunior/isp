@@ -91,6 +91,14 @@ class ClienteFibraIxc(models.Model):
     endereco = models.TextField(blank=True, null=True)
     id_caixa_ftth = models.CharField(max_length=50, blank=True, null=True)
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
+    id_contrato = models.CharField(max_length=50, blank=True, default='', verbose_name="ID do contrato (IXC)")
+    vinculado = models.BooleanField(
+        default=False,
+        verbose_name="Vinculado a contrato",
+        help_text="True quando id_contrato existe e foi encontrado em cliente_contrato/cliente no IXC "
+                   "(nome/endereço são dados reais do cadastro). False = registro de provisionamento "
+                   "(radpop_radio_cliente_fibra) sem contrato formal vinculado no IXC.",
+    )
 
     class Meta:
         verbose_name = "Cliente Fibra"

@@ -47,7 +47,8 @@ def update_clientes():
 
             for registro in data['registros']:
                 dados_reais = cliente_lookup.get(registro.get('id_contrato'))
-                if dados_reais and dados_reais['nome']:
+                vinculado = bool(dados_reais and dados_reais['nome'])
+                if vinculado:
                     nome = dados_reais['nome']
                     endereco = dados_reais['endereco']
                 else:
@@ -61,6 +62,8 @@ def update_clientes():
                 cliente_data = {
                     'mac': registro['mac'],
                     'nome': nome,
+                    'id_contrato': registro.get('id_contrato', ''),
+                    'vinculado': vinculado,
                     'latitude': registro.get('latitude', ''),
                     'longitude': registro.get('longitude', ''),
                     'endereco': endereco,

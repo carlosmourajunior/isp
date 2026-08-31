@@ -5,6 +5,7 @@ import { Info, RotateCw, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ConfirmDialog'
+import { SelectFilter } from '@/components/SelectFilter'
 import { Badge } from '@/components/ui/badge'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
 import { useOnuActions } from '@/hooks/useOnuActions'
@@ -23,13 +24,34 @@ interface OnuListPageProps {
   endpoint: string
   filters?: Record<string, string>
   emptyMessage?: string
+  /** Mostra os dropdowns de Admin/Oper/Cliente Fibra - só faz sentido quando `filters` não já fixa esses campos. */
+  showQuickFilters?: boolean
 }
 
-export function OnuListPage({ title, description, endpoint, filters, emptyMessage }: OnuListPageProps) {
+export function OnuListPage({
+  title,
+  description,
+  endpoint,
+  filters,
+  emptyMessage,
+  showQuickFilters,
+}: OnuListPageProps) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [adminState, setAdminState] = useState('')
+  const [operState, setOperState] = useState('')
+  const [clienteFibra, setClienteFibra] = useState('')
 
-  const { data, isLoading, isFetching } = usePaginatedApi<Onu>({ endpoint, page, search, filters })
+  const combinedFilters = showQuickFilters
+    ? { ...filters, admin_state: adminState, oper_state: operState, cliente_fibra: clienteFibra }
+    : filters
+
+  const { data, isLoading, isFetching } = usePaginatedApi<Onu>({
+    endpoint,
+    page,
+    search,
+    filters: combinedFilters,
+  })
   const { removeOnu, resetOnu } = useOnuActions()
 
   const removeDialog = useConfirmDialog<Onu>()
@@ -127,6 +149,48 @@ export function OnuListPage({ title, description, endpoint, filters, emptyMessag
         onPageChange={setPage}
         count={data?.count}
         emptyMessage={emptyMessage}
+        toolbar={
+          showQuickFilters && (
+            <div className="flex flex-wrap gap-2">
+              <SelectFilter
+                label="Admin"
+                value={adminState}
+                onChange={(v) => {
+                  setAdminState(v)
+                  setPage(1)
+                }}
+                options={[
+                  { label: 'up', value: 'up' },
+                  { label: 'down', value: 'down' },
+                ]}
+              />
+              <SelectFilter
+                label="Oper"
+                value={operState}
+                onChange={(v) => {
+                  setOperState(v)
+                  setPage(1)
+                }}
+                options={[
+                  { label: 'up', value: 'up' },
+                  { label: 'down', value: 'down' },
+                ]}
+              />
+              <SelectFilter
+                label="Cliente Fibra"
+                value={clienteFibra}
+                onChange={(v) => {
+                  setClienteFibra(v)
+                  setPage(1)
+                }}
+                options={[
+                  { label: 'Sim', value: 'true' },
+                  { label: 'Não', value: 'false' },
+                ]}
+              />
+            </div>
+          )
+        }
       />
 
       <ConfirmDialog

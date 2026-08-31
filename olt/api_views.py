@@ -17,6 +17,7 @@ from .serializers import (
     OltUsersSerializer,
     PlacaOnuSerializer,
     ClienteFibraIxcSerializer,
+    ClienteFibraIxcInternalSerializer,
     OltSystemInfoSerializer,
     OltSlotSerializer,
     OltTemperatureSerializer,
@@ -603,6 +604,21 @@ class OnuWithoutMacListAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         return ONU.objects.filter(Q(mac__isnull=True) | Q(mac='')).order_by('pon', 'position')
+
+
+class ClienteFibraInternalListAPIView(generics.ListAPIView):
+    """
+    Clientes Fibra pro frontend interno - inclui 'vinculado' (existe contrato
+    real no IXC por trás do registro, ver ClienteFibraIxc.vinculado) e
+    permite filtrar por ele. Não é o contrato congelado de parceiros
+    (esse continua em ClienteFibraListAPIView/ClienteFibraIxcSerializer).
+    """
+    queryset = ClienteFibraIxc.objects.all().order_by('nome')
+    serializer_class = ClienteFibraIxcInternalSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['vinculado']
+    search_fields = ['nome', 'mac', 'endereco']
 
 
 @api_view(['GET'])

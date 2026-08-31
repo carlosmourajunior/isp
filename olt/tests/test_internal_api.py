@@ -36,6 +36,7 @@ class AuthRequiredTests(APITestCase):
             ('get', reverse('api:mac_address_list')),
             ('get', reverse('api:onu_without_mac_list')),
             ('get', reverse('api:onu_health_summary')),
+            ('get', reverse('api:clientes_fibra_internal_list')),
             ('get', reverse('api:ftth_boxes_by_occupancy')),
             ('delete', reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 1})),
             ('post', reverse('api:reset_onu', kwargs={'slot': 1, 'port': 1, 'position': 1})),
@@ -196,6 +197,17 @@ class ReadOnlyListTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 2)
+
+    def test_clientes_fibra_interno_filtra_por_vinculado(self):
+        ClienteFibraIxc.objects.create(mac='m1', nome='Cliente Real', vinculado=True, id_contrato='2639')
+        ClienteFibraIxc.objects.create(mac='m2', nome='loginqualquer', vinculado=False, id_contrato='')
+
+        response = self.client.get(reverse('api:clientes_fibra_internal_list'), {'vinculado': 'true'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['nome'], 'Cliente Real')
+        self.assertTrue(response.data['results'][0]['vinculado'])
 
     def test_lista_mac_addresses_aceita_busca(self):
         ONU.objects.create(pon='1/1/1/1', position=1, mac='aa:bb:cc', serial='s1', oper_state='up')

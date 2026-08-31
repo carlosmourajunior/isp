@@ -71,6 +71,26 @@ class ClienteFibraIxcSerializer(serializers.ModelSerializer):
         ]
 
 
+class ClienteFibraIxcInternalSerializer(serializers.ModelSerializer):
+    """Versão do serializer de Clientes Fibra usada só pelo frontend interno (não é o contrato
+    congelado de parceiros) - inclui o campo 'vinculado' usado pra filtrar registros sem contrato
+    real no IXC (ver ONU.update_cliente_fibra_status / client_utils.update_clientes)."""
+
+    class Meta:
+        model = ClienteFibraIxc
+        fields = [
+            'id',
+            'mac',
+            'nome',
+            'latitude',
+            'longitude',
+            'endereco',
+            'id_caixa_ftth',
+            'id_contrato',
+            'vinculado',
+        ]
+
+
 class ONUDetailSerializer(ONUSerializer):
     """Serializer mais detalhado com informações do cliente fibra associado"""
     cliente_info = serializers.SerializerMethodField()

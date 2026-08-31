@@ -6,6 +6,7 @@ export function AllOnusPage() {
       title="Todas as ONUs"
       description="Lista completa de ONUs cadastradas."
       endpoint="/onus/"
+      showQuickFilters
     />
   )
 }
