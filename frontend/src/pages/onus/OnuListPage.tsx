@@ -9,13 +9,38 @@ import { SelectFilter } from '@/components/SelectFilter'
 import { Badge } from '@/components/ui/badge'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
 import { useOnuActions } from '@/hooks/useOnuActions'
+import { signalStatus, statusStyles } from '@/lib/status'
 import type { Onu } from '@/types/api'
 
-function StateBadge({ state }: { state: string }) {
+/** `live` acrescenta o ponto pulsante (só faz sentido pro estado operacional, não admin). */
+function StateBadge({ state, live }: { state: string; live?: boolean }) {
   const normalized = state?.toLowerCase()
-  if (normalized === 'up') return <Badge variant="success">up</Badge>
+  if (normalized === 'up') {
+    return (
+      <Badge variant="success" className="gap-1.5">
+        {live && (
+          <span
+            className="status-dot-live inline-block size-1.5 rounded-full"
+            style={{ color: statusStyles.good.dot }}
+          />
+        )}
+        up
+      </Badge>
+    )
+  }
   if (normalized === 'down') return <Badge variant="destructive">down</Badge>
   return <Badge variant="outline">{state || '—'}</Badge>
+}
+
+function SignalValue({ dbm }: { dbm: number | null | undefined }) {
+  if (dbm === null || dbm === undefined) return <span className="font-data">—</span>
+  const level = signalStatus(dbm)
+  const style = statusStyles[level]
+  return (
+    <span className="font-data" style={level === 'good' ? undefined : { color: style.dot }}>
+      {dbm}
+    </span>
+  )
 }
 
 interface OnuListPageProps {
@@ -63,10 +88,14 @@ export function OnuListPage({
 
   const columns = useMemo<ColumnDef<Onu, unknown>[]>(
     () => [
-      { accessorKey: 'pon', header: 'PON' },
+      { accessorKey: 'pon', header: 'PON', cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span> },
       { accessorKey: 'position', header: 'Posição' },
-      { accessorKey: 'serial', header: 'Serial' },
-      { accessorKey: 'mac', header: 'MAC', cell: ({ getValue }) => (getValue() as string) || '—' },
+      { accessorKey: 'serial', header: 'Serial', cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span> },
+      {
+        accessorKey: 'mac',
+        header: 'MAC',
+        cell: ({ getValue }) => <span className="font-data">{(getValue() as string) || '—'}</span>,
+      },
       {
         accessorKey: 'admin_state',
         header: 'Admin',
@@ -75,16 +104,12 @@ export function OnuListPage({
       {
         accessorKey: 'oper_state',
         header: 'Oper',
-        cell: ({ getValue }) => <StateBadge state={getValue() as string} />,
+        cell: ({ getValue }) => <StateBadge state={getValue() as string} live />,
       },
       {
         accessorKey: 'olt_rx_sig',
         header: 'Sinal (dBm)',
-        cell: ({ getValue }) => {
-          const value = getValue() as number | null
-          if (value === null || value === undefined) return '—'
-          return <span className={value < -27 ? 'text-destructive' : ''}>{value}</span>
-        },
+        cell: ({ getValue }) => <SignalValue dbm={getValue() as number | null} />,
       },
       { accessorKey: 'desc1', header: 'Descrição' },
       {

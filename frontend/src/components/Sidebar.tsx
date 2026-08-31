@@ -86,10 +86,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                 onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                    'flex items-center gap-2.5 rounded-md border-l-2 px-2.5 py-1.5 text-sm transition-colors',
                     isActive
-                      ? 'bg-secondary font-medium text-secondary-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                      ? 'border-primary bg-primary/10 font-medium text-primary'
+                      : 'border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                   )
                 }
               >

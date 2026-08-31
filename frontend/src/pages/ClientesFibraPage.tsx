@@ -30,7 +30,7 @@ export function ClientesFibraPage() {
   const columns = useMemo<ColumnDef<ClienteFibra, unknown>[]>(
     () => [
       { accessorKey: 'nome', header: 'Nome' },
-      { accessorKey: 'mac', header: 'MAC' },
+      { accessorKey: 'mac', header: 'MAC', cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span> },
       { accessorKey: 'endereco', header: 'Endereço', cell: ({ getValue }) => (getValue() as string) || '—' },
       { accessorKey: 'id_caixa_ftth', header: 'Caixa FTTH', cell: ({ getValue }) => (getValue() as string) || '—' },
       {

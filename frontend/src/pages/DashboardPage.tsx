@@ -30,20 +30,22 @@ function StatCard({
   to?: string
   tone?: 'default' | 'warning' | 'destructive'
 }) {
-  const toneClasses = {
-    default: 'text-muted-foreground',
-    warning: 'text-amber-600 dark:text-amber-400',
-    destructive: 'text-destructive',
+  const chipClasses = {
+    default: 'bg-primary/10 text-primary',
+    warning: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    destructive: 'bg-destructive/15 text-destructive',
   }[tone]
 
   return (
     <Card className="gap-3">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>{label}</CardTitle>
-        <Icon className={`size-4 ${toneClasses}`} />
+        <div className={`flex size-7 items-center justify-center rounded-full ${chipClasses}`}>
+          <Icon className="size-3.5" />
+        </div>
       </CardHeader>
       <CardContent>
-        <CardValue>{value}</CardValue>
+        <CardValue className="font-data">{value}</CardValue>
       </CardContent>
       {to && (
         <CardFooter>
@@ -256,10 +258,10 @@ export function DashboardPage() {
                 <tbody>
                   {topPorts.data.map((port) => (
                     <tr key={port.id} className="border-b border-border last:border-0">
-                      <td className="px-5 py-3 text-foreground">
+                      <td className="px-5 py-3 font-data text-foreground">
                         1/1/{port.slot}/{port.port}
                       </td>
-                      <td className="px-5 py-3 flex items-center gap-1.5">
+                      <td className="px-5 py-3 flex items-center gap-1.5 font-data">
                         <Cpu className="size-3.5 text-muted-foreground" />
                         {port.users_connected}
                       </td>
