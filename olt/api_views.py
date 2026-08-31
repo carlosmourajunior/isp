@@ -58,7 +58,7 @@ class ONUListAPIView(generics.ListAPIView):
     serializer_class = ONUSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['oper_state', 'admin_state', 'cliente_fibra']
+    filterset_fields = ['oper_state', 'admin_state', 'cliente_fibra', 'pon']
     search_fields = ['serial', 'mac', 'desc1', 'desc2', 'pon']
     ordering_fields = ['position', 'olt_rx_sig', 'pon']
 
@@ -592,6 +592,17 @@ class MacAddressListAPIView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter]
     search_fields = ['mac', 'serial', 'desc1', 'desc2']
+
+
+class OnuWithoutMacListAPIView(generics.ListAPIView):
+    """ONUs sem MAC cadastrado (mac vazio ou nulo)"""
+    serializer_class = ONUSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['serial', 'desc1', 'desc2', 'pon']
+
+    def get_queryset(self):
+        return ONU.objects.filter(Q(mac__isnull=True) | Q(mac='')).order_by('pon', 'position')
 
 
 @api_view(['GET'])

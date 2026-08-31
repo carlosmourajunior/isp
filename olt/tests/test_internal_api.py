@@ -34,6 +34,7 @@ class AuthRequiredTests(APITestCase):
             ('get', reverse('api:scheduler_status_api')),
             ('get', reverse('api:onu_duplicated_list')),
             ('get', reverse('api:mac_address_list')),
+            ('get', reverse('api:onu_without_mac_list')),
             ('get', reverse('api:onu_health_summary')),
             ('get', reverse('api:ftth_boxes_by_occupancy')),
             ('delete', reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 1})),
@@ -172,6 +173,29 @@ class ReadOnlyListTests(APITestCase):
         seriais = {onu['serial'] for onu in response.data['results']}
         self.assertEqual(seriais, {'dup'})
         self.assertEqual(len(response.data['results']), 2)
+
+    def test_lista_sem_mac_so_traz_onus_com_mac_vazio(self):
+        # ONU.mac não aceita NULL no banco (CharField sem null=True) - só
+        # string vazia é possível na prática, mas a query também cobre
+        # isnull por segurança (olt/api_views.py).
+        ONU.objects.create(pon='1/1/1/1', position=1, mac='', serial='s1', oper_state='up')
+        ONU.objects.create(pon='1/1/1/3', position=3, mac='aa:bb', serial='s3', oper_state='up')
+
+        response = self.client.get(reverse('api:onu_without_mac_list'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        seriais = {onu['serial'] for onu in response.data['results']}
+        self.assertEqual(seriais, {'s1'})
+
+    def test_filtro_por_pon_exato_na_lista_de_onus(self):
+        ONU.objects.create(pon='1/1/1/14', position=90, mac='m1', serial='s1', oper_state='up')
+        ONU.objects.create(pon='1/1/1/14', position=91, mac='m2', serial='s2', oper_state='up')
+        ONU.objects.create(pon='1/1/2/14', position=90, mac='m3', serial='s3', oper_state='up')
+
+        response = self.client.get(reverse('api:onu_list'), {'pon': '1/1/1/14'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 2)
 
     def test_lista_mac_addresses_aceita_busca(self):
         ONU.objects.create(pon='1/1/1/1', position=1, mac='aa:bb:cc', serial='s1', oper_state='up')

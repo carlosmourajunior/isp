@@ -1,3 +1,20 @@
+export interface Onu {
+  id: number
+  pon: string
+  slot: number | null
+  port: number | null
+  position: number
+  mac: string
+  serial: string
+  oper_state: string
+  admin_state: string
+  olt_rx_sig: number | null
+  ont_olt: string
+  desc1: string
+  desc2: string
+  cliente_fibra: boolean
+}
+
 export interface OnuStats {
   total_onus: number
   onus_online: number

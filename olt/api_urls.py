@@ -50,6 +50,7 @@ urlpatterns = [
     # ONUs - leitura adicional (frontend interno)
     path('onus/duplicated/', api_views.DuplicatedOnuListAPIView.as_view(), name='onu_duplicated_list'),
     path('onus/mac-addresses/', api_views.MacAddressListAPIView.as_view(), name='mac_address_list'),
+    path('onus/sem-mac/', api_views.OnuWithoutMacListAPIView.as_view(), name='onu_without_mac_list'),
     path('onus/health-summary/', api_views.onu_health_summary, name='onu_health_summary'),
 
     # Caixas FTTH
