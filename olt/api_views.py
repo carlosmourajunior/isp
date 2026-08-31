@@ -596,6 +596,27 @@ class MacAddressListAPIView(generics.ListAPIView):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def onu_health_summary(request):
+    """
+    Contagens usadas nos cards do dashboard (equivalente ao que a view
+    `home` de template calculava linha a linha): ONUs sem MAC, sem cliente
+    fibra associado, e faixas de sinal baixo.
+    """
+    onus_sem_mac = ONU.objects.filter(Q(mac__isnull=True) | Q(mac='')).count()
+    onus_sem_cliente = ONU.objects.filter(cliente_fibra=False).count()
+    sinal_abaixo_29 = ONU.objects.filter(olt_rx_sig__lt=-29).count()
+    sinal_entre_27_e_29 = ONU.objects.filter(olt_rx_sig__gte=-29, olt_rx_sig__lte=-27).count()
+
+    return Response({
+        'onus_sem_mac': onus_sem_mac,
+        'onus_sem_cliente_fibra': onus_sem_cliente,
+        'sinal_abaixo_29': sinal_abaixo_29,
+        'sinal_entre_27_e_29': sinal_entre_27_e_29,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def ftth_boxes_by_occupancy(request):
     """Caixas FTTH ordenadas por quantidade de clientes"""
     search = request.GET.get('search', '')

@@ -34,6 +34,7 @@ class AuthRequiredTests(APITestCase):
             ('get', reverse('api:scheduler_status_api')),
             ('get', reverse('api:onu_duplicated_list')),
             ('get', reverse('api:mac_address_list')),
+            ('get', reverse('api:onu_health_summary')),
             ('get', reverse('api:ftth_boxes_by_occupancy')),
             ('delete', reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 1})),
             ('post', reverse('api:reset_onu', kwargs={'slot': 1, 'port': 1, 'position': 1})),
@@ -181,6 +182,19 @@ class ReadOnlyListTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['results']), 1)
         self.assertEqual(response.data['results'][0]['mac'], 'aa:bb:cc')
+
+    def test_health_summary_conta_onus_sem_mac_sem_cliente_e_sinal_baixo(self):
+        ONU.objects.create(pon='1/1/1/1', position=1, mac='', serial='s1', oper_state='up', olt_rx_sig=-30)
+        ONU.objects.create(pon='1/1/1/2', position=2, mac='aa:bb', serial='s2', oper_state='up', cliente_fibra=False, olt_rx_sig=-28)
+        ONU.objects.create(pon='1/1/1/3', position=3, mac='cc:dd', serial='s3', oper_state='up', cliente_fibra=True, olt_rx_sig=-10)
+
+        response = self.client.get(reverse('api:onu_health_summary'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['onus_sem_mac'], 1)
+        self.assertEqual(response.data['onus_sem_cliente_fibra'], 2)
+        self.assertEqual(response.data['sinal_abaixo_29'], 1)
+        self.assertEqual(response.data['sinal_entre_27_e_29'], 1)
 
     def test_ftth_boxes_agrupa_por_caixa_e_ordena_por_ocupacao(self):
         ClienteFibraIxc.objects.create(mac='m1', nome='Cliente 1', id_caixa_ftth='CAIXA-A')

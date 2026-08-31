@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Network } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 
@@ -34,45 +35,57 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-sm"
-      >
-        <h1 className="mb-1 text-lg font-semibold text-foreground">ISP · Gestão de Rede</h1>
-        <p className="mb-6 text-sm text-muted-foreground">Entre com sua conta para continuar.</p>
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-2 text-center">
+          <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Network className="size-5" />
+          </div>
+          <h1 className="text-lg font-semibold text-foreground">ISP · Gestão de Rede</h1>
+          <p className="text-sm text-muted-foreground">Entre com sua conta para continuar.</p>
+        </div>
 
-        <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="username">
-          Usuário
-        </label>
-        <input
-          id="username"
-          type="text"
-          autoComplete="username"
-          required
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="mb-4 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+        >
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-foreground" htmlFor="username">
+              Usuário
+            </label>
+            <input
+              id="username"
+              type="text"
+              autoComplete="username"
+              autoFocus
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
 
-        <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="password">
-          Senha
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mb-4 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-foreground" htmlFor="password">
+              Senha
+            </label>
+            <input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
 
-        {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? 'Entrando…' : 'Entrar'}
-        </Button>
-      </form>
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Entrando…' : 'Entrar'}
+          </Button>
+        </form>
+      </div>
     </div>
   )
 }

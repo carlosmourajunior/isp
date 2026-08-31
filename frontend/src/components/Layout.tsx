@@ -1,58 +1,47 @@
-import { NavLink, Outlet } from 'react-router-dom'
-import { cn } from '@/lib/utils'
+import { useState } from 'react'
+import { Outlet } from 'react-router-dom'
+import { Menu, Moon, Sun, LogOut } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { useTheme } from '@/lib/theme'
 import { Button } from '@/components/ui/button'
-
-const navItems = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/onus', label: 'ONUs' },
-  { to: '/onus/duplicadas', label: 'Duplicadas' },
-  { to: '/mac-addresses', label: 'MAC Addresses' },
-  { to: '/ftth-boxes', label: 'Caixas FTTH' },
-  { to: '/clientes-fibra', label: 'Clientes Fibra' },
-  { to: '/temperature-alerts', label: 'Temperatura' },
-  { to: '/tasks', label: 'Tarefas' },
-  { to: '/scheduler', label: 'Scheduler' },
-]
+import { Sidebar, MobileSidebar } from '@/components/Sidebar'
 
 export function Layout() {
   const { username, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
-          <span className="font-semibold text-foreground">ISP · Gestão de Rede</span>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">{username}</span>
+      <Sidebar />
+      <MobileSidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+
+      <div className="md:pl-60">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/60">
+          <button
+            onClick={() => setMobileNavOpen(true)}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground md:hidden"
+            aria-label="Abrir menu"
+          >
+            <Menu className="size-5" />
+          </button>
+
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Alternar tema">
+              {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </Button>
+            <span className="hidden text-sm text-muted-foreground sm:inline">{username}</span>
             <Button variant="outline" size="sm" onClick={logout}>
+              <LogOut className="size-3.5" />
               Sair
             </Button>
           </div>
-        </div>
-        <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-2">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                cn(
-                  'shrink-0 rounded-md px-3 py-1.5 text-sm transition-colors',
-                  isActive
-                    ? 'bg-secondary text-secondary-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-      </header>
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        <Outlet />
-      </main>
+        </header>
+
+        <main className="p-4 sm:p-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }
