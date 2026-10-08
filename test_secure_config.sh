@@ -19,7 +19,7 @@ fi
 # 2. Verificar se .env tem as variáveis necessárias
 echo ""
 echo "2. Verificando variáveis no .env..."
-VARS=("DB_PASSWORD" "REDIS_PASSWORD" "GRAFANA_ADMIN_PASSWORD" "GRAFANA_ADMIN_USER")
+VARS=("DB_PASSWORD" "REDIS_PASSWORD")
 for var in "${VARS[@]}"; do
     if grep -q "^$var=" .env; then
         echo "✅ $var encontrado"
@@ -40,7 +40,7 @@ fi
 # 4. Testar se docker-compose consegue ler as variáveis
 echo ""
 echo "4. Testando docker-compose config..."
-if docker compose -f docker-compose.yml -f docker-compose.security.yml config > /dev/null 2>&1; then
+if docker compose -f docker-compose.yml config > /dev/null 2>&1; then
     echo "✅ Configuração Docker válida"
 else
     echo "❌ ERRO na configuração Docker!"
@@ -51,6 +51,6 @@ echo ""
 echo "✅ Configuração segura aplicada com sucesso!"
 echo ""
 echo "📋 PRÓXIMOS PASSOS:"
-echo "1. Testar o sistema: docker compose -f docker-compose.yml -f docker-compose.security.yml -f docker-compose.firewall.yml up -d"
+echo "1. Testar o sistema: docker compose -f docker-compose.yml up -d"
 echo "2. Verificar logs: docker compose logs"
 echo "3. Adicionar ao Git: git add . && git commit -m 'Security: Remove all hardcoded passwords'"

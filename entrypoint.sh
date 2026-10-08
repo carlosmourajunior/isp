@@ -31,7 +31,7 @@ done
 
 echo "Redis disponível!"
 
-if [ "$1" = "python" ] && [ "$2" = "/code/manage.py" ] && [ "$3" = "runserver" ]; then
+if { [ "$1" = "python" ] && [ "$2" = "/code/manage.py" ] && [ "$3" = "runserver" ]; } || [ "$1" = "gunicorn" ]; then
     echo "Container web detectado - executando setup automático..."
     
     # Tenta primeiro com o usuário antigo para criar o novo

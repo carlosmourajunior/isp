@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.5rem;
+
+  /* Superfícies e tinta - tons levemente quentes (paleta validada da skill
+     dataviz, tabela "Chart chrome & ink"), não cinza puro computado. */
+  --background: #f9f9f7;
+  --foreground: #0b0b0b;
+  --card: #fcfcfb;
+  --card-foreground: #0b0b0b;
+  --popover: #fcfcfb;
+  --popover-foreground: #0b0b0b;
+  --secondary: #f0efec;
+  --secondary-foreground: #0b0b0b;
+  --muted: #f0efec;
+  --muted-foreground: #52514e;
+  --accent: #f0efec;
+  --accent-foreground: #0b0b0b;
+  --border: #e1e0d9;
+  --input: #e1e0d9;
+
+  /* Acento: violeta (paleta dataviz, slot categórico 7) - validado com
+     validate_palette.js contra as 3 cores de status fixas (good/warning/
+     critical) sem colisão de CVD em nenhum dos dois modos. Ver plano em
+     ~/.claude/plans/wiggly-sparking-scone.md pro porquê (cobre colidia com
+     o verde "good" pra deuteranopia no escuro). */
+  --primary: #4a3aa7;
+  --primary-foreground: #ffffff;
+  --ring: #4a3aa7;
+
+  /* Status "critical" (dataviz, escala fixa) também é o vermelho de erro/destrutivo. */
+  --destructive: #d03b3b;
+  --destructive-foreground: #ffffff;
+}
+
+.dark {
+  --background: #0d0d0d;
+  --foreground: #ffffff;
+  --card: #1a1a19;
+  --card-foreground: #ffffff;
+  --popover: #1a1a19;
+  --popover-foreground: #ffffff;
+  --secondary: #242320;
+  --secondary-foreground: #ffffff;
+  --muted: #242320;
+  --muted-foreground: #c3c2b7;
+  --accent: #242320;
+  --accent-foreground: #ffffff;
+  --border: #2c2c2a;
+  --input: #2c2c2a;
+
+  --primary: #9085e9;
+  --primary-foreground: #0b0b0b;
+  --ring: #9085e9;
+
+  --destructive: #d03b3b;
+  --destructive-foreground: #ffffff;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Colunas de dado técnico (sinal, MAC, serial, contagens) - mono +
+     tabular-nums, pra leitura de instrumentação/telemetria e alinhamento
+     vertical em tabela. Ver plano: toque tipográfico com propósito, não
+     decorativo. */
+  .font-data {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Ponto de status "vivo" - eco de um LED de equipamento de rede piscando.
+     Único elemento com movimento no app; só em estados "bons/ativos", nunca
+     em alarme. Respeita prefers-reduced-motion. */
+  .status-dot-live {
+    position: relative;
+  }
+  .status-dot-live::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: status-pulse 2s ease-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot-live::after {
+      animation: none;
+      display: none;
+    }
+  }
+}
+
+@keyframes status-pulse {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}

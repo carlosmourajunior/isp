@@ -1,6 +1,6 @@
-version: "3.3"
 services:
     web:
+        command: python manage.py runserver 0.0.0.0:8888
         environment:
             DJANGO_DEBUG: 1
         ports:

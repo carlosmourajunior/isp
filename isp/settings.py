@@ -31,6 +31,14 @@ DEBUG = os.getenv('DEBUG') == 'True'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
 
+# CORS - origem do frontend React (SPA separada, container próprio)
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('FRONTEND_URL', 'http://localhost:3000').split(',')
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = True
+
 # Lista de IPs permitidos para acessar o sistema
 # Suporta IPs individuais e ranges CIDR (ex: '192.168.1.0/24')
 ALLOWED_IPS = [
@@ -60,15 +68,16 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'corsheaders',
     'django_rq',  # Move this before your apps
     # 'django_rq_scheduler',  # Comentado temporariamente
     'olt',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Precisa vir antes do CommonMiddleware
     'isp.middleware.IPWhitelistMiddleware',  # IP Whitelist - reabilitado
     'olt.security.OltSecurityMiddleware',  # Segurança OLT - NOVO
-    'olt.prometheus_views.PrometheusMiddleware',  # Métricas Prometheus
     'isp.monitoring_middleware.MonitoringMiddleware',  # Monitoramento de APIs
     'isp.monitoring_middleware.MetricsCollectionMiddleware',  # Coleta de métricas
     'django.middleware.security.SecurityMiddleware',
@@ -261,6 +270,20 @@ LOGGING = {
             'backupCount': 10,
             'formatter': 'verbose',
         },
+        'db_connections': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'db_connections.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'file_connector': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'olt_connector.log'),
+            'maxBytes': 10*1024*1024,  # 10MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'django': {
@@ -303,6 +326,16 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'django.db': {
+            'handlers': ['db_connections'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'olt.connector': {
+            'handlers': ['file_connector', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
     'root': {
         'handlers': ['console'],
@@ -311,7 +344,7 @@ LOGGING = {
 }
 
 RQ_SHOW_ADMIN_LINK = True
-RQ_API_TOKEN = "your-token-here"
+RQ_API_TOKEN = os.getenv('RQ_API_TOKEN', 'your-token-here')
 
 # Login/Logout redirect URLs
 LOGIN_REDIRECT_URL = '/'
@@ -364,91 +397,10 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
-# Login/Logout redirect URLs
-LOGIN_REDIRECT_URL = '/'
-LOGOUT_REDIRECT_URL = '/'
+# ==================== POOL DE CONEXÕES ====================
+# Configurações para otimizar o uso de conexões com Redis Queue
 
-# Django REST Framework settings
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 50
-}
-
-# Simple JWT settings
-from datetime import timedelta
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': False,
-
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
-    'VERIFYING_KEY': None,
-    'AUDIENCE': None,
-    'ISSUER': None,
-    'JWK_URL': None,
-    'LEEWAY': 0,
-
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'user_id',
-    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
-
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
-    'TOKEN_USER_CLASS': 'rest_framework_simplejwt.models.TokenUser',
-
-    'JTI_CLAIM': 'jti',
-
-    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=60),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
-}
-
-# ==================== CONFIGURA��ES DE POOL DE CONEX�ES ====================
-# Configura��es para otimizar o uso de conex�es com o banco de dados
-
-# Configura��o de logging para monitorar conex�es
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'file': {
-            'level': 'WARNING',
-            'class': 'logging.FileHandler',
-            'filename': '/code/logs/django.log',
-        },
-        'db_handler': {
-            'level': 'DEBUG', 
-            'class': 'logging.FileHandler',
-            'filename': '/code/logs/db_connections.log',
-        },
-    },
-    'loggers': {
-        'django.db': {
-            'handlers': ['db_handler'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'django': {
-            'handlers': ['file'],
-            'level': 'WARNING',
-            'propagate': True,
-        },
-    },
-}
-
-# Pool de conex�es para RQ (Redis Queue)
+# Pool de conexões para RQ (Redis Queue)
 RQ_CONNECTION_POOL_KWARGS = {
     'max_connections': 10,
     'connection_pool_class_kwargs': {

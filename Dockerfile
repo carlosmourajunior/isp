@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     procps \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
@@ -30,8 +31,7 @@ RUN mkdir -p /code/logs
 
 # Copy scripts and set permissions
 COPY entrypoint.sh /code/entrypoint.sh
-COPY init_app.sh /code/init_app.sh
-RUN chmod +x /code/entrypoint.sh /code/init_app.sh
+RUN chmod +x /code/entrypoint.sh
 
 # Set entrypoint
 ENTRYPOINT ["/bin/bash", "/code/entrypoint.sh"]
