@@ -1,8 +1,11 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Loader2, Play, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/lib/toast'
+import { useOlts } from '@/hooks/useOlts'
 import { PageHeader } from '@/components/PageHeader'
+import { SelectFilter } from '@/components/SelectFilter'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,11 +30,12 @@ interface TaskListResponse {
 }
 
 const triggers = [
-  { endpoint: '/tasks/update-all/', label: 'Atualizar Tudo' },
-  { endpoint: '/tasks/update-ports/', label: 'Ocupação OLT' },
-  { endpoint: '/tasks/update-onus/', label: 'ONUs' },
-  { endpoint: '/tasks/update-mac/', label: 'MAC Address' },
-  { endpoint: '/tasks/sync-clientes/', label: 'Clientes Fibra' },
+  { endpoint: '/tasks/update-all/', label: 'Atualizar Tudo', oltScoped: true },
+  { endpoint: '/tasks/update-ports/', label: 'Ocupação OLT', oltScoped: true },
+  { endpoint: '/tasks/update-onus/', label: 'ONUs', oltScoped: true },
+  { endpoint: '/tasks/update-mac/', label: 'MAC Address', oltScoped: true },
+  // Clientes Fibra vem do IXC, não de uma OLT específica - não faz sentido escolher OLT aqui.
+  { endpoint: '/tasks/sync-clientes/', label: 'Clientes Fibra', oltScoped: false },
 ]
 
 function JobList({ jobs, emptyMessage, showError }: { jobs: Job[]; emptyMessage: string; showError?: boolean }) {
@@ -66,6 +70,11 @@ function JobList({ jobs, emptyMessage, showError }: { jobs: Job[]; emptyMessage:
 export function TasksPage() {
   const queryClient = useQueryClient()
   const toast = useToast()
+  const [oltId, setOltId] = useState('')
+
+  const { data: olts } = useOlts()
+  const showOltFilter = (olts?.length ?? 0) > 1
+  const oltLabel = olts?.find((o) => String(o.id) === oltId)?.name
 
   const { data, isLoading } = useQuery({
     queryKey: ['/tasks/'],
@@ -74,10 +83,12 @@ export function TasksPage() {
   })
 
   const trigger = useMutation({
-    mutationFn: (endpoint: string) => api.post(endpoint),
-    onSuccess: (_, endpoint) => {
+    mutationFn: ({ endpoint, oltScoped }: { endpoint: string; oltScoped: boolean }) =>
+      api.post(endpoint, oltScoped && oltId ? { olt_id: Number(oltId) } : undefined),
+    onSuccess: (_, { endpoint }) => {
       const label = triggers.find((t) => t.endpoint === endpoint)?.label ?? 'Tarefa'
-      toast.success(`${label} iniciada`, 'Acompanhe o progresso abaixo.')
+      const escopo = oltId && triggers.find((t) => t.endpoint === endpoint)?.oltScoped ? ` (${oltLabel})` : ''
+      toast.success(`${label}${escopo} iniciada`, 'Acompanhe o progresso abaixo.')
       queryClient.invalidateQueries({ queryKey: ['/tasks/'] })
     },
     onError: () => toast.error('Erro ao iniciar tarefa'),
@@ -89,14 +100,29 @@ export function TasksPage() {
         title="Tarefas"
         description="Status das tarefas em background (atualiza a cada 5s)."
         action={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {showOltFilter && (
+              <SelectFilter
+                label="OLT"
+                value={oltId}
+                onChange={setOltId}
+                options={(olts ?? []).map((o) => ({ label: o.name, value: String(o.id) }))}
+              />
+            )}
             {triggers.map((t) => (
               <Button
                 key={t.endpoint}
                 variant="outline"
                 size="sm"
                 disabled={trigger.isPending}
-                onClick={() => trigger.mutate(t.endpoint)}
+                onClick={() => trigger.mutate(t)}
+                title={
+                  showOltFilter && t.oltScoped
+                    ? oltId
+                      ? `Só ${oltLabel}`
+                      : 'Todas as OLTs ativas'
+                    : undefined
+                }
               >
                 <Play className="size-3.5" />
                 {t.label}
@@ -105,6 +131,13 @@ export function TasksPage() {
           </div>
         }
       />
+      {showOltFilter && (
+        <p className="-mt-4 mb-6 text-xs text-muted-foreground">
+          {oltId
+            ? `As tarefas de OLT abaixo vão rodar só para "${oltLabel}". Clientes Fibra não depende de OLT.`
+            : 'Nenhuma OLT selecionada: as tarefas de OLT abaixo vão rodar para todas as OLTs ativas.'}
+        </p>
+      )}
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Carregando…</p>

@@ -1,5 +1,7 @@
 export interface Onu {
   id: number
+  olt: number | null
+  olt_name: string | null
   pon: string
   slot: number | null
   port: number | null
@@ -9,10 +11,46 @@ export interface Onu {
   oper_state: string
   admin_state: string
   olt_rx_sig: number | null
+  ont_rx_sig: number | null
+  ont_tx_sig: number | null
   ont_olt: string
   desc1: string
   desc2: string
   cliente_fibra: boolean
+}
+
+export type OltVendor = 'nokia_alcatel'
+
+export interface Olt {
+  id: number
+  name: string
+  vendor: OltVendor
+  device_type: string
+  host: string
+  username: string
+  ssh_port: number
+  slot_count: number
+  global_delay_factor: number
+  verbose: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface OltFormValues {
+  name: string
+  vendor: OltVendor
+  device_type: string
+  host: string
+  username: string
+  password: string
+  ssh_port: number
+  slot_count: number
+  is_active: boolean
+}
+
+export const OLT_VENDOR_LABELS: Record<OltVendor, string> = {
+  nokia_alcatel: 'Nokia / Alcatel (AOS)',
 }
 
 export interface OnuStats {
@@ -33,6 +71,8 @@ export interface OnuHealthSummary {
 
 export interface OltSystemInfo {
   id: number
+  olt: number | null
+  olt_name: string | null
   isam_release: string
   uptime_days: number
   uptime_hours: number
@@ -62,8 +102,26 @@ export interface OltSystemStats {
   last_updated: string | null
 }
 
+export interface OltSystemSummaryItem {
+  id: number
+  name: string
+  system_info: OltSystemInfo | null
+  slots_total: number
+  slots_operational: number
+  temperature_avg: number | null
+  temperature_max: number | null
+  temperature_critical: number
+  temperature_warning: number
+}
+
+export interface OltSystemSummaryResponse {
+  olts: OltSystemSummaryItem[]
+}
+
 export interface OltUser {
   id: number
+  olt: number | null
+  olt_name: string | null
   slot: number
   port: number
   users_connected: number

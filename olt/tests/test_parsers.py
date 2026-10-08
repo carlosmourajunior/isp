@@ -10,7 +10,8 @@ como comentário dentro de olt/utils.py (create_dict_from_result.__doc__).
 """
 from django.test import SimpleTestCase
 
-from olt.utils import create_dict_from_result, extract_olt_info, build_nokia_connect_kwargs
+from olt.models import Olt
+from olt.utils import create_dict_from_result, extract_olt_info, build_connect_kwargs, parse_optics_output
 
 
 class CreateDictFromResultTests(SimpleTestCase):
@@ -91,29 +92,53 @@ class ExtractOltInfoTests(SimpleTestCase):
         self.assertIsNone(extract_olt_info("linha qualquer sem esse formato"))
 
 
-class BuildNokiaConnectKwargsTests(SimpleTestCase):
-    """kwargs de conexão SSH (netmiko) montados a partir de variáveis de ambiente."""
+class BuildConnectKwargsTests(SimpleTestCase):
+    """kwargs de conexão SSH (netmiko) montados a partir de um registro Olt.
+    Usa uma instância em memória (não salva no banco) - build_connect_kwargs
+    só lê atributos do objeto, então SimpleTestCase (sem acesso a banco) basta."""
 
-    def test_defaults_quando_env_vazio(self):
-        import os
-        env_backup = {k: os.environ.pop(k, None) for k in (
-            'NOKIA_DEVICE_TYPE', 'NOKIA_HOST', 'NOKIA_USERNAME', 'NOKIA_PASSWORD',
-            'NOKIA_VERBOSE', 'NOKIA_GLOBAL_DELAY_FACTOR',
-        )}
-        try:
-            kwargs = build_nokia_connect_kwargs()
-            self.assertEqual(kwargs['device_type'], 'alcatel_aos')
-            self.assertEqual(kwargs['global_delay_factor'], 2)
-            self.assertFalse(kwargs['verbose'])
-            self.assertFalse(kwargs['ssh_strict'])
-        finally:
-            for k, v in env_backup.items():
-                if v is not None:
-                    os.environ[k] = v
+    def _olt(self, **overrides):
+        defaults = dict(
+            name='OLT Teste', device_type='alcatel_aos', host='192.168.1.1',
+            username='admin', password='segredo', ssh_port=22,
+            global_delay_factor=2, verbose=False,
+        )
+        defaults.update(overrides)
+        return Olt(**defaults)
+
+    def test_monta_kwargs_a_partir_da_olt(self):
+        kwargs = build_connect_kwargs(self._olt())
+        self.assertEqual(kwargs['device_type'], 'alcatel_aos')
+        self.assertEqual(kwargs['host'], '192.168.1.1')
+        self.assertEqual(kwargs['username'], 'admin')
+        self.assertEqual(kwargs['password'], 'segredo')
+        self.assertEqual(kwargs['port'], 22)
+        self.assertEqual(kwargs['global_delay_factor'], 2)
+        self.assertFalse(kwargs['verbose'])
+        self.assertFalse(kwargs['ssh_strict'])
 
     def test_nunca_inclui_argumentos_incompativeis_com_paramiko_antigo(self):
-        kwargs = build_nokia_connect_kwargs(extra={
+        kwargs = build_connect_kwargs(self._olt(), extra={
             'allow_agent': True, 'look_for_keys': True, 'use_keys': True,
         })
         for chave_proibida in ('allow_agent', 'look_for_keys', 'use_keys'):
             self.assertNotIn(chave_proibida, kwargs)
+
+
+class ParseOpticsOutputTests(SimpleTestCase):
+    """`show equipment ont optics` -> sinal RX/TX da ONU por (pon, posição)."""
+
+    def test_onu_online_e_offline(self):
+        saida = (
+            "1/1/1/1/1      -22.220         2.598           41.160          3.22        19608.0         -23.5\n"
+            "1/1/1/1/3      unknown         unknown         unknown         unknown     unknown         invalid\n"
+            "1/1/3/12/14    -18.922         2.080           34.809          3.22        11450.0         -21.6\n"
+            "optics count : 378\n"
+        )
+
+        resultado = parse_optics_output(saida)
+
+        self.assertEqual(resultado[('1/1/1/1', 1)], (-22.22, 2.598))
+        self.assertEqual(resultado[('1/1/1/1', 3)], (None, None))
+        self.assertEqual(resultado[('1/1/3/12', 14)], (-18.922, 2.08))
+        self.assertEqual(len(resultado), 3)

@@ -17,7 +17,7 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
 
-from olt.models import ONU, ClienteFibraIxc
+from olt.models import ONU, Olt, ClienteFibraIxc
 
 
 class AuthRequiredTests(APITestCase):
@@ -76,8 +76,12 @@ class TriggerTaskTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='operador', password='senha-forte-123')
         self.client.force_authenticate(user=self.user)
+        # Tasks que tocam a OLT (ports/onus/mac/all) agora exigem ao menos
+        # uma OLT ativa cadastrada - sem OLT nenhuma, o disparo é um 400.
+        self.olt = Olt.objects.create(name='OLT 1', host='192.168.1.1', username='admin', password='segredo')
 
     def _assert_enfileira(self, url_name, mock_target, menu_item_esperado):
+        """Tasks não ligadas a uma OLT específica (ex: sync de clientes IXC)."""
         with patch(mock_target) as mocked_delay:
             mocked_delay.return_value = MagicMock(id='job-id-fake')
             response = self.client.post(reverse(f'api:{url_name}'))
@@ -86,18 +90,29 @@ class TriggerTaskTests(APITestCase):
         self.assertEqual(response.data['job_id'], 'job-id-fake')
         mocked_delay.assert_called_once_with(user='operador', menu_item=menu_item_esperado)
 
+    def _assert_enfileira_olt_scoped(self, url_name, mock_target, menu_item_esperado):
+        """Tasks por OLT: sem `olt_id` no corpo, dispara pra todas as OLTs ativas
+        (aqui, só a self.olt do setUp - um job)."""
+        with patch(mock_target) as mocked_delay:
+            mocked_delay.return_value = MagicMock(id='job-id-fake')
+            response = self.client.post(reverse(f'api:{url_name}'))
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.data['job_ids'], ['job-id-fake'])
+        mocked_delay.assert_called_once_with(olt_id=self.olt.id, user='operador', menu_item=menu_item_esperado)
+
     def test_trigger_update_ports_enfileira_update_port_occupation_task(self):
-        self._assert_enfileira(
+        self._assert_enfileira_olt_scoped(
             'trigger_update_ports', 'olt.api_views.update_port_occupation_task.delay', 'Atualização de Portas'
         )
 
     def test_trigger_update_onus_enfileira_update_onus_task(self):
-        self._assert_enfileira(
+        self._assert_enfileira_olt_scoped(
             'trigger_update_onus', 'olt.api_views.update_onus_task.delay', 'Atualização de ONUs'
         )
 
     def test_trigger_update_mac_enfileira_update_mac_task(self):
-        self._assert_enfileira(
+        self._assert_enfileira_olt_scoped(
             'trigger_update_mac', 'olt.api_views.update_mac_task.delay', 'Atualização de MAC'
         )
 
@@ -107,9 +122,14 @@ class TriggerTaskTests(APITestCase):
         )
 
     def test_trigger_update_all_enfileira_comprehensive_update_task(self):
-        self._assert_enfileira(
+        self._assert_enfileira_olt_scoped(
             'trigger_update_all', 'olt.api_views.comprehensive_update_task.delay', 'Atualizar Todos os Dados Completo'
         )
+
+    def test_trigger_sem_olt_ativa_retorna_400(self):
+        self.olt.delete()
+        response = self.client.post(reverse('api:trigger_update_ports'))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class OnuActionTests(APITestCase):

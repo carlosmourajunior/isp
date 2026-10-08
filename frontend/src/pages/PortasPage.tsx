@@ -6,30 +6,59 @@ import { DataTable } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
 import { SelectFilter } from '@/components/SelectFilter'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
+import { useOlts } from '@/hooks/useOlts'
 import type { OltUser } from '@/types/api'
 
 export function PortasPage() {
   const [page, setPage] = useState(1)
   const [slot, setSlot] = useState('')
+  const [olt, setOlt] = useState('')
+  const [ordering, setOrdering] = useState('-users_connected')
+
+  const { data: olts } = useOlts()
+  const showOltFilter = (olts?.length ?? 0) > 1
+
+  // Slots possíveis: só os da OLT selecionada no filtro, ou a maior capacidade
+  // entre as OLTs ativas quando nenhuma está selecionada - nunca um número fixo,
+  // já que cada OLT declara sua própria quantidade de slots (Olt.slot_count).
+  const maxSlots = olt
+    ? (olts ?? []).find((o) => String(o.id) === olt)?.slot_count ?? 1
+    : Math.max(1, ...(olts ?? []).map((o) => o.slot_count))
+  const slotOptions = Array.from({ length: maxSlots }, (_, i) => ({
+    label: String(i + 1),
+    value: String(i + 1),
+  }))
 
   const { data, isLoading, isFetching } = usePaginatedApi<OltUser>({
     endpoint: '/olt-users/',
     page,
-    ordering: '-users_connected',
-    filters: { slot },
+    ordering,
+    filters: { slot, olt },
   })
 
   const columns = useMemo<ColumnDef<OltUser, unknown>[]>(
     () => [
+      ...(showOltFilter
+        ? [
+            {
+              accessorKey: 'olt_name',
+              header: 'OLT',
+              meta: { sortKey: 'olt__name' },
+              cell: ({ getValue }: { getValue: () => unknown }) => (getValue() as string) || '—',
+            } satisfies ColumnDef<OltUser, unknown>,
+          ]
+        : []),
       {
         id: 'porta',
         header: 'Porta',
+        meta: { sortKey: 'slot' },
         cell: ({ row }) => `1/1/${row.original.slot}/${row.original.port}`,
       },
-      { accessorKey: 'users_connected', header: 'Usuários' },
+      { accessorKey: 'users_connected', header: 'Usuários', meta: { sortKey: 'users_connected' } },
       {
         accessorKey: 'last_updated',
         header: 'Atualizado',
+        meta: { sortKey: 'last_updated' },
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleString('pt-BR'),
       },
       {
@@ -45,7 +74,7 @@ export function PortasPage() {
         ),
       },
     ],
-    [],
+    [showOltFilter],
   )
 
   return (
@@ -59,19 +88,34 @@ export function PortasPage() {
         page={page}
         onPageChange={setPage}
         count={data?.count}
+        ordering={ordering}
+        onOrderingChange={(value) => {
+          setOrdering(value)
+          setPage(1)
+        }}
         toolbar={
-          <SelectFilter
-            label="Slot"
-            value={slot}
-            onChange={(value) => {
-              setSlot(value)
-              setPage(1)
-            }}
-            options={[
-              { label: '1', value: '1' },
-              { label: '2', value: '2' },
-            ]}
-          />
+          <div className="flex flex-wrap gap-2">
+            {showOltFilter && (
+              <SelectFilter
+                label="OLT"
+                value={olt}
+                onChange={(value) => {
+                  setOlt(value)
+                  setPage(1)
+                }}
+                options={(olts ?? []).map((o) => ({ label: o.name, value: String(o.id) }))}
+              />
+            )}
+            <SelectFilter
+              label="Slot"
+              value={slot}
+              onChange={(value) => {
+                setSlot(value)
+                setPage(1)
+              }}
+              options={slotOptions}
+            />
+          </div>
         }
       />
     </div>

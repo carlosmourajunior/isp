@@ -5,17 +5,16 @@ import {
   AlertTriangle,
   ArrowRight,
   Cpu,
-  RefreshCw,
   ScanLine,
+  Server,
   Signal,
   Thermometer,
   UserX,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { OltSystemStats, OltUser, OnuHealthSummary, OnuStats, Paginated } from '@/types/api'
+import type { Olt, OltSystemSummaryResponse, OltUser, OnuHealthSummary, OnuStats, Paginated } from '@/types/api'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 
 function StatCard({
   label,
@@ -76,9 +75,14 @@ export function DashboardPage() {
     queryFn: async () => (await api.get<OnuHealthSummary>('/onus/health-summary/')).data,
   })
 
-  const systemStats = useQuery({
-    queryKey: ['olt-system-stats'],
-    queryFn: async () => (await api.get<OltSystemStats>('/olt/system-stats/')).data,
+  const systemSummary = useQuery({
+    queryKey: ['olt-system-summary'],
+    queryFn: async () => (await api.get<OltSystemSummaryResponse>('/olt/system-summary/')).data,
+  })
+
+  const olts = useQuery({
+    queryKey: ['olts-summary'],
+    queryFn: async () => (await api.get<Paginated<Olt>>('/olts/')).data.results,
   })
 
   const topPorts = useQuery({
@@ -92,7 +96,7 @@ export function DashboardPage() {
   })
 
   const isLoading =
-    onuStats.isLoading || healthSummary.isLoading || systemStats.isLoading || topPorts.isLoading
+    onuStats.isLoading || healthSummary.isLoading || systemSummary.isLoading || topPorts.isLoading
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Carregando painel…</p>
@@ -100,7 +104,7 @@ export function DashboardPage() {
 
   const stats = onuStats.data
   const health = healthSummary.data
-  const system = systemStats.data
+  const systemOlts = systemSummary.data?.olts ?? []
 
   return (
     <div className="flex flex-col gap-8">
@@ -165,81 +169,105 @@ export function DashboardPage() {
               label="Sinal entre -27 e -29"
               value={health.sinal_entre_27_e_29}
               icon={Signal}
+              to="/onus/sinal-alerta"
               tone={health.sinal_entre_27_e_29 > 0 ? 'warning' : 'default'}
             />
             <StatCard
               label="Sinal abaixo de -29"
               value={health.sinal_abaixo_29}
               icon={Signal}
+              to="/onus/sinal-baixo"
               tone={health.sinal_abaixo_29 > 0 ? 'destructive' : 'default'}
             />
           </div>
         </div>
       )}
 
-      {system && (
-        <div>
-          <SectionTitle>Sistema OLT</SectionTitle>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="gap-2">
-              <CardHeader>
-                <CardTitle>Sistema</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <p className="text-foreground">{system.system_info?.isam_release ?? '—'}</p>
-                <p className="text-muted-foreground">
-                  {system.system_info ? `${system.system_info.uptime_days} dias de uptime` : 'Sem dados'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="gap-2">
-              <CardHeader>
-                <CardTitle>Slots</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <p className="text-foreground">{system.slots_stats.total_slots} no total</p>
-                <p>
-                  <span className="text-emerald-600 dark:text-emerald-400">
-                    {system.slots_stats.operational_slots} operacionais
-                  </span>
-                  {system.slots_stats.offline_slots > 0 && (
-                    <span className="text-destructive"> · {system.slots_stats.offline_slots} offline</span>
-                  )}
-                </p>
-              </CardContent>
-            </Card>
-
+      <div>
+        <SectionTitle>Sistema OLT</SectionTitle>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
+          {olts.data && (
             <Card className="gap-2">
               <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle>Temperatura</CardTitle>
-                <Thermometer className="size-4 text-muted-foreground" />
+                <CardTitle>OLTs</CardTitle>
+                <Server className="size-4 text-muted-foreground" />
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <p className="text-foreground">
-                  Média {system.temperature_stats.average_temperature}°C · Máx {system.temperature_stats.max_temperature}°C
+                  {olts.data.filter((o) => o.is_active).length} de {olts.data.length} ativas
                 </p>
-                <Link to="/temperature-alerts" className="inline-flex items-center gap-1.5 hover:underline">
-                  <span className="text-destructive">{system.temperature_stats.critical_temperatures} críticas</span>
-                  <span className="text-muted-foreground">/</span>
-                  <span className="text-amber-600 dark:text-amber-400">
-                    {system.temperature_stats.warning_temperatures} aviso
-                  </span>
+                <Link to="/olts" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                  Ver OLTs <ArrowRight className="size-3" />
                 </Link>
               </CardContent>
             </Card>
+          )}
 
-            <Card className="justify-center gap-2">
-              <CardContent className="flex items-center justify-center">
-                <Button variant="outline" size="sm" className="w-full" disabled>
-                  <RefreshCw className="size-3.5" />
-                  Atualizar OLT
-                </Button>
-              </CardContent>
+          {systemOlts.length > 0 && (
+            <Card className="gap-0 overflow-hidden py-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                      <th className="px-5 py-3 font-medium">OLT</th>
+                      <th className="px-5 py-3 font-medium">Versão / Uptime</th>
+                      <th className="px-5 py-3 font-medium">Slots</th>
+                      <th className="px-5 py-3 font-medium">Temperatura</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {systemOlts.map((olt) => (
+                      <tr key={olt.id} className="border-b border-border last:border-0">
+                        <td className="px-5 py-3 font-medium text-foreground">{olt.name}</td>
+                        <td className="px-5 py-3 text-muted-foreground">
+                          {olt.system_info ? (
+                            <>
+                              {olt.system_info.isam_release} · {olt.system_info.uptime_days} dias
+                            </>
+                          ) : (
+                            'Sem dados'
+                          )}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className="text-emerald-600 dark:text-emerald-400">
+                            {olt.slots_operational} operacionais
+                          </span>
+                          <span className="text-muted-foreground"> / {olt.slots_total}</span>
+                        </td>
+                        <td className="px-5 py-3">
+                          {olt.temperature_avg !== null ? (
+                            <div className="flex items-center gap-1.5">
+                              <Thermometer className="size-3.5 text-muted-foreground" />
+                              <span className="text-foreground">
+                                {olt.temperature_avg}°C · Máx {olt.temperature_max}°C
+                              </span>
+                              {(olt.temperature_critical > 0 || olt.temperature_warning > 0) && (
+                                <Link to="/temperature-alerts" className="ml-1 hover:underline">
+                                  {olt.temperature_critical > 0 && (
+                                    <span className="text-destructive">{olt.temperature_critical} crítica</span>
+                                  )}
+                                  {olt.temperature_critical > 0 && olt.temperature_warning > 0 && ' / '}
+                                  {olt.temperature_warning > 0 && (
+                                    <span className="text-amber-600 dark:text-amber-400">
+                                      {olt.temperature_warning} aviso
+                                    </span>
+                                  )}
+                                </Link>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">Sem dados</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Card>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {topPorts.data && topPorts.data.length > 0 && (
         <div>

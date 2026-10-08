@@ -4,7 +4,7 @@ from datetime import datetime
 import time
 import logging
 from netmiko import ConnectHandler
-from olt.models import ONU, ClienteFibraIxc, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
+from olt.models import ONU, ClienteFibraIxc, Olt, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
 import re
 from dotenv import load_dotenv
 import os
@@ -16,15 +16,25 @@ load_dotenv()
 logger = logging.getLogger('olt.connector')
 
 
-def build_nokia_connect_kwargs(extra=None):
-    """Cria kwargs SSH compatíveis com a versão instalada de Paramiko/Netmiko."""
+def get_default_olt():
+    """OLT usada quando nenhuma é escolhida explicitamente. Views de template
+    legadas (olt/views.py) e admin actions (olt/admin.py) ainda instanciam os
+    conectores sem escolher uma OLT - com uma só OLT ativa cadastrada isso
+    reproduz o comportamento de antes do sistema virar multi-OLT."""
+    return Olt.objects.filter(is_active=True).order_by('id').first()
+
+
+def build_connect_kwargs(olt, extra=None):
+    """Cria kwargs SSH (netmiko) compatíveis com a versão instalada de
+    Paramiko/Netmiko a partir de um registro Olt."""
     kwargs = {
-        'device_type': os.getenv('NOKIA_DEVICE_TYPE', 'alcatel_aos'),
-        'host': os.getenv('NOKIA_HOST'),
-        'username': os.getenv('NOKIA_USERNAME'),
-        'password': os.getenv('NOKIA_PASSWORD'),
-        'verbose': os.getenv('NOKIA_VERBOSE') == 'True',
-        'global_delay_factor': int(os.getenv('NOKIA_GLOBAL_DELAY_FACTOR', 2)),
+        'device_type': olt.device_type,
+        'host': olt.host,
+        'username': olt.username,
+        'password': olt.password,
+        'port': olt.ssh_port,
+        'verbose': olt.verbose,
+        'global_delay_factor': olt.global_delay_factor,
         'ssh_strict': False,
     }
     if extra:
@@ -110,10 +120,34 @@ def create_dict_from_result(data):
     return data_list
 
 
+def parse_optics_output(output):
+    """`show equipment ont optics` -> {(pon, position): (ont_rx, ont_tx)}.
+
+    A OLT devolve 'unknown' para ONU offline; viram None para não exibir
+    sinal velho.
+    """
+    def to_float(value):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    result = {}
+    for line in output.splitlines():
+        match = re.match(r'\s*(\d+/\d+/\d+/\d+)/(\d+)\s+(\S+)\s+(\S+)', line)
+        if match:
+            pon, position, rx, tx = match.groups()
+            result[(pon, int(position))] = (to_float(rx), to_float(tx))
+    return result
+
+
 class olt_connector():
 
-    def __init__(self):
-        self.nokia = build_nokia_connect_kwargs()
+    def __init__(self, olt=None):
+        self.olt = olt or get_default_olt()
+        if self.olt is None:
+            raise ValueError('Nenhuma OLT ativa cadastrada')
+        self.nokia = build_connect_kwargs(self.olt)
 
     def connect(self):
         # Connect to OLT
@@ -153,10 +187,9 @@ class olt_connector():
             self.expect_string = expect_string
 
         net_connect = self.connect()
-        olts = OltUsers.objects.all()
-        olts.delete()
+        OltUsers.objects.filter(olt=self.olt).delete()
 
-        for slot in range(3):
+        for slot in range(1, self.olt.slot_count + 1):
             for pon in range(17):
                 command = f"show equipment ont status pon 1/1/{slot}/{pon}"
                 try:
@@ -164,28 +197,46 @@ class olt_connector():
                     for line in iter(output.splitlines()):
                         if "count" in line:
                             new_olt_user = OltUsers()
+                            new_olt_user.olt = self.olt
                             new_olt_user.slot = slot
                             new_olt_user.port = pon
                             new_olt_user.users_connected = int(line.split(":")[1])
                             new_olt_user.last_updated = timezone.now()
                             new_olt_user.save()
                 except Exception as e:
-                    logger.warning(f"Falha ao ler ocupação da PON 1/1/{slot}/{pon}: {e}")
+                    logger.warning(f"Falha ao ler ocupação da PON 1/1/{slot}/{pon} ({self.olt.name}): {e}")
                     continue
 
         self.disconnect(net_connect)
 
     def get_itens_to_port(self, slot, pon, order_by='position'):
-        old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}").order_by(order_by)
+        old_values = ONU.objects.filter(olt=self.olt, pon=f"1/1/{slot}/{pon}").order_by(order_by)
         return old_values
 
     def update_all_ports(self):
-        for slot in range(3):
+        for slot in range(1, self.olt.slot_count + 1):
             for pon in range(17):
                 self.update_port(slot, pon)
 
+    def update_optics(self):
+        # update_port recria as ONUs, então isto precisa rodar depois dele.
+        net_connect = self.connect()
+        try:
+            output = net_connect.send_command("show equipment ont optics", read_timeout=600)
+        except Exception as e:
+            logger.error(f"Falha ao ler óptica das ONTs ({self.olt.name}): {e}")
+            return
+        finally:
+            self.disconnect(net_connect)
+
+        optics = parse_optics_output(output)
+        onus = list(ONU.objects.filter(olt=self.olt))
+        for onu in onus:
+            onu.ont_rx_sig, onu.ont_tx_sig = optics.get((onu.pon, onu.position), (None, None))
+        ONU.objects.bulk_update(onus, ['ont_rx_sig', 'ont_tx_sig'], batch_size=500)
+
     def update_port(self, slot, pon):
-        old_values = ONU.objects.filter(pon=f"1/1/{slot}/{pon}")
+        old_values = ONU.objects.filter(olt=self.olt, pon=f"1/1/{slot}/{pon}")
         old_values.delete()
         net_connect = self.connect()
         command = f"show equipment ont status pon 1/1/{slot}/{pon}"
@@ -193,7 +244,7 @@ class olt_connector():
             output = net_connect.send_command(command)
             self.update_values(output)
         except Exception as e:
-            logger.error(f"Falha ao atualizar PON 1/1/{slot}/{pon}: {e}")
+            logger.error(f"Falha ao atualizar PON 1/1/{slot}/{pon} ({self.olt.name}): {e}")
         finally:
             self.disconnect(net_connect)
 
@@ -207,7 +258,7 @@ class olt_connector():
             output = net_connect.send_command(command, read_timeout=1200)
             self.update_mac(output)
         except Exception as e:
-            logger.error(f"Erro ao obter valores MAC: {e}")
+            logger.error(f"Erro ao obter valores MAC ({self.olt.name}): {e}")
         finally:
             self.disconnect(net_connect)
 
@@ -225,6 +276,7 @@ class olt_connector():
                         position = parts[-1]
 
                         onu = ONU.objects.filter(
+                            olt=self.olt,
                             pon=f"1/{pon}",
                             position=position
                         ).first()
@@ -247,6 +299,7 @@ class olt_connector():
 
         for data in data_dict:
             new_onu = ONU()
+            new_onu.olt = self.olt
             # Casa só por serial - desc1 é um campo livre da OLT que não
             # corresponde ao nome cadastrado no IXC (ver ONU.update_cliente_fibra_status).
             new_onu.cliente_fibra = ClienteFibraIxc.objects.filter(mac=data['sernum']).exists()
@@ -321,8 +374,11 @@ class olt_connector():
 class OltSystemCollector:
     """Classe para coletar informações do sistema OLT"""
 
-    def __init__(self):
-        self.nokia = build_nokia_connect_kwargs()
+    def __init__(self, olt=None):
+        self.olt = olt or get_default_olt()
+        if self.olt is None:
+            raise ValueError('Nenhuma OLT ativa cadastrada')
+        self.nokia = build_connect_kwargs(self.olt)
 
     def connect(self):
         """Conecta à OLT"""
@@ -346,9 +402,9 @@ class OltSystemCollector:
             uptime_output = net_connect.send_command("show core1-uptime")
             uptime_data = self._parse_uptime(uptime_output)
 
-            # Atualizar ou criar registro
+            # Atualizar ou criar registro (um por OLT)
             system_info, created = OltSystemInfo.objects.get_or_create(
-                id=1,  # Usando ID fixo pois só temos uma OLT
+                olt=self.olt,
                 defaults={
                     'isam_release': isam_release,
                     'uptime_days': uptime_data['days'],
@@ -371,7 +427,7 @@ class OltSystemCollector:
             return system_info
 
         except Exception as e:
-            logger.error(f"Erro ao coletar informações do sistema: {e}")
+            logger.error(f"Erro ao coletar informações do sistema ({self.olt.name}): {e}")
             return None
         finally:
             self.disconnect(net_connect)
@@ -386,25 +442,27 @@ class OltSystemCollector:
             # Usar transação atômica para evitar perda de dados
             from django.db import transaction
             with transaction.atomic():
-                # Marcar todos como inativos primeiro
-                OltSlot.objects.all().update(is_active=False)
+                # Marcar todos os slots desta OLT como inativos primeiro
+                OltSlot.objects.filter(olt=self.olt).update(is_active=False)
 
                 # Inserir/atualizar novos dados
                 for slot_data in slots_data:
+                    slot_name = slot_data.pop('slot_name')
                     slot_data['is_active'] = True
                     OltSlot.objects.update_or_create(
-                        slot_name=slot_data.get('slot_name'),
+                        olt=self.olt,
+                        slot_name=slot_name,
                         defaults=slot_data
                     )
 
                 # Remover apenas os que realmente não existem mais
                 # (opcional - pode manter histórico)
-                # OltSlot.objects.filter(is_active=False).delete()
+                # OltSlot.objects.filter(olt=self.olt, is_active=False).delete()
 
-            return OltSlot.objects.filter(is_active=True)
+            return OltSlot.objects.filter(olt=self.olt, is_active=True)
 
         except Exception as e:
-            logger.error(f"Erro ao coletar informações dos slots: {e}")
+            logger.error(f"Erro ao coletar informações dos slots ({self.olt.name}): {e}")
             return None
         finally:
             self.disconnect(net_connect)
@@ -419,28 +477,29 @@ class OltSystemCollector:
             # Usar transação atômica para evitar perda de dados
             from django.db import transaction
             with transaction.atomic():
-                # Marcar todos como inativos primeiro
-                OltTemperature.objects.all().update(is_active=False)
+                # Marcar todos os sensores desta OLT como inativos primeiro
+                OltTemperature.objects.filter(olt=self.olt).update(is_active=False)
 
                 # Inserir/atualizar novos dados
                 for temp in temp_data:
+                    slot_name = temp.pop('slot_name')
+                    sensor_id = temp.pop('sensor_id')
                     temp['is_active'] = True
                     OltTemperature.objects.update_or_create(
-                        slot_name=temp.get('slot_name'),
-                        sensor_id=temp.get('sensor_id'),
+                        olt=self.olt,
+                        slot_name=slot_name,
+                        sensor_id=sensor_id,
                         defaults=temp
                     )
 
                 # Remover apenas os que realmente não existem mais
                 # (opcional - pode manter histórico)
-                # OltTemperature.objects.filter(is_active=False).delete()
+                # OltTemperature.objects.filter(olt=self.olt, is_active=False).delete()
 
-            return OltTemperature.objects.filter(is_active=True)
-
-            return OltTemperature.objects.all()
+            return OltTemperature.objects.filter(olt=self.olt, is_active=True)
 
         except Exception as e:
-            logger.error(f"Erro ao coletar informações de temperatura: {e}")
+            logger.error(f"Erro ao coletar informações de temperatura ({self.olt.name}): {e}")
             return None
         finally:
             self.disconnect(net_connect)
@@ -458,7 +517,7 @@ class OltSystemCollector:
                 'temperatures': temperatures
             }
         except Exception as e:
-            logger.error(f"Erro ao coletar dados do sistema: {e}")
+            logger.error(f"Erro ao coletar dados do sistema ({self.olt.name}): {e}")
             return None
 
     def _parse_isam_release(self, output):

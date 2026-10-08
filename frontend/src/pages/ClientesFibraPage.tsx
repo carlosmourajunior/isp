@@ -19,23 +19,41 @@ export function ClientesFibraPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [vinculado, setVinculado] = useState('')
+  const [ordering, setOrdering] = useState('')
 
   const { data, isLoading, isFetching } = usePaginatedApi<ClienteFibra>({
     endpoint: '/clientes-fibra/interno/',
     page,
     search,
+    ordering,
     filters: { vinculado },
   })
 
   const columns = useMemo<ColumnDef<ClienteFibra, unknown>[]>(
     () => [
-      { accessorKey: 'nome', header: 'Nome' },
-      { accessorKey: 'mac', header: 'MAC', cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span> },
-      { accessorKey: 'endereco', header: 'Endereço', cell: ({ getValue }) => (getValue() as string) || '—' },
-      { accessorKey: 'id_caixa_ftth', header: 'Caixa FTTH', cell: ({ getValue }) => (getValue() as string) || '—' },
+      { accessorKey: 'nome', header: 'Nome', meta: { sortKey: 'nome' } },
+      {
+        accessorKey: 'mac',
+        header: 'MAC',
+        meta: { sortKey: 'mac' },
+        cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span>,
+      },
+      {
+        accessorKey: 'endereco',
+        header: 'Endereço',
+        meta: { sortKey: 'endereco' },
+        cell: ({ getValue }) => (getValue() as string) || '—',
+      },
+      {
+        accessorKey: 'id_caixa_ftth',
+        header: 'Caixa FTTH',
+        meta: { sortKey: 'id_caixa_ftth' },
+        cell: ({ getValue }) => (getValue() as string) || '—',
+      },
       {
         accessorKey: 'vinculado',
         header: 'Vinculado a contrato',
+        meta: { sortKey: 'vinculado' },
         cell: ({ getValue }) =>
           getValue() ? <Badge variant="success">Sim</Badge> : <Badge variant="warning">Não</Badge>,
       },
@@ -63,6 +81,11 @@ export function ClientesFibraPage() {
         page={page}
         onPageChange={setPage}
         count={data?.count}
+        ordering={ordering}
+        onOrderingChange={(value) => {
+          setOrdering(value)
+          setPage(1)
+        }}
         toolbar={
           <SelectFilter
             label="Vinculado"

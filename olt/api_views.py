@@ -8,12 +8,13 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django_rq import get_queue
 from django.db.models import Q, Count, Avg, Max, Min
 from .models import (
-    ONU, OltUsers, PlacaOnu, ClienteFibraIxc,
+    ONU, Olt, OltUsers, PlacaOnu, ClienteFibraIxc,
     OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
 )
 from .serializers import (
     ONUSerializer,
     ONUDetailSerializer,
+    OltSerializer,
     OltUsersSerializer,
     PlacaOnuSerializer,
     ClienteFibraIxcSerializer,
@@ -34,6 +35,15 @@ from .tasks import (
     update_clientes_task,
     comprehensive_update_task,
 )
+
+
+# Campos ordenáveis compartilhados por toda view baseada em ONU/ONUSerializer
+# (lista principal + duplicadas/MAC/sem-MAC) - mantém as 4 sincronizadas, já
+# que representam o mesmo conjunto de colunas exibidas no frontend.
+ONU_ORDERING_FIELDS = [
+    'pon', 'position', 'mac', 'serial', 'oper_state', 'admin_state',
+    'olt_rx_sig', 'ont_rx_sig', 'ont_tx_sig', 'desc1', 'desc2', 'cliente_fibra', 'olt__name',
+]
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -59,9 +69,18 @@ class ONUListAPIView(generics.ListAPIView):
     serializer_class = ONUSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['oper_state', 'admin_state', 'cliente_fibra', 'pon']
+    filterset_fields = {
+        'oper_state': ['exact'],
+        'admin_state': ['exact'],
+        'cliente_fibra': ['exact'],
+        'pon': ['exact'],
+        'olt': ['exact'],
+        # gte/lte/lt pra permitir as telas de "sinal baixo"/"sinal crítico" do dashboard
+        'olt_rx_sig': ['exact', 'gte', 'lte', 'lt', 'gt'],
+        'ont_rx_sig': ['exact', 'gte', 'lte', 'lt', 'gt'],
+    }
     search_fields = ['serial', 'mac', 'desc1', 'desc2', 'pon']
-    ordering_fields = ['position', 'olt_rx_sig', 'pon']
+    ordering_fields = ONU_ORDERING_FIELDS
 
 
 class ONUDetailAPIView(generics.RetrieveAPIView):
@@ -81,8 +100,8 @@ class OltUsersListAPIView(generics.ListAPIView):
     serializer_class = OltUsersSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['slot']
-    ordering_fields = ['slot', 'port', 'users_connected', 'last_updated']
+    filterset_fields = ['slot', 'olt']
+    ordering_fields = ['slot', 'port', 'users_connected', 'last_updated', 'olt__name']
 
 
 class ClienteFibraListAPIView(generics.ListAPIView):
@@ -107,9 +126,17 @@ def onu_stats(request):
     onus_offline = ONU.objects.filter(oper_state='down').count()
     clientes_fibra = ONU.objects.filter(cliente_fibra=True).count()
     
-    # Estatísticas por slot
+    # Estatísticas por slot - descobre os slots realmente usados a partir dos
+    # PONs distintos em vez de supor um número fixo (OLTs diferentes têm
+    # capacidades diferentes, ver Olt.slot_count).
+    slots_presentes = set()
+    for pon in ONU.objects.values_list('pon', flat=True).distinct():
+        partes = pon.split('/')
+        if len(partes) >= 3 and partes[2].isdigit():
+            slots_presentes.add(int(partes[2]))
+
     slot_stats = {}
-    for slot in [1, 2]:
+    for slot in sorted(slots_presentes):
         slot_onus = ONU.objects.filter(pon__contains=f'/1/{slot}/')
         slot_stats[f'slot_{slot}'] = {
             'total': slot_onus.count(),
@@ -179,6 +206,60 @@ def onu_search(request):
     })
 
 
+# =========== CADASTRO DE OLTs (multi-OLT) ===========
+# CRUD restrito a admins - guarda credencial de acesso real ao equipamento.
+
+class OltListCreateAPIView(generics.ListCreateAPIView):
+    """Lista e cadastra OLTs"""
+    queryset = Olt.objects.all()
+    serializer_class = OltSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['is_active', 'vendor']
+    ordering_fields = ['name', 'vendor', 'host', 'slot_count', 'is_active', 'created_at']
+
+    def get_permissions(self):
+        # Leitura: qualquer usuário autenticado (pra popular filtros de OLT
+        # nas telas). Cadastro: só admin (olt_admin_required abaixo faz a
+        # checagem real de escrita).
+        return [IsAuthenticated()]
+
+    def post(self, request, *args, **kwargs):
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response(
+                {'error': 'Apenas administradores podem cadastrar OLTs', 'code': 'ADMIN_REQUIRED'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().post(request, *args, **kwargs)
+
+
+class OltDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """Detalhe, edição e remoção de uma OLT"""
+    queryset = Olt.objects.all()
+    serializer_class = OltSerializer
+    permission_classes = [IsAuthenticated]
+
+    def check_write_permission(self, request):
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response(
+                {'error': 'Apenas administradores podem alterar OLTs', 'code': 'ADMIN_REQUIRED'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return None
+
+    def put(self, request, *args, **kwargs):
+        denied = self.check_write_permission(request)
+        return denied or super().put(request, *args, **kwargs)
+
+    def patch(self, request, *args, **kwargs):
+        denied = self.check_write_permission(request)
+        return denied or super().patch(request, *args, **kwargs)
+
+    def delete(self, request, *args, **kwargs):
+        denied = self.check_write_permission(request)
+        return denied or super().delete(request, *args, **kwargs)
+
+
 # =========== OLT SYSTEM API VIEWS ===========
 
 class OltSystemInfoAPIView(generics.RetrieveAPIView):
@@ -188,10 +269,17 @@ class OltSystemInfoAPIView(generics.RetrieveAPIView):
     queryset = OltSystemInfo.objects.all()
     serializer_class = OltSystemInfoSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_object(self):
-        # Retorna o primeiro (e único) registro de sistema
-        obj, created = OltSystemInfo.objects.get_or_create(id=1)
+        # Com múltiplas OLTs, retorna o registro da OLT padrão (primeira
+        # ativa) - mantém o contrato de antes pra quem consome esse
+        # endpoint sem escolher uma OLT explicitamente.
+        from .utils import get_default_olt
+        from django.http import Http404
+        olt = get_default_olt()
+        if olt is None:
+            raise Http404('Nenhuma OLT ativa cadastrada')
+        obj, created = OltSystemInfo.objects.get_or_create(olt=olt)
         return obj
 
 
@@ -203,7 +291,7 @@ class OltSlotListAPIView(generics.ListAPIView):
     serializer_class = OltSlotSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['enabled', 'availability', 'actual_type']
+    filterset_fields = ['enabled', 'availability', 'actual_type', 'olt']
     ordering_fields = ['slot_name', 'actual_type', 'restart_count']
 
 
@@ -215,7 +303,7 @@ class OltTemperatureListAPIView(generics.ListAPIView):
     serializer_class = OltTemperatureSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['slot_name']
+    filterset_fields = ['slot_name', 'olt']
     ordering_fields = ['slot_name', 'sensor_id', 'actual_temp']
 
 
@@ -227,7 +315,46 @@ class OltSfpDiagnosticsListAPIView(generics.ListAPIView):
     serializer_class = OltSfpDiagnosticsSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['olt']
     ordering_fields = ['interface', 'temperature', 'tx_power', 'rx_power']
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olt_system_summary(request):
+    """
+    Resumo do sistema (versão, uptime, slots, temperatura) de cada OLT ativa
+    separadamente - usado pelo card "Sistema OLT" do dashboard. Diferente de
+    olt_system_stats (contrato congelado de parceiros, que agrega tudo numa
+    visão só da "OLT padrão"/rede como um todo), aqui cada OLT aparece numa
+    linha própria.
+    """
+    resumo = []
+    for olt in Olt.objects.filter(is_active=True).order_by('name'):
+        system_info = OltSystemInfo.objects.filter(olt=olt).first()
+
+        slots = OltSlot.objects.filter(olt=olt)
+        total_slots = slots.count()
+        operational_slots = slots.filter(
+            enabled=True, availability='available', error_status='no-error'
+        ).count()
+
+        temps = OltTemperature.objects.filter(olt=olt)
+        temp_agg = temps.aggregate(avg_temp=Avg('actual_temp'), max_temp=Max('actual_temp'))
+
+        resumo.append({
+            'id': olt.id,
+            'name': olt.name,
+            'system_info': OltSystemInfoSerializer(system_info).data if system_info else None,
+            'slots_total': total_slots,
+            'slots_operational': operational_slots,
+            'temperature_avg': round(temp_agg['avg_temp'], 1) if temp_agg['avg_temp'] is not None else None,
+            'temperature_max': temp_agg['max_temp'],
+            'temperature_critical': temps.filter(actual_temp__gte=75).count(),
+            'temperature_warning': temps.filter(actual_temp__gte=70, actual_temp__lt=75).count(),
+        })
+
+    return Response({'olts': resumo})
 
 
 @api_view(['GET'])
@@ -237,9 +364,14 @@ def olt_system_stats(request):
     Estatísticas completas do sistema OLT
     """
     try:
-        # Informações do sistema
-        system_info = OltSystemInfo.objects.first()
-        
+        # Informações do sistema - com múltiplas OLTs, mostra a OLT padrão
+        # (primeira ativa); slots/temperaturas abaixo continuam agregando
+        # todas as OLTs (visão geral da rede).
+        from .utils import get_default_olt
+        default_olt = get_default_olt()
+        system_info = OltSystemInfo.objects.filter(olt=default_olt).first() if default_olt else None
+
+
         # Estatísticas dos slots
         total_slots = OltSlot.objects.count()
         operational_slots = OltSlot.objects.filter(
@@ -468,36 +600,56 @@ def task_list(request):
     })
 
 
-def _enqueue_task(request, task_func, menu_item):
-    job = task_func.delay(user=request.user.username, menu_item=menu_item)
-    return Response({'job_id': job.id, 'menu_item': menu_item}, status=status.HTTP_202_ACCEPTED)
+def _enqueue_task(request, task_func, menu_item, olt_scoped=False):
+    """Dispara uma task em background. Pra tasks que tocam uma OLT
+    (olt_scoped=True): se `olt_id` vier no corpo/query string, dispara só
+    pra ela; senão, itera todas as OLTs ativas e enfileira um job por OLT
+    - fica pronto pra N OLTs sem exigir que o frontend escolha uma."""
+    if not olt_scoped:
+        job = task_func.delay(user=request.user.username, menu_item=menu_item)
+        return Response({'job_id': job.id, 'menu_item': menu_item}, status=status.HTTP_202_ACCEPTED)
+
+    requested_olt_id = request.data.get('olt_id') or request.query_params.get('olt_id')
+    if requested_olt_id:
+        job = task_func.delay(olt_id=int(requested_olt_id), user=request.user.username, menu_item=menu_item)
+        return Response({'job_ids': [job.id], 'menu_item': menu_item}, status=status.HTTP_202_ACCEPTED)
+
+    active_olt_ids = list(Olt.objects.filter(is_active=True).values_list('id', flat=True))
+    if not active_olt_ids:
+        return Response({'error': 'Nenhuma OLT ativa cadastrada'}, status=status.HTTP_400_BAD_REQUEST)
+
+    jobs = [
+        task_func.delay(olt_id=oid, user=request.user.username, menu_item=menu_item)
+        for oid in active_olt_ids
+    ]
+    return Response({'job_ids': [j.id for j in jobs], 'menu_item': menu_item}, status=status.HTTP_202_ACCEPTED)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def trigger_update_ports(request):
     """Dispara a atualização de ocupação das portas OLT"""
-    return _enqueue_task(request, update_port_occupation_task, 'Atualização de Portas')
+    return _enqueue_task(request, update_port_occupation_task, 'Atualização de Portas', olt_scoped=True)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def trigger_update_onus(request):
     """Dispara a atualização das ONUs"""
-    return _enqueue_task(request, update_onus_task, 'Atualização de ONUs')
+    return _enqueue_task(request, update_onus_task, 'Atualização de ONUs', olt_scoped=True)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def trigger_update_mac(request):
     """Dispara a atualização dos endereços MAC"""
-    return _enqueue_task(request, update_mac_task, 'Atualização de MAC')
+    return _enqueue_task(request, update_mac_task, 'Atualização de MAC', olt_scoped=True)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def trigger_sync_clientes(request):
-    """Dispara a sincronização de clientes fibra (IXC)"""
+    """Dispara a sincronização de clientes fibra (IXC) - não é por OLT (é um cadastro único no IXC)"""
     return _enqueue_task(request, update_clientes_task, 'Atualização de Clientes Fibra')
 
 
@@ -505,7 +657,7 @@ def trigger_sync_clientes(request):
 @permission_classes([IsAuthenticated])
 def trigger_update_all(request):
     """Dispara a sequência completa de atualizações, incluindo dados da OLT"""
-    return _enqueue_task(request, comprehensive_update_task, 'Atualizar Todos os Dados Completo')
+    return _enqueue_task(request, comprehensive_update_task, 'Atualizar Todos os Dados Completo', olt_scoped=True)
 
 
 @api_view(['GET'])
@@ -539,7 +691,8 @@ def remove_onu_view(request, slot, port, position):
     e efetivamente usada pela UI) num único endpoint.
     """
     pon = f"1/1/{slot}/{port}/{position}"
-    connector = olt_connector()
+    onu = ONU.objects.filter(pon=f"1/1/{slot}/{port}", position=position).first()
+    connector = olt_connector(onu.olt if onu else None)
     try:
         connector.remove_onu(pon)
     except Exception as e:
@@ -559,7 +712,8 @@ def remove_onu_view(request, slot, port, position):
 def reset_onu_view(request, slot, port, position):
     """Reinicia uma ONU na OLT"""
     pon = f"1/1/{slot}/{port}/{position}"
-    connector = olt_connector()
+    onu = ONU.objects.filter(pon=f"1/1/{slot}/{port}", position=position).first()
+    connector = olt_connector(onu.olt if onu else None)
     try:
         connector.reset_onu(pon)
     except Exception as e:
@@ -575,6 +729,8 @@ class DuplicatedOnuListAPIView(generics.ListAPIView):
     """ONUs com número serial duplicado"""
     serializer_class = ONUSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ONU_ORDERING_FIELDS
 
     def get_queryset(self):
         duplicated_serials = (
@@ -591,16 +747,18 @@ class MacAddressListAPIView(generics.ListAPIView):
     queryset = ONU.objects.all().order_by('mac')
     serializer_class = ONUSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['mac', 'serial', 'desc1', 'desc2']
+    ordering_fields = ONU_ORDERING_FIELDS
 
 
 class OnuWithoutMacListAPIView(generics.ListAPIView):
     """ONUs sem MAC cadastrado (mac vazio ou nulo)"""
     serializer_class = ONUSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['serial', 'desc1', 'desc2', 'pon']
+    ordering_fields = ONU_ORDERING_FIELDS
 
     def get_queryset(self):
         return ONU.objects.filter(Q(mac__isnull=True) | Q(mac='')).order_by('pon', 'position')
@@ -616,9 +774,10 @@ class ClienteFibraInternalListAPIView(generics.ListAPIView):
     queryset = ClienteFibraIxc.objects.all().order_by('nome')
     serializer_class = ClienteFibraIxcInternalSerializer
     permission_classes = [IsAuthenticated]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['vinculado']
     search_fields = ['nome', 'mac', 'endereco']
+    ordering_fields = ['nome', 'mac', 'endereco', 'id_caixa_ftth', 'vinculado']
 
 
 @api_view(['GET'])
@@ -647,9 +806,16 @@ def onu_health_summary(request):
 def ftth_boxes_by_occupancy(request):
     """Caixas FTTH ordenadas por quantidade de clientes"""
     search = request.GET.get('search', '')
+    # View manual (não é um ListAPIView) - sem OrderingFilter, valida a
+    # allowlist na mão antes de repassar pro order_by().
+    ordering = request.GET.get('ordering', '-client_count')
+    campos_validos = {'id_caixa_ftth', '-id_caixa_ftth', 'client_count', '-client_count'}
+    if ordering not in campos_validos:
+        ordering = '-client_count'
+
     queryset = ClienteFibraIxc.objects.values('id_caixa_ftth').annotate(
         client_count=Count('id_caixa_ftth')
-    ).order_by('-client_count')
+    ).order_by(ordering)
 
     if search:
         queryset = queryset.filter(id_caixa_ftth__icontains=search)

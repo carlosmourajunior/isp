@@ -20,6 +20,10 @@ urlpatterns = [
     path('auth/login/', api_views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
+    # OLTs (cadastro multi-OLT)
+    path('olts/', api_views.OltListCreateAPIView.as_view(), name='olt_list_create'),
+    path('olts/<int:pk>/', api_views.OltDetailAPIView.as_view(), name='olt_detail'),
+
     # ONUs
     path('onus/', api_views.ONUListAPIView.as_view(), name='onu_list'),
     path('onus/<int:pk>/', api_views.ONUDetailAPIView.as_view(), name='onu_detail'),
@@ -40,6 +44,7 @@ urlpatterns = [
     path('olt/temperatures/', api_views.OltTemperatureListAPIView.as_view(), name='olt_temperatures'),
     path('olt/sfp-diagnostics/', api_views.OltSfpDiagnosticsListAPIView.as_view(), name='olt_sfp_diagnostics'),
     path('olt/system-stats/', api_views.olt_system_stats, name='olt_system_stats'),
+    path('olt/system-summary/', api_views.olt_system_summary, name='olt_system_summary'),
     path('olt/temperature-alerts/', api_views.olt_temperature_alerts, name='olt_temperature_alerts'),
     path('olt/connection-status/', api_views.olt_connection_status, name='olt_connection_status'),
     
