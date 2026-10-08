@@ -11,10 +11,13 @@ import { DuplicatedOnusPage } from '@/pages/onus/DuplicatedOnusPage'
 import { OnusWithoutMacPage } from '@/pages/onus/OnusWithoutMacPage'
 import { OnusWithoutClientPage } from '@/pages/onus/OnusWithoutClientPage'
 import { OnusOfflinePage } from '@/pages/onus/OnusOfflinePage'
+import { OnusLowSignalPage } from '@/pages/onus/OnusLowSignalPage'
+import { OnusSignalWarningPage } from '@/pages/onus/OnusSignalWarningPage'
 import { PortDetailPage } from '@/pages/onus/PortDetailPage'
 import { MacAddressesPage } from '@/pages/onus/MacAddressesPage'
 import { ClientesFibraPage } from '@/pages/ClientesFibraPage'
 import { FtthBoxesPage } from '@/pages/FtthBoxesPage'
+import { OltsPage } from '@/pages/OltsPage'
 import { PortasPage } from '@/pages/PortasPage'
 import { TemperatureAlertsPage } from '@/pages/TemperatureAlertsPage'
 import { TasksPage } from '@/pages/TasksPage'
@@ -54,6 +57,8 @@ function App() {
                   <Route path="/onus/sem-mac" element={<OnusWithoutMacPage />} />
                   <Route path="/onus/sem-cliente" element={<OnusWithoutClientPage />} />
                   <Route path="/onus/offline" element={<OnusOfflinePage />} />
+                  <Route path="/onus/sinal-baixo" element={<OnusLowSignalPage />} />
+                  <Route path="/onus/sinal-alerta" element={<OnusSignalWarningPage />} />
                   <Route path="/onus/porta/:slot/:port" element={<PortDetailPage />} />
                   <Route path="/mac-addresses" element={<MacAddressesPage />} />
 
@@ -62,6 +67,7 @@ function App() {
                   <Route path="/ftth-boxes" element={<FtthBoxesPage />} />
 
                   {/* Rede */}
+                  <Route path="/olts" element={<OltsPage />} />
                   <Route path="/portas" element={<PortasPage />} />
                   <Route path="/temperature-alerts" element={<TemperatureAlertsPage />} />
 

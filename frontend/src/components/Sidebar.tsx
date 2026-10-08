@@ -9,6 +9,9 @@ import {
   Users,
   Boxes,
   Network,
+  Server,
+  Signal,
+  SignalLow,
   Thermometer,
   ListChecks,
   Clock,
@@ -37,11 +40,13 @@ const navGroups: NavGroup[] = [
   {
     label: 'ONUs',
     items: [
-      { to: '/onus', label: 'Todas as ONUs', icon: Router },
+      { to: '/onus', label: 'Todas as ONUs', icon: Router, end: true },
       { to: '/onus/duplicadas', label: 'Duplicadas', icon: Copy },
       { to: '/onus/sem-mac', label: 'Sem MAC', icon: ScanLine },
       { to: '/onus/sem-cliente', label: 'Sem Cliente Fibra', icon: UserX },
       { to: '/onus/offline', label: 'Oper. State Down', icon: WifiOff },
+      { to: '/onus/sinal-alerta', label: 'Sinal entre -27 e -29', icon: SignalLow },
+      { to: '/onus/sinal-baixo', label: 'Sinal Abaixo de -29', icon: Signal },
       { to: '/mac-addresses', label: 'MAC Addresses', icon: ScanLine },
     ],
   },
@@ -55,6 +60,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Rede',
     items: [
+      { to: '/olts', label: 'OLTs', icon: Server },
       { to: '/portas', label: 'Ocupação de Portas', icon: Network },
       { to: '/temperature-alerts', label: 'Alertas de Temperatura', icon: Thermometer },
     ],

@@ -1,8 +1,19 @@
 from django.contrib import admin
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, OltUsers, PlacaOnu, AllowedIP
+from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP
 from olt.utils import olt_connector
+
+
+@register(Olt)
+class OltCatalogAdmin(admin.ModelAdmin):
+    # Senha nunca aparece na listagem nem é editável por aqui (fica só no
+    # formulário do frontend, que grava via API - ver olt/serializers.py).
+    list_display = ['name', 'vendor', 'host', 'is_active', 'created_at']
+    list_filter = ['vendor', 'is_active']
+    search_fields = ['name', 'host']
+    exclude = ['password']
+    ordering = ['name']
 
 
 @admin.action(description='Atualizar Portas')

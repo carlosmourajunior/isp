@@ -49,6 +49,7 @@ Authorization: Bearer <access_token>
 - `oper_state`: Filtrar por status operacional (up/down)
 - `admin_state`: Filtrar por status administrativo
 - `cliente_fibra`: Filtrar por clientes fibra (true/false)
+- `olt`: Filtrar por id da OLT
 - `search`: Buscar por serial, MAC, descrição ou PON
 - `ordering`: Ordenar por campo (position, olt_rx_sig, pon)
 - `page`: Número da página (paginação)
@@ -93,6 +94,11 @@ Authorization: Bearer <access_token>
     "percentual_online": 94.67
 }
 ```
+> `estatisticas_por_slot` é dinâmico: as chaves (`slot_1`, `slot_2`, `slot_3`...)
+> refletem os slots que realmente têm ONUs cadastradas, agregando todas as
+> OLTs. Antes disso, ficava sempre travado em `slot_1`/`slot_2`, mesmo em
+> OLTs com mais slots instalados - se algum integrador espera só essas duas
+> chaves, precisa passar a iterar o objeto dinamicamente.
 
 ### 4. ONUs por PON específica
 ```
@@ -119,6 +125,7 @@ Authorization: Bearer <access_token>
 
 **Parâmetros de filtro:**
 - `slot`: Filtrar por slot específico
+- `olt`: Filtrar por id da OLT
 - `ordering`: Ordenar por campo
 
 ### 7. Listar clientes fibra
@@ -140,6 +147,8 @@ Authorization: Bearer <access_token>
 ```json
 {
     "id": 1,
+    "olt": 1,
+    "olt_name": "OLT 1",
     "isam_release": "R6.2.03",
     "uptime_days": 958,
     "uptime_hours": 12,
@@ -150,6 +159,8 @@ Authorization: Bearer <access_token>
     "last_updated": "2025-09-30T16:30:00Z"
 }
 ```
+> Com múltiplas OLTs cadastradas, este endpoint retorna os dados da OLT
+> padrão (a primeira OLT ativa).
 
 ### 9. Listar slots da OLT
 ```
@@ -161,6 +172,7 @@ Authorization: Bearer <access_token>
 - `enabled`: Filtrar por slots habilitados (true/false)
 - `availability`: Filtrar por disponibilidade
 - `actual_type`: Filtrar por tipo
+- `olt`: Filtrar por id da OLT
 
 ### 10. Listar temperaturas da OLT
 ```
@@ -170,6 +182,7 @@ Authorization: Bearer <access_token>
 
 **Parâmetros de filtro:**
 - `slot_name`: Filtrar por slot específico
+- `olt`: Filtrar por id da OLT
 
 ### 11. Estatísticas completas do sistema OLT
 ```
@@ -250,6 +263,8 @@ Authorization: Bearer <access_token>
 ```json
 {
     "id": 1,
+    "olt": 1,
+    "olt_name": "OLT 1",
     "pon": "gpon-olt_1/1/1/1",
     "slot": "1",
     "port": "1",
@@ -259,12 +274,19 @@ Authorization: Bearer <access_token>
     "oper_state": "up",
     "admin_state": "up",
     "olt_rx_sig": -18.5,
+    "ont_rx_sig": -20.9,
+    "ont_tx_sig": 2.5,
     "ont_olt": "1500",
     "desc1": "Cliente Nome",
     "desc2": "Informações adicionais",
     "cliente_fibra": true
 }
 ```
+
+> O sistema suporta múltiplas OLTs cadastradas. `olt` é o id da OLT dona do
+> registro e `olt_name` o nome cadastrado (ex: "OLT 1"); filtre por uma OLT
+> específica com `?olt={id}` em `/api/onus/`, `/api/olt-users/`,
+> `/api/olt/slots/`, `/api/olt/temperatures/` e `/api/olt/sfp-diagnostics/`.
 
 ### Exemplo de uso com curl
 

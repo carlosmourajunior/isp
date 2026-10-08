@@ -1,8 +1,19 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table'
-import { ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
+
+// Extensão do tipo de coluna do TanStack Table pra declarar qual campo real
+// da API essa coluna ordena (nem toda coluna tem um campo 1:1 - ex: "ações"
+// não ordena nada, "OLT" ordena por `olt__name`). Ver README do TanStack:
+// https://tanstack.com/table/latest/docs/api/core/column-def#meta
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData, TValue> {
+    sortKey?: string
+  }
+}
 
 interface DataTableProps<T> {
   columns: ColumnDef<T, unknown>[]
@@ -19,6 +30,10 @@ interface DataTableProps<T> {
   pageSize?: number
   emptyMessage?: string
   toolbar?: ReactNode
+  /** Ordenação atual no formato do DRF ('campo' ou '-campo' pra descendente). */
+  ordering?: string
+  /** Omita pra desligar a ordenação por cabeçalho (colunas com `meta.sortKey` viram cliqueis quando presente). */
+  onOrderingChange?: (ordering: string) => void
 }
 
 export function DataTable<T>({
@@ -35,6 +50,8 @@ export function DataTable<T>({
   pageSize = 50,
   emptyMessage = 'Nenhum resultado encontrado.',
   toolbar,
+  ordering,
+  onOrderingChange,
 }: DataTableProps<T>) {
   const searchEnabled = searchValue !== undefined && onSearchChange !== undefined
   const [localSearch, setLocalSearch] = useState(searchValue ?? '')
@@ -83,13 +100,35 @@ export function DataTable<T>({
             <thead>
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id} className="border-b border-border text-left text-xs text-muted-foreground">
-                  {headerGroup.headers.map((header) => (
-                    <th key={header.id} className="whitespace-nowrap px-4 py-3 font-medium">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
+                  {headerGroup.headers.map((header) => {
+                    const sortKey = header.column.columnDef.meta?.sortKey
+                    const isSortable = Boolean(onOrderingChange && sortKey)
+                    const isAsc = isSortable && ordering === sortKey
+                    const isDesc = isSortable && ordering === `-${sortKey}`
+
+                    return (
+                      <th key={header.id} className="whitespace-nowrap px-4 py-3 font-medium">
+                        {header.isPlaceholder ? null : isSortable ? (
+                          <button
+                            type="button"
+                            onClick={() => onOrderingChange!(isAsc ? `-${sortKey}` : sortKey!)}
+                            className="inline-flex items-center gap-1 hover:text-foreground"
+                          >
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                            {isAsc ? (
+                              <ArrowUp className="size-3" />
+                            ) : isDesc ? (
+                              <ArrowDown className="size-3" />
+                            ) : (
+                              <ArrowUpDown className="size-3 opacity-40" />
+                            )}
+                          </button>
+                        ) : (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        )}
+                      </th>
+                    )
+                  })}
                 </tr>
               ))}
             </thead>

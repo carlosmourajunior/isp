@@ -28,9 +28,9 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log
+temp_auto_push.bat
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -59,3 +59,5 @@ security_scan_*.txt
 data/postgres/
 data/redis/
 data/logs/
+.gitignore
+branch_structure.json

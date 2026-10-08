@@ -3,14 +3,54 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.core.exceptions import ValidationError
 import ipaddress
 
+from .fields import EncryptedCharField
+
+
+class Olt(models.Model):
+    """
+    Uma OLT física cadastrada no sistema. Hoje só existe driver pra
+    Nokia/Alcatel (AOS) - `vendor` já é o ponto de extensão pra outros
+    fabricantes: ver olt/utils.py::build_connect_kwargs.
+    """
+    VENDOR_NOKIA_ALCATEL = 'nokia_alcatel'
+    VENDOR_CHOICES = [
+        (VENDOR_NOKIA_ALCATEL, 'Nokia / Alcatel (AOS)'),
+    ]
+
+    name = models.CharField(max_length=100, unique=True, verbose_name="Nome")
+    vendor = models.CharField(max_length=30, choices=VENDOR_CHOICES, default=VENDOR_NOKIA_ALCATEL, verbose_name="Fabricante")
+    device_type = models.CharField(max_length=50, default='alcatel_aos', verbose_name="Device type (netmiko)")
+    host = models.CharField(max_length=255, verbose_name="Host/IP")
+    username = models.CharField(max_length=100, verbose_name="Usuário SSH")
+    password = EncryptedCharField(max_length=500, verbose_name="Senha SSH")
+    ssh_port = models.IntegerField(default=22, verbose_name="Porta SSH")
+    slot_count = models.PositiveSmallIntegerField(
+        default=2, verbose_name="Quantidade de slots",
+        help_text="Maior número de slot físico da OLT (mesmo que nem todos estejam instalados hoje) "
+                   "- define até onde olt/utils.py varre a OLT via SSH."
+    )
+    global_delay_factor = models.IntegerField(default=2, verbose_name="Global delay factor (netmiko)")
+    verbose = models.BooleanField(default=False, verbose_name="Verbose (netmiko)")
+    is_active = models.BooleanField(default=True, verbose_name="Ativa")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Criada em")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Atualizada em")
+
+    class Meta:
+        verbose_name = "OLT"
+        verbose_name_plural = "OLTs"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 
 class OltUsers(models.Model):
 
-    SLOT_CHOICES = (
-        1, 2
-    )
-
-    slot = models.IntegerField(verbose_name="Slot", validators=[MinValueValidator(1), MaxValueValidator(2)])
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='olt_users', null=True, verbose_name="OLT")
+    # Sem teto de negócio real aqui - cada OLT declara sua própria capacidade
+    # em Olt.slot_count (varia por modelo de chassi/fabricante). 32 é só um
+    # limite de sanidade.
+    slot = models.IntegerField(verbose_name="Slot", validators=[MinValueValidator(1), MaxValueValidator(32)])
     port = models.IntegerField(verbose_name="Porta", validators=[MinValueValidator(1), MaxValueValidator(16)])
 
     users_connected = models.IntegerField(verbose_name="Usuários Aprovisionados")
@@ -24,7 +64,8 @@ class OltUsers(models.Model):
         return f"1/1/{self.slot}/{self.port}"
 
 class ONU(models.Model):
-    
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='onus', null=True, verbose_name="OLT")
     pon = models.CharField(verbose_name="PON", max_length=20)
     position = models.IntegerField(verbose_name="Posição", validators=[MinValueValidator(1), MaxValueValidator(128)])
     mac = models.CharField(verbose_name="MAC", max_length=200)
@@ -32,6 +73,8 @@ class ONU(models.Model):
     oper_state = models.CharField(verbose_name="Status", max_length=30)
     admin_state = models.CharField(verbose_name="Status", max_length=30, default="up", null=True, blank=True)
     olt_rx_sig = models.FloatField(verbose_name="OLT RX Signal", default=0, null=True, blank=True)
+    ont_rx_sig = models.FloatField(verbose_name="ONT RX Signal", null=True, blank=True)
+    ont_tx_sig = models.FloatField(verbose_name="ONT TX Signal", null=True, blank=True)
     ont_olt = models.CharField(verbose_name="Distancia", max_length=200, default="0", null=True, blank=True)
     desc1 = models.CharField(verbose_name="Descrição_1", max_length=200)
     desc2 = models.CharField(verbose_name="Descrição_2", max_length=300)
@@ -109,8 +152,10 @@ class ClienteFibraIxc(models.Model):
 
 
 class OltSystemInfo(models.Model):
-    """Model para armazenar informações do sistema OLT"""
-    
+    """Model para armazenar informações do sistema OLT (um registro por OLT)"""
+
+    olt = models.OneToOneField(Olt, on_delete=models.CASCADE, related_name='system_info', null=True, verbose_name="OLT")
+
     # Informações de software
     isam_release = models.CharField(max_length=50, verbose_name="ISAM Release")
     
@@ -139,21 +184,23 @@ class OltSystemInfo(models.Model):
 
 class OltSlot(models.Model):
     """Model para armazenar informações dos slots da OLT"""
-    
-    slot_name = models.CharField(max_length=20, verbose_name="Nome do Slot", unique=True)
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='slots', null=True, verbose_name="OLT")
+    slot_name = models.CharField(max_length=20, verbose_name="Nome do Slot")
     actual_type = models.CharField(max_length=50, verbose_name="Tipo Atual")
     enabled = models.BooleanField(verbose_name="Habilitado", default=False)
     error_status = models.CharField(max_length=100, verbose_name="Status de Erro")
     availability = models.CharField(max_length=50, verbose_name="Disponibilidade")
     restart_count = models.IntegerField(verbose_name="Contador de Reinicializações", default=0)
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
-    
+
     # Timestamp da última atualização
     last_updated = models.DateTimeField(auto_now=True, verbose_name="Última Atualização")
-    
+
     class Meta:
         verbose_name = "Slot OLT"
         verbose_name_plural = "Slots OLT"
+        unique_together = ['olt', 'slot_name']
         ordering = ['slot_name']
     
     def __str__(self):
@@ -167,7 +214,8 @@ class OltSlot(models.Model):
 
 class OltTemperature(models.Model):
     """Model para armazenar informações de temperatura da OLT"""
-    
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='temperatures', null=True, verbose_name="OLT")
     slot_name = models.CharField(max_length=20, verbose_name="Nome do Slot")
     sensor_id = models.IntegerField(verbose_name="ID do Sensor")
     actual_temp = models.IntegerField(verbose_name="Temperatura Atual (°C)")
@@ -183,7 +231,7 @@ class OltTemperature(models.Model):
     class Meta:
         verbose_name = "Temperatura OLT"
         verbose_name_plural = "Temperaturas OLT"
-        unique_together = ['slot_name', 'sensor_id']
+        unique_together = ['olt', 'slot_name', 'sensor_id']
         ordering = ['slot_name', 'sensor_id']
     
     def __str__(self):
@@ -216,8 +264,9 @@ class OltTemperature(models.Model):
 
 class OltSfpDiagnostics(models.Model):
     """Model para armazenar diagnósticos SFP da OLT"""
-    
-    interface = models.CharField(max_length=50, verbose_name="Interface", unique=True)
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='sfp_diagnostics', null=True, verbose_name="OLT")
+    interface = models.CharField(max_length=50, verbose_name="Interface")
     vendor_name = models.CharField(max_length=100, verbose_name="Fabricante", blank=True, null=True)
     part_number = models.CharField(max_length=100, verbose_name="Número da Peça", blank=True, null=True)
     serial_number = models.CharField(max_length=100, verbose_name="Número Serial", blank=True, null=True)
@@ -232,6 +281,7 @@ class OltSfpDiagnostics(models.Model):
     class Meta:
         verbose_name = "Diagnóstico SFP"
         verbose_name_plural = "Diagnósticos SFP"
+        unique_together = ['olt', 'interface']
         ordering = ['interface']
     
     def __str__(self):

@@ -9,6 +9,7 @@ import { SelectFilter } from '@/components/SelectFilter'
 import { Badge } from '@/components/ui/badge'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
 import { useOnuActions } from '@/hooks/useOnuActions'
+import { useOlts } from '@/hooks/useOlts'
 import { signalStatus, statusStyles } from '@/lib/status'
 import type { Onu } from '@/types/api'
 
@@ -66,15 +67,21 @@ export function OnuListPage({
   const [adminState, setAdminState] = useState('')
   const [operState, setOperState] = useState('')
   const [clienteFibra, setClienteFibra] = useState('')
+  const [olt, setOlt] = useState('')
+  const [ordering, setOrdering] = useState('')
+
+  const { data: olts } = useOlts()
+  const showOltFilter = showQuickFilters && (olts?.length ?? 0) > 1
 
   const combinedFilters = showQuickFilters
-    ? { ...filters, admin_state: adminState, oper_state: operState, cliente_fibra: clienteFibra }
+    ? { ...filters, admin_state: adminState, oper_state: operState, cliente_fibra: clienteFibra, olt }
     : filters
 
   const { data, isLoading, isFetching } = usePaginatedApi<Onu>({
     endpoint,
     page,
     search,
+    ordering,
     filters: combinedFilters,
   })
   const { removeOnu, resetOnu } = useOnuActions()
@@ -88,33 +95,64 @@ export function OnuListPage({
 
   const columns = useMemo<ColumnDef<Onu, unknown>[]>(
     () => [
-      { accessorKey: 'pon', header: 'PON', cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span> },
-      { accessorKey: 'position', header: 'Posição' },
-      { accessorKey: 'serial', header: 'Serial', cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span> },
+      ...(showOltFilter
+        ? [
+            {
+              accessorKey: 'olt_name',
+              header: 'OLT',
+              meta: { sortKey: 'olt__name' },
+              cell: ({ getValue }: { getValue: () => unknown }) => (getValue() as string) || '—',
+            } satisfies ColumnDef<Onu, unknown>,
+          ]
+        : []),
+      {
+        accessorKey: 'pon',
+        header: 'PON',
+        meta: { sortKey: 'pon' },
+        cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span>,
+      },
+      { accessorKey: 'position', header: 'Posição', meta: { sortKey: 'position' } },
+      {
+        accessorKey: 'serial',
+        header: 'Serial',
+        meta: { sortKey: 'serial' },
+        cell: ({ getValue }) => <span className="font-data">{getValue() as string}</span>,
+      },
       {
         accessorKey: 'mac',
         header: 'MAC',
+        meta: { sortKey: 'mac' },
         cell: ({ getValue }) => <span className="font-data">{(getValue() as string) || '—'}</span>,
       },
       {
         accessorKey: 'admin_state',
         header: 'Admin',
+        meta: { sortKey: 'admin_state' },
         cell: ({ getValue }) => <StateBadge state={getValue() as string} />,
       },
       {
         accessorKey: 'oper_state',
         header: 'Oper',
+        meta: { sortKey: 'oper_state' },
         cell: ({ getValue }) => <StateBadge state={getValue() as string} live />,
       },
       {
         accessorKey: 'olt_rx_sig',
-        header: 'Sinal (dBm)',
+        header: 'Sinal na OLT (dBm)',
+        meta: { sortKey: 'olt_rx_sig' },
         cell: ({ getValue }) => <SignalValue dbm={getValue() as number | null} />,
       },
-      { accessorKey: 'desc1', header: 'Descrição' },
+      {
+        accessorKey: 'ont_rx_sig',
+        header: 'Sinal na ONU (dBm)',
+        meta: { sortKey: 'ont_rx_sig' },
+        cell: ({ getValue }) => <SignalValue dbm={getValue() as number | null} />,
+      },
+      { accessorKey: 'desc1', header: 'Descrição', meta: { sortKey: 'desc1' } },
       {
         accessorKey: 'cliente_fibra',
         header: 'Cliente Fibra',
+        meta: { sortKey: 'cliente_fibra' },
         cell: ({ getValue }) =>
           getValue() ? <Badge variant="success">Sim</Badge> : <Badge variant="outline">Não</Badge>,
       },
@@ -152,7 +190,7 @@ export function OnuListPage({
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [showOltFilter],
   )
 
   return (
@@ -174,9 +212,25 @@ export function OnuListPage({
         onPageChange={setPage}
         count={data?.count}
         emptyMessage={emptyMessage}
+        ordering={ordering}
+        onOrderingChange={(value) => {
+          setOrdering(value)
+          setPage(1)
+        }}
         toolbar={
           showQuickFilters && (
             <div className="flex flex-wrap gap-2">
+              {showOltFilter && (
+                <SelectFilter
+                  label="OLT"
+                  value={olt}
+                  onChange={(v) => {
+                    setOlt(v)
+                    setPage(1)
+                  }}
+                  options={(olts ?? []).map((o) => ({ label: o.name, value: String(o.id) }))}
+                />
+              )}
               <SelectFilter
                 label="Admin"
                 value={adminState}

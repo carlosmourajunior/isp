@@ -12,7 +12,7 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
 
-from olt.models import ONU, OltUsers, ClienteFibraIxc, OltSystemInfo
+from olt.models import ONU, Olt, OltUsers, ClienteFibraIxc, OltSystemInfo
 
 
 class AuthContractTests(APITestCase):
@@ -63,8 +63,8 @@ class AuthenticatedApiContractTests(APITestCase):
 
         onu = response.data['results'][0]
         campos_esperados = {
-            'id', 'pon', 'slot', 'port', 'position', 'mac', 'serial',
-            'oper_state', 'admin_state', 'olt_rx_sig', 'ont_olt',
+            'id', 'olt', 'olt_name', 'pon', 'slot', 'port', 'position', 'mac', 'serial',
+            'oper_state', 'admin_state', 'olt_rx_sig', 'ont_rx_sig', 'ont_tx_sig', 'ont_olt',
             'desc1', 'desc2', 'cliente_fibra',
         }
         self.assertEqual(set(onu.keys()), campos_esperados)
@@ -79,7 +79,10 @@ class AuthenticatedApiContractTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         item = response.data['results'][0]
-        self.assertEqual(set(item.keys()), {'id', 'slot', 'port', 'users_connected', 'last_updated'})
+        self.assertEqual(
+            set(item.keys()),
+            {'id', 'olt', 'olt_name', 'slot', 'port', 'users_connected', 'last_updated'},
+        )
         self.assertEqual(item['users_connected'], 42)
 
     def test_lista_clientes_fibra_tem_os_campos_documentados(self):
@@ -110,8 +113,9 @@ class AuthenticatedApiContractTests(APITestCase):
         self.assertEqual(response.data['onus_online'], 1)
 
     def test_system_info_tem_os_campos_documentados(self):
+        olt = Olt.objects.create(name='OLT 1', host='192.168.1.1', username='admin', password='segredo')
         OltSystemInfo.objects.create(
-            id=1, isam_release='R6.2.03', uptime_days=958, uptime_hours=12,
+            olt=olt, isam_release='R6.2.03', uptime_days=958, uptime_hours=12,
             uptime_minutes=26, uptime_seconds=47, uptime_raw='System Up Time: 958 days',
         )
 
@@ -121,7 +125,7 @@ class AuthenticatedApiContractTests(APITestCase):
         self.assertEqual(
             set(response.data.keys()),
             {
-                'id', 'isam_release', 'uptime_days', 'uptime_hours', 'uptime_minutes',
+                'id', 'olt', 'olt_name', 'isam_release', 'uptime_days', 'uptime_hours', 'uptime_minutes',
                 'uptime_seconds', 'uptime_raw', 'total_uptime_hours', 'last_updated',
             },
         )

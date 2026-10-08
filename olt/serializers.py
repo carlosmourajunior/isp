@@ -1,18 +1,53 @@
 from rest_framework import serializers
 from .models import (
-    ONU, OltUsers, PlacaOnu, ClienteFibraIxc, 
+    ONU, Olt, OltUsers, PlacaOnu, ClienteFibraIxc,
     OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
 )
+
+
+class OltSerializer(serializers.ModelSerializer):
+    """CRUD de OLTs. A senha SSH é write-only - nunca volta numa resposta de
+    leitura (fica só criptografada no banco, ver olt/fields.py)."""
+    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
+
+    class Meta:
+        model = Olt
+        fields = [
+            'id',
+            'name',
+            'vendor',
+            'device_type',
+            'host',
+            'username',
+            'password',
+            'ssh_port',
+            'slot_count',
+            'global_delay_factor',
+            'verbose',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+    def update(self, instance, validated_data):
+        # Senha em branco no formulário de edição = mantém a senha atual.
+        if not validated_data.get('password'):
+            validated_data.pop('password', None)
+        return super().update(instance, validated_data)
 
 
 class ONUSerializer(serializers.ModelSerializer):
     slot = serializers.SerializerMethodField()
     port = serializers.SerializerMethodField()
+    olt_name = serializers.CharField(source='olt.name', read_only=True, default=None)
 
     class Meta:
         model = ONU
         fields = [
             'id',
+            'olt',
+            'olt_name',
             'pon',
             'slot',
             'port',
@@ -22,6 +57,8 @@ class ONUSerializer(serializers.ModelSerializer):
             'oper_state',
             'admin_state',
             'olt_rx_sig',
+            'ont_rx_sig',
+            'ont_tx_sig',
             'ont_olt',
             'desc1',
             'desc2',
@@ -36,10 +73,14 @@ class ONUSerializer(serializers.ModelSerializer):
 
 
 class OltUsersSerializer(serializers.ModelSerializer):
+    olt_name = serializers.CharField(source='olt.name', read_only=True, default=None)
+
     class Meta:
         model = OltUsers
         fields = [
             'id',
+            'olt',
+            'olt_name',
             'slot',
             'port',
             'users_connected',
@@ -108,11 +149,14 @@ class ONUDetailSerializer(ONUSerializer):
 
 class OltSystemInfoSerializer(serializers.ModelSerializer):
     total_uptime_hours = serializers.ReadOnlyField()
-    
+    olt_name = serializers.CharField(source='olt.name', read_only=True, default=None)
+
     class Meta:
         model = OltSystemInfo
         fields = [
             'id',
+            'olt',
+            'olt_name',
             'isam_release',
             'uptime_days',
             'uptime_hours', 
@@ -126,11 +170,14 @@ class OltSystemInfoSerializer(serializers.ModelSerializer):
 
 class OltSlotSerializer(serializers.ModelSerializer):
     is_operational = serializers.ReadOnlyField()
-    
+    olt_name = serializers.CharField(source='olt.name', read_only=True, default=None)
+
     class Meta:
         model = OltSlot
         fields = [
             'id',
+            'olt',
+            'olt_name',
             'slot_name',
             'actual_type',
             'enabled',
@@ -146,11 +193,14 @@ class OltTemperatureSerializer(serializers.ModelSerializer):
     is_critical = serializers.ReadOnlyField()
     is_warning = serializers.ReadOnlyField()
     status = serializers.ReadOnlyField()
-    
+    olt_name = serializers.CharField(source='olt.name', read_only=True, default=None)
+
     class Meta:
         model = OltTemperature
         fields = [
             'id',
+            'olt',
+            'olt_name',
             'slot_name',
             'sensor_id',
             'actual_temp',
@@ -166,10 +216,14 @@ class OltTemperatureSerializer(serializers.ModelSerializer):
 
 
 class OltSfpDiagnosticsSerializer(serializers.ModelSerializer):
+    olt_name = serializers.CharField(source='olt.name', read_only=True, default=None)
+
     class Meta:
         model = OltSfpDiagnostics
         fields = [
             'id',
+            'olt',
+            'olt_name',
             'interface',
             'vendor_name',
             'part_number',
