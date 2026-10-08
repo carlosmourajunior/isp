@@ -34,10 +34,11 @@ services:
       retries: 3
 
   web:
-    build: .
+    image: ${WEB_IMAGE:-ghcr.io/carlosmourajunior/isp-web}:${IMAGE_TAG:-latest}
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     command: gunicorn isp.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60 --access-logfile - --error-logfile -
     volumes:
-      - .:/code
       - ./data/media:/code/media
       - ./data/staticfiles:/code/staticfiles
       - ./data/logs:/code/logs
@@ -63,10 +64,11 @@ services:
       start_period: 40s
 
   rq_worker:
-    build: .
+    image: ${WEB_IMAGE:-ghcr.io/carlosmourajunior/isp-web}:${IMAGE_TAG:-latest}
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     command: python /code/manage.py rqworker default
     volumes:
-      - .:/code
       - ./data/media:/code/media
       - ./data/staticfiles:/code/staticfiles
       - ./data/logs:/code/logs
@@ -87,14 +89,30 @@ services:
 
   # ==================== FRONTEND (React) ====================
   frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+    image: ${FRONTEND_IMAGE:-ghcr.io/carlosmourajunior/isp-frontend}:${IMAGE_TAG:-latest}
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     ports:
       - "3000:80"
     depends_on:
       - web
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # ==================== DEPLOY AUTOMÁTICO ====================
+  # Atualiza só os serviços com a label watchtower.enable=true (web, rq_worker,
+  # frontend) quando o CI publica imagem nova no GHCR. db/redis ficam de fora.
+  # Repo privado: precisa de `docker login ghcr.io` no servidor (ver DEPLOY.md).
+  watchtower:
+    image: containrrr/watchtower
+    command: --label-enable --cleanup --interval ${WATCHTOWER_INTERVAL:-60}
+    environment:
+      # Docker recente recusa o cliente API antigo embutido no watchtower.
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.44}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_CONFIG_JSON:-${HOME}/.docker/config.json}:/config.json:ro
     restart: unless-stopped
     networks:
       - app-network
