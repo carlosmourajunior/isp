@@ -1,0 +1,21 @@
+# Desenvolvimento local: carregado automaticamente por `docker compose up`.
+# Builda do código local e monta o repo em /code. No servidor este arquivo
+# NÃO deve valer (senão o Watchtower não consegue trocar a imagem) - ver
+# COMPOSE_FILE em DEPLOY.md.
+services:
+  web:
+    build: .
+    volumes:
+      - .:/code
+  rq_worker:
+    build: .
+    volumes:
+      - .:/code
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+  # Sem deploy automático em dev.
+  watchtower:
+    profiles: ["prod"]
