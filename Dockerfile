@@ -1,17 +1,18 @@
 # Pull base image
-FROM python:3.10.2-slim-bullseye
+# bookworm: o Debian 11 (bullseye) saiu de suporte e o apt devolve 404 no build
+FROM python:3.10-slim-bookworm
 
 # Set environment variables
-ENV PIP_DISABLE_PIP_VERSION_CHECK 1
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Set work directory
 WORKDIR /code
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    netcat \
+    netcat-openbsd \
     dos2unix \
     curl \
     wget \
