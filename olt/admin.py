@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP
+from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot
 from olt.utils import olt_connector
 
 
@@ -109,3 +109,34 @@ class AllowedIPAdmin(admin.ModelAdmin):
             messages.success(request, f'IP {obj.ip_address} atualizado com sucesso!')
         else:
             messages.success(request, f'IP {obj.ip_address} adicionado com sucesso!')
+
+
+# Histórico/eventos de ocupação de CTO: só leitura, são gerados pelo sistema.
+class ReadOnlyAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@register(OntEvent)
+class OntEventAdmin(ReadOnlyAdmin):
+    list_display = ('occurred_at', 'olt', 'pon', 'position', 'serial', 'event_type', 'is_clear', 'alarm_type')
+    list_filter = ('olt', 'event_type', 'is_clear')
+    search_fields = ('serial', 'pon')
+    date_hierarchy = 'occurred_at'
+
+
+@register(OltSyslogMessage)
+class OltSyslogMessageAdmin(ReadOnlyAdmin):
+    list_display = ('received_at', 'olt', 'source_ip', 'parsed', 'raw')
+    list_filter = ('olt', 'parsed')
+    search_fields = ('raw',)
+
+
+@register(OntSnapshot)
+class OntSnapshotAdmin(ReadOnlyAdmin):
+    list_display = ('taken_at', 'olt', 'pon', 'position', 'serial', 'oper_state', 'olt_rx_sig', 'distance_km')
+    list_filter = ('olt', 'oper_state')
+    search_fields = ('serial', 'pon')

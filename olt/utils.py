@@ -4,7 +4,7 @@ from datetime import datetime
 import time
 import logging
 from netmiko import ConnectHandler
-from olt.models import ONU, ClienteFibraIxc, Olt, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics
+from olt.models import ONU, ClienteFibraIxc, Olt, OltUsers, OltSystemInfo, OltSlot, OltTemperature, OltSfpDiagnostics, OntSnapshot
 import re
 from dotenv import load_dotenv
 import os
@@ -118,6 +118,14 @@ def create_dict_from_result(data):
             'desc2': desc2
         })
     return data_list
+
+
+def parse_float(value):
+    """'-23.0' -> -23.0; 'invalid'/'unknown'/vazio (ONU offline) -> None."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
 
 
 def parse_optics_output(output):
@@ -297,6 +305,8 @@ class olt_connector():
         except Exception as e:
             logger.error(f"Falha ao interpretar saída da OLT: {e}")
 
+        self.save_snapshots(data_dict)
+
         for data in data_dict:
             new_onu = ONU()
             new_onu.olt = self.olt
@@ -318,6 +328,29 @@ class olt_connector():
             new_onu.desc1 = data['desc1']
             new_onu.desc2 = data['desc2']
             new_onu.save()
+
+    def save_snapshots(self, data_dict):
+        # Histórico append-only: a tabela ONU é recriada a cada sync, isto
+        # é o que permite saber quem já esteve em cada PON. Falha aqui não
+        # pode derrubar o sync principal.
+        try:
+            taken_at = timezone.now()
+            OntSnapshot.objects.bulk_create([
+                OntSnapshot(
+                    olt=self.olt,
+                    taken_at=taken_at,
+                    pon=data['pon'],
+                    position=int(data['position']),
+                    serial=data['sernum'],
+                    admin_state=data['admin_status'],
+                    oper_state=data['oper_status'],
+                    olt_rx_sig=parse_float(data['olt_rx_sig']),
+                    distance_km=parse_float(data['ont_olt']),
+                )
+                for data in data_dict
+            ], batch_size=500)
+        except Exception as e:
+            logger.error(f"Falha ao gravar snapshot das ONTs ({self.olt.name}): {e}")
 
     def remove_onu(self, pon):
         net_connect = self.connect()
