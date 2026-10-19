@@ -331,3 +331,87 @@ class AllowedIP(models.Model):
     def __str__(self):
         return f"{self.ip_address} - {self.description}"
 
+
+
+# ==================== OCUPAÇÃO DE CTO (histórico + eventos) ====================
+# A tabela ONU é apagada e recriada a cada sync (utils.update_port), então
+# sozinha ela não "lembra" quem já esteve em cada PON. Estes models guardam
+# o histórico necessário para inferir CTOs e portas liberadas.
+
+class OntSnapshot(models.Model):
+    """Foto append-only de uma ONT a cada sync de ONUs. Nunca é sobrescrita."""
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='ont_snapshots', verbose_name="OLT")
+    taken_at = models.DateTimeField(db_index=True, verbose_name="Coletado em")
+    pon = models.CharField(max_length=20, verbose_name="PON")
+    position = models.IntegerField(verbose_name="Posição")
+    serial = models.CharField(max_length=30, db_index=True, verbose_name="Serial")
+    admin_state = models.CharField(max_length=30, blank=True, default='', verbose_name="Admin")
+    oper_state = models.CharField(max_length=30, blank=True, default='', verbose_name="Oper")
+    olt_rx_sig = models.FloatField(null=True, blank=True, verbose_name="OLT RX (dBm)")
+    # ont-olt-distance da OLT, em km (resolução de 0.1 km nesta release).
+    distance_km = models.FloatField(null=True, blank=True, verbose_name="Distância (km)")
+
+    class Meta:
+        verbose_name = "Snapshot de ONT"
+        verbose_name_plural = "Snapshots de ONT"
+        indexes = [models.Index(fields=['olt', 'pon', 'taken_at'])]
+
+    def __str__(self):
+        return f"{self.serial} @ {self.pon}/{self.position} ({self.taken_at:%d/%m %H:%M})"
+
+
+class OltSyslogMessage(models.Model):
+    """Mensagem de syslog crua recebida da OLT. Guardada sempre, mesmo sem
+    parse, para poder reprocessar quando o parser for ajustado."""
+
+    olt = models.ForeignKey(Olt, on_delete=models.SET_NULL, null=True, blank=True, related_name='syslog_messages', verbose_name="OLT")
+    source_ip = models.GenericIPAddressField(verbose_name="IP de origem")
+    # Horário de recebimento é a referência: o relógio da OLT pode estar
+    # errado (sem NTP ela reporta 1970).
+    received_at = models.DateTimeField(db_index=True, verbose_name="Recebido em")
+    raw = models.TextField(verbose_name="Mensagem crua")
+    parsed = models.BooleanField(default=False, verbose_name="Gerou evento")
+
+    class Meta:
+        verbose_name = "Syslog da OLT"
+        verbose_name_plural = "Syslogs da OLT"
+        ordering = ['-received_at']
+
+    def __str__(self):
+        return f"{self.received_at:%d/%m %H:%M:%S} {self.raw[:80]}"
+
+
+class OntEvent(models.Model):
+    """Queda/retorno de uma ONT extraído do syslog. A base da correlação de
+    quedas simultâneas (mesma CTO caem juntas por LOS)."""
+
+    TYPE_LOS = 'los'
+    TYPE_DYING_GASP = 'dying_gasp'
+    TYPE_OTHER = 'other'
+    TYPE_CHOICES = [
+        (TYPE_LOS, 'LOS (perda de sinal)'),
+        (TYPE_DYING_GASP, 'Dying gasp (falta de energia)'),
+        (TYPE_OTHER, 'Outro'),
+    ]
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, null=True, blank=True, related_name='ont_events', verbose_name="OLT")
+    message = models.ForeignKey(OltSyslogMessage, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
+    occurred_at = models.DateTimeField(db_index=True, verbose_name="Ocorrido em")
+    pon = models.CharField(max_length=20, verbose_name="PON")
+    position = models.IntegerField(verbose_name="Posição")
+    # Serial resolvido pela tabela ONU no momento do evento (a OLT só manda a posição).
+    serial = models.CharField(max_length=30, blank=True, default='', db_index=True, verbose_name="Serial")
+    event_type = models.CharField(max_length=20, choices=TYPE_CHOICES, verbose_name="Tipo")
+    is_clear = models.BooleanField(default=False, verbose_name="Alarme encerrado (ONT voltou)")
+    alarm_type = models.CharField(max_length=50, blank=True, default='', verbose_name="Tipo de alarme Nokia")
+
+    class Meta:
+        verbose_name = "Evento de ONT"
+        verbose_name_plural = "Eventos de ONT"
+        ordering = ['-occurred_at']
+        indexes = [models.Index(fields=['olt', 'pon', 'occurred_at'])]
+
+    def __str__(self):
+        estado = 'fim' if self.is_clear else 'início'
+        return f"{self.occurred_at:%d/%m %H:%M:%S} {self.pon}/{self.position} {self.event_type} ({estado})"

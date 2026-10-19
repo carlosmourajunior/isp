@@ -11,6 +11,10 @@ services:
     build: .
     volumes:
       - .:/code
+  syslog_collector:
+    build: .
+    volumes:
+      - .:/code
   frontend:
     build:
       context: ./frontend
