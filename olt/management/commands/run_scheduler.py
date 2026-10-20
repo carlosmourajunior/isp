@@ -1,68 +1,52 @@
 """
-Comando Django para executar o scheduler de tarefas de forma contínua.
-Este comando mantém o scheduler rodando em background.
+Processo único da atualização automática (container `scheduler`).
+
+A cada minuto relê a configuração do admin (Atualização automática) e, se
+estiver ligada e o intervalo tiver passado, enfileira a atualização
+completa de todas as OLTs ativas. Ver olt/auto_update.py.
 """
-from django.core.management.base import BaseCommand
-from olt.scheduler import start_scheduler, stop_scheduler
-import time
-import signal
-import sys
 import logging
+import signal
+import time
+
+from django.core.management.base import BaseCommand
+from django.db import close_old_connections
+
+from olt.auto_update import tick
 
 logger = logging.getLogger(__name__)
 
-class Command(BaseCommand):
-    help = 'Executa o scheduler de tarefas automáticas de forma contínua'
+TICK_SECONDS = 60
 
-    def add_arguments(self, parser):
-        parser.add_argument(
-            '--daemon',
-            action='store_true',
-            help='Executa como daemon em background',
-        )
+
+class Command(BaseCommand):
+    help = 'Executa a atualização automática das OLTs (configurada no admin)'
 
     def handle(self, *args, **options):
-        # Configurar handler para sinais de sistema
-        def signal_handler(signum, frame):
-            self.stdout.write(
-                self.style.WARNING('\n🛑 Recebido sinal de parada, finalizando scheduler...')
-            )
-            stop_scheduler()
-            sys.exit(0)
+        stopping = {'flag': False}
 
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        def _stop(signum, frame):
+            stopping['flag'] = True
 
-        try:
-            # Inicia o scheduler
-            self.stdout.write(
-                self.style.SUCCESS('🔄 Iniciando scheduler de tarefas automáticas...')
-            )
-            start_scheduler()
-            
-            self.stdout.write(
-                self.style.SUCCESS('✅ Scheduler iniciado com sucesso!')
-            )
-            self.stdout.write('   Frequência: A cada hora (minuto 0)')
-            self.stdout.write('   Para parar: Ctrl+C ou SIGTERM')
-            
-            # Mantém o processo rodando
-            if options['daemon']:
-                self.stdout.write('🔄 Executando em modo daemon...')
-            
-            while True:
-                time.sleep(60)  # Verifica a cada minuto
-                
-        except KeyboardInterrupt:
-            self.stdout.write(
-                self.style.WARNING('\n🛑 Scheduler interrompido pelo usuário')
-            )
-        except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'❌ Erro no scheduler: {e}')
-            )
-        finally:
-            stop_scheduler()
-            self.stdout.write(
-                self.style.SUCCESS('✅ Scheduler finalizado')
-            )
+        signal.signal(signal.SIGTERM, _stop)
+        signal.signal(signal.SIGINT, _stop)
+
+        self.stdout.write("Scheduler iniciado - liga/desliga e intervalo em Admin > Atualização automática")
+        last_result = None
+        while not stopping['flag']:
+            close_old_connections()
+            try:
+                result = tick()
+                if result != last_result or result == 'enqueued':
+                    self.stdout.write(f"scheduler: {result}")
+                last_result = result
+            except Exception as e:
+                logger.error(f"Scheduler: falha na verificação: {e}")
+
+            # Dorme até a próxima verificação, mas sai rápido num SIGTERM (deploy).
+            for _ in range(TICK_SECONDS):
+                if stopping['flag']:
+                    break
+                time.sleep(1)
+
+        self.stdout.write("Scheduler finalizado")

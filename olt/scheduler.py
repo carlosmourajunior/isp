@@ -1,117 +1,45 @@
 """
-Sistema de agendamento automático usando APScheduler.
-Este módulo gerencia a execução automática de tarefas de atualização.
+Status da atualização automática, no formato que a API
+(/api/scheduler/status/) e o frontend já esperam.
+
+O disparo em si não acontece mais aqui: roda no container `scheduler`
+(olt/auto_update.py + manage.py run_scheduler), configurado no admin em
+"Atualização automática". O APScheduler que existia aqui subia em todo
+processo Django (cada worker do gunicorn, rq_worker...), então ligar o job
+horário dele enfileirava a mesma atualização várias vezes por hora.
 """
 import logging
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from django_rq import get_queue
-from django.conf import settings
-from datetime import datetime
-import atexit
+
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# Instância global do scheduler
-scheduler = None
-
-def start_scheduler():
-    """Inicia o scheduler de tarefas automáticas"""
-    global scheduler
-    
-    if scheduler is not None:
-        logger.warning("Scheduler já está rodando")
-        return
-    
-    try:
-        scheduler = BackgroundScheduler(daemon=True)
-        
-        # SCHEDULER AUTOMÁTICO DESABILITADO POR SEGURANÇA
-        # Adiciona job para execução a cada hora
-        # scheduler.add_job(
-        #     func=schedule_hourly_update,
-        #     trigger=CronTrigger(minute=0),  # A cada hora no minuto 0
-        #     id='hourly_update',
-        #     name='Atualização Automática Horária',
-        #     replace_existing=True
-        # )
-        
-        scheduler.start()
-        logger.info("✅ Scheduler iniciado - Atualizações automáticas DESABILITADAS por segurança")
-        
-        # Registra função para parar o scheduler ao fechar a aplicação
-        atexit.register(stop_scheduler)
-        
-    except Exception as e:
-        logger.error(f"❌ Erro ao iniciar scheduler: {e}")
-
-def stop_scheduler():
-    """Para o scheduler"""
-    global scheduler
-    
-    if scheduler is not None:
-        scheduler.shutdown()
-        scheduler = None
-        logger.info("Scheduler parado")
-
-def schedule_hourly_update():
-    """FUNÇÃO DESABILITADA - Anteriormente agendava atualização completa na fila do RQ"""
-    logger.warning("⚠️ schedule_hourly_update foi chamada mas está DESABILITADA por segurança")
-    logger.info("💡 Para executar atualizações, use a interface web ou API manual")
-    return "Atualização automática desabilitada por segurança"
-    
-    # CÓDIGO ORIGINAL COMENTADO POR SEGURANÇA:
-    # try:
-    #     # Força fechamento de conexões ociosas do Django antes de agendar
-    #     from django.db import connections
-    #     for conn in connections.all():
-    #         conn.close()
-    #     
-    #     queue = get_queue('default')
-    #     current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    #     
-    #     # Importa aqui para evitar import circular
-    #     from olt.tasks import comprehensive_update_task
-    #     
-    #     job = queue.enqueue(
-    #         comprehensive_update_task,
-    #         user="Sistema Automático",
-    #         menu_item="Atualização Automática Horária Completa",
-    #         job_timeout=3600  # 1 hora de timeout
-    #     )
-    #     
-    #     logger.info(f"🔄 Atualização automática completa (incluindo OLT) agendada às {current_time} - Job ID: {job.id}")
-    #     
-    # except Exception as e:
-    #     logger.error(f"❌ Erro ao agendar atualização automática: {e}")
-    #     # Em caso de erro, tenta fechar todas as conexões e limpar
-    #     try:
-    #         from django.db import connections
-    #         for conn in connections.all():
-    #             conn.close()
-    #     except:
-    #         pass
 
 def get_scheduler_status():
-    """Retorna o status do scheduler"""
-    global scheduler
-    
-    if scheduler is None:
+    """{'status': 'running'|'not_running'|'stopped', 'jobs': [...]}
+
+    - stopped: atualização automática desligada no admin.
+    - running: ligada e o processo do scheduler deu sinal nos últimos 3 min.
+    - not_running: ligada, mas o container `scheduler` não está respondendo.
+    """
+    from olt.models import SchedulerConfig
+
+    config = SchedulerConfig.load()
+    if not config.enabled:
         return {"status": "stopped", "jobs": []}
-    
-    if not scheduler.running:
-        return {"status": "not_running", "jobs": []}
-    
-    jobs = []
-    for job in scheduler.get_jobs():
-        jobs.append({
-            "id": job.id,
-            "name": job.name,
-            "next_run": job.next_run_time.strftime("%d/%m/%Y %H:%M:%S") if job.next_run_time else None,
-            "trigger": str(job.trigger)
-        })
-    
+
+    next_run = config.next_run_at
+    if next_run is None or next_run <= timezone.now():
+        next_run_text = "na próxima verificação"
+    else:
+        next_run_text = timezone.localtime(next_run).strftime("%d/%m/%Y %H:%M:%S")
+
     return {
-        "status": "running",
-        "jobs": jobs
+        "status": "running" if config.scheduler_alive() else "not_running",
+        "jobs": [{
+            "id": "auto_update",
+            "name": "Atualização automática",
+            "next_run": next_run_text,
+            "trigger": f"a cada {config.interval_minutes} min",
+        }],
     }

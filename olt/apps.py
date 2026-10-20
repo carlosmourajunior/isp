@@ -19,10 +19,7 @@ class OltConfig(AppConfig):
                 # Executar tarefas de startup (importar IPs do settings, etc.)
                 from .startup import startup_tasks
                 startup_tasks()
-                
-                # Importa e inicia o scheduler
-                from .scheduler import start_scheduler
-                start_scheduler()
-                logger.info("🔄 Scheduler de atualizações automáticas iniciado")
+                # A atualização automática não sobe mais aqui (subia em todo
+                # processo): roda só no container `scheduler`. Ver olt/auto_update.py.
         except Exception as e:
             logger.error(f"❌ Erro ao iniciar aplicação: {e}")
