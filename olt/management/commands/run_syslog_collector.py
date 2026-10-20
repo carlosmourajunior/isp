@@ -10,8 +10,13 @@ Variáveis de ambiente:
 - SYSLOG_PORT: porta UDP (padrão 5140; 514 exige root).
 - SYSLOG_ALLOWED_IPS: IPs de origem aceitos, separados por vírgula. Vazio
   aceita tudo (útil só em teste).
+- SYSLOG_OLT_BY_HOSTNAME: hostname do cabeçalho do syslog -> nome da OLT.
+  Preferencial: funciona mesmo quando várias OLTs saem pelo mesmo IP de
+  NAT. Formato: "VIA01_OURO_FINO=OLT 1;VIA01_BORDA=OLT 2".
+- SYSLOG_OLT_BY_IP: mapa IP de origem -> nome da OLT, para quando a OLT
+  chega por NAT com um IP diferente do Olt.host. Mesmo formato.
 - SYSLOG_DEFAULT_OLT: nome da OLT usada quando o IP de origem não bate com
-  nenhum Olt.host - acontece atrás de NAT/Docker Desktop, que trocam o IP.
+  nada acima - útil só em teste (Docker Desktop troca o IP de origem).
 """
 import logging
 import os
@@ -23,7 +28,7 @@ from django.db import close_old_connections
 from django.utils import timezone
 
 from olt.models import ONU, Olt, OltSyslogMessage, OntEvent
-from olt.syslog_parser import parse_ont_alarm
+from olt.syslog_parser import extract_hostname, parse_ont_alarm
 
 logger = logging.getLogger('olt.connector')
 
@@ -31,26 +36,48 @@ OLT_CACHE_TTL = 300
 
 
 class OltResolver:
-    """IP de origem -> Olt, com cache (o collector recebe muitas mensagens por minuto)."""
+    """Hostname/IP de origem -> Olt, com cache (o collector recebe muitas mensagens por minuto)."""
 
     def __init__(self):
+        self._by_hostname = {}
         self._by_ip = {}
         self._default = None
         self._loaded_at = 0
 
-    def get(self, ip):
+    @staticmethod
+    def _mapping_from_env(var, olts_by_name):
+        mapping = {}
+        for pair in os.getenv(var, '').split(';'):
+            key, sep, name = pair.partition('=')
+            if not sep:
+                continue
+            olt = olts_by_name.get(name.strip())
+            if olt:
+                mapping[key.strip()] = olt
+            else:
+                logger.warning(f"Syslog: {var} aponta para OLT inexistente: '{name.strip()}'")
+        return mapping
+
+    def _reload(self):
+        olts = list(Olt.objects.all())
+        by_name = {o.name: o for o in olts}
+        self._by_hostname = self._mapping_from_env('SYSLOG_OLT_BY_HOSTNAME', by_name)
+        self._by_ip = {o.host: o for o in olts}
+        self._by_ip.update(self._mapping_from_env('SYSLOG_OLT_BY_IP', by_name))
+        default_name = os.getenv('SYSLOG_DEFAULT_OLT', '').strip()
+        self._default = by_name.get(default_name) if default_name else None
+        self._loaded_at = time.monotonic()
+
+    def get(self, ip, hostname=''):
         if time.monotonic() - self._loaded_at > OLT_CACHE_TTL:
-            self._by_ip = {o.host: o for o in Olt.objects.all()}
-            default_name = os.getenv('SYSLOG_DEFAULT_OLT', '').strip()
-            self._default = Olt.objects.filter(name=default_name).first() if default_name else None
-            self._loaded_at = time.monotonic()
-        return self._by_ip.get(ip) or self._default
+            self._reload()
+        return self._by_hostname.get(hostname) or self._by_ip.get(ip) or self._default
 
 
 def handle_message(raw, source_ip, resolver):
     close_old_connections()
     now = timezone.now()
-    olt = resolver.get(source_ip)
+    olt = resolver.get(source_ip, extract_hostname(raw))
     message = OltSyslogMessage.objects.create(olt=olt, source_ip=source_ip, received_at=now, raw=raw)
 
     event = parse_ont_alarm(raw)
