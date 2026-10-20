@@ -141,28 +141,30 @@ services:
     networks:
       - app-network
 
-  # SCHEDULER DESABILITADO POR SEGURANÇA
-  # scheduler:
-  #   build: .
-  #   entrypoint: []
-  #   command: python /code/run_scheduler.py
-  #   volumes:
-  #     - .:/code
-  #     - ./data/logs:/code/logs
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #     db:
-  #       condition: service_healthy
-  #     web:
-  #       condition: service_healthy
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     - DJANGO_SETTINGS_MODULE=isp.settings
-  #   restart: unless-stopped
-  #   networks:
-  #     - app-network
+  # Atualização automática das OLTs - processo ÚNICO (não rodar em web/rq_worker,
+  # senão a mesma atualização é enfileirada várias vezes). Liga/desliga e
+  # intervalo ficam no admin: "Atualização automática". Ver olt/auto_update.py
+  scheduler:
+    image: ${WEB_IMAGE:-ghcr.io/carlosmourajunior/isp-web}:${IMAGE_TAG:-latest}
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    command: python /code/manage.py run_scheduler
+    volumes:
+      - ./data/logs:/code/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=isp.settings
+    restart: unless-stopped
+    networks:
+      - app-network
 
 networks:
   app-network:

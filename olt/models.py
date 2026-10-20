@@ -415,3 +415,56 @@ class OntEvent(models.Model):
     def __str__(self):
         estado = 'fim' if self.is_clear else 'início'
         return f"{self.occurred_at:%d/%m %H:%M:%S} {self.pon}/{self.position} {self.event_type} ({estado})"
+
+
+class SchedulerConfig(models.Model):
+    """Configuração da atualização automática (registro único, editado no admin).
+
+    Lida a cada minuto pelo processo do container `scheduler`
+    (manage.py run_scheduler) - mudar aqui vale sem deploy nem restart.
+    """
+
+    enabled = models.BooleanField(default=False, verbose_name="Atualização automática ligada")
+    interval_minutes = models.PositiveIntegerField(
+        default=120, validators=[MinValueValidator(30)], verbose_name="Intervalo (minutos)",
+        help_text="Tempo entre o início de uma atualização completa e a próxima. Mínimo 30. "
+                  "Se a anterior ainda estiver na fila, a próxima é pulada.",
+    )
+    last_run_at = models.DateTimeField(null=True, blank=True, verbose_name="Última execução")
+    last_run_summary = models.CharField(max_length=255, blank=True, default='', verbose_name="Resultado da última verificação")
+    # IDs dos jobs RQ da última execução - para não enfileirar outra por cima.
+    last_job_ids = models.JSONField(default=list, blank=True)
+    # Atualizado a cada minuto pelo processo do scheduler: mostra se ele está vivo.
+    heartbeat_at = models.DateTimeField(null=True, blank=True, verbose_name="Último sinal do scheduler")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Atualização automática"
+        verbose_name_plural = "Atualização automática"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @property
+    def next_run_at(self):
+        if not self.last_run_at:
+            return None
+        from datetime import timedelta
+        return self.last_run_at + timedelta(minutes=self.interval_minutes)
+
+    def scheduler_alive(self, now=None, tolerance_seconds=180):
+        from django.utils import timezone
+        if not self.heartbeat_at:
+            return False
+        now = now or timezone.now()
+        return (now - self.heartbeat_at).total_seconds() <= tolerance_seconds
+
+    def __str__(self):
+        estado = f"a cada {self.interval_minutes} min" if self.enabled else "desligada"
+        return f"Atualização automática ({estado})"

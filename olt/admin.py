@@ -1,7 +1,10 @@
 from django.contrib import admin
+from django.shortcuts import redirect
+from django.urls import reverse
+from django.utils import timezone
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot
+from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig
 from olt.utils import olt_connector
 
 
@@ -140,3 +143,37 @@ class OntSnapshotAdmin(ReadOnlyAdmin):
     list_display = ('taken_at', 'olt', 'pon', 'position', 'serial', 'oper_state', 'olt_rx_sig', 'distance_km')
     list_filter = ('olt', 'oper_state')
     search_fields = ('serial', 'pon')
+
+
+@register(SchedulerConfig)
+class SchedulerConfigAdmin(admin.ModelAdmin):
+    """Registro único: a lista redireciona direto para o formulário."""
+    fields = ('enabled', 'interval_minutes', 'proxima_execucao', 'last_run_at', 'last_run_summary', 'processo_scheduler')
+    readonly_fields = ('proxima_execucao', 'last_run_at', 'last_run_summary', 'processo_scheduler')
+
+    def changelist_view(self, request, extra_context=None):
+        obj = SchedulerConfig.load()
+        return redirect(reverse('admin:olt_schedulerconfig_change', args=[obj.pk]))
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Próxima execução")
+    def proxima_execucao(self, obj):
+        if not obj.enabled:
+            return "Desligada"
+        if not obj.next_run_at or obj.next_run_at <= timezone.now():
+            return "Na próxima verificação (até 1 minuto)"
+        return timezone.localtime(obj.next_run_at).strftime('%d/%m/%Y %H:%M')
+
+    @admin.display(description="Processo do scheduler")
+    def processo_scheduler(self, obj):
+        if not obj.heartbeat_at:
+            return "Sem sinal - o container 'scheduler' está rodando?"
+        segundos = int((timezone.now() - obj.heartbeat_at).total_seconds())
+        if obj.scheduler_alive():
+            return f"Ativo (último sinal há {segundos}s)"
+        return f"Sem sinal há {segundos // 60} min - o container 'scheduler' está rodando?"

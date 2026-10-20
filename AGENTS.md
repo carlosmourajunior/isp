@@ -36,12 +36,15 @@ slots, alertas de sinal, disparo de sincronizações (RQ background jobs) e cada
 - **Banco**: PostgreSQL 13.
 - **Fila/cache**: Redis + `django-rq` (RQ) para jobs assíncronos que tocam a OLT via SSH
   (operações lentas/bloqueantes não podem rodar na request-response).
-- **Scheduler**: APScheduler embutido (`olt/scheduler.py`) — hoje com o job automático
-  horário **desabilitado por segurança**; disparos são manuais via API/frontend.
+- **Atualização automática**: container próprio `scheduler` (`manage.py run_scheduler` +
+  [olt/auto_update.py](olt/auto_update.py)) — processo **único**. Liga/desliga e intervalo
+  ficam no admin ("Atualização automática", model `SchedulerConfig`), desligada por padrão.
+- **Syslog das OLTs**: container `syslog_collector` (`manage.py run_syslog_collector`), UDP
+  5140 — grava `OltSyslogMessage` e `OntEvent` (base da inferência de ocupação de CTO).
 - **SSH para OLT**: `netmiko` (device_type `alcatel_aos`, definido por OLT cadastrada).
 - **Frontend**: React 19 + Vite + TypeScript, TanStack Query + TanStack Table, Tailwind 4,
   React Router 7, axios com interceptor de refresh de JWT.
-- **Infra**: Docker Compose (5 serviços: `db`, `redis`, `web`, `rq_worker`, `frontend`),
+- **Infra**: Docker Compose (`db`, `redis`, `web`, `rq_worker`, `syslog_collector`, `scheduler`, `frontend`),
   gunicorn servindo o Django, Nginx servindo o build estático do React.
 
 ## Como subir o projeto
@@ -157,10 +160,14 @@ puro — mesmo em dump/backup do Postgres.
   `@olt_admin_required` existem porque só uma fração dos endpoints acessa a OLT
   diretamente — a maioria só lê o Postgres. Empilhar decorators nesses poucos endpoints
   evita restringir o resto da API por engano.
-- **Scheduler automático desabilitado de propósito**: `olt/scheduler.py` mantém o código
-  do cron horário, mas comentado — decisão de segurança para não bater na OLT
-  automaticamente sem controle. Disparo hoje é manual (via API/frontend, endpoints
-  `tasks/trigger-*`).
+- **Atualização automática num processo só**: o APScheduler antigo subia em `apps.ready()`,
+  ou seja, em todo processo Django (cada worker do gunicorn, rq_worker...) — ligar o job
+  horário dele enfileiraria a mesma atualização várias vezes. Hoje só o container
+  `scheduler` dispara, relendo `SchedulerConfig` a cada minuto, e não enfileira uma nova
+  execução enquanto houver job da anterior na fila. `/api/scheduler/status/` lê o
+  `SchedulerConfig` (status `stopped` = desligada, `running` = ligada e processo vivo,
+  `not_running` = ligada mas container sem sinal há 3+ min). Disparo manual continua via
+  `tasks/trigger-*`.
 - **Frontend não fala com a OLT nem com o IXC diretamente**: sempre via API Django, que é
   quem guarda credenciais (criptografadas/env) e aplica os decorators de segurança acima.
 
