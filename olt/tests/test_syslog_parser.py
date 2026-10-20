@@ -8,7 +8,7 @@ Testes dos parsers de alarme de ONT.
 """
 from django.test import SimpleTestCase
 
-from olt.syslog_parser import parse_ont_alarm, parse_ploam_log
+from olt.syslog_parser import extract_hostname, parse_ont_alarm, parse_ploam_log
 from olt.utils import parse_float
 
 PLOAM_LOG_REAL = """
@@ -84,8 +84,33 @@ class ParseOntAlarmTests(SimpleTestCase):
         evento = parse_ont_alarm("ont 1/1/2/8/42 ont-ploam-rdi")
         self.assertEqual(evento['event_type'], 'other')
 
+    def test_comando_de_cli_real_e_ignorado(self):
+        """Mensagem real recebida da OLT (msg-type cli-config-chgs)."""
+        real = ("<142>Oct 19 17:11:00 VIA01_OURO_FINO cli[334]: isadmin@177.22.126.64(5092) : "
+                "[Parser, 3561] executeCommand, cmdstr: 'configure system syslog route isp-collector "
+                "msg-type cli-config-chgs facility local1 emergency alert critical error warning notice information '")
+        self.assertIsNone(parse_ont_alarm(real))
+
+    def test_comando_de_cli_com_caminho_de_ont_e_ignorado(self):
+        cmd = ("<142>Oct 19 17:11:00 VIA01_OURO_FINO cli[334]: isadmin@10.0.0.1(5092) : [Parser, 3561] "
+               "executeCommand, cmdstr: 'configure equipment ont interface 1/1/2/8/42 admin-state down'")
+        self.assertIsNone(parse_ont_alarm(cmd))
+
     def test_alarme_sem_ont_e_ignorado(self):
         self.assertIsNone(parse_ont_alarm("vlanport alarm on lt:1/1/1"))
+
+
+class ExtractHostnameTests(SimpleTestCase):
+
+    def test_cabecalho_real(self):
+        real = "<142>Oct 19 17:11:00 VIA01_OURO_FINO cli[334]: isadmin@177.22.126.64(5092) : [Parser, 3572] executeCommand end of command"
+        self.assertEqual(extract_hostname(real), 'VIA01_OURO_FINO')
+
+    def test_dia_com_um_digito(self):
+        self.assertEqual(extract_hostname("<142>Oct  9 07:01:00 VIA01_BORDA eqpt: x"), 'VIA01_BORDA')
+
+    def test_sem_cabecalho(self):
+        self.assertEqual(extract_hostname("TESTE ont 1/1/2/8/42 ont-ploam-loss-sig"), '')
 
 
 class ParseFloatTests(SimpleTestCase):

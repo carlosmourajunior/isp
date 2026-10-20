@@ -30,8 +30,18 @@ PLOAM_FLAG_TO_EVENT = {
 }
 
 
+# Mensagens de comando digitado na CLI (msg-type cli-config-chgs / cli-msgs).
+# Um comando como "configure equipment ont interface 1/1/2/8/42" tem o
+# caminho da ONT mas não é um alarme - sem esse filtro viraria evento falso.
+# Formato real: "<142>Oct 19 17:11:00 VIA01_OURO_FINO cli[334]: isadmin@... : [Parser, 3561] executeCommand, cmdstr: '...'"
+CLI_MESSAGE_RE = re.compile(r'\bcli\[\d+\]:|executeCommand|cmdstr:', re.IGNORECASE)
+
+
 def parse_ont_alarm(raw):
     """Mensagem de syslog crua -> dict do evento, ou None se não for alarme de ONT."""
+    if CLI_MESSAGE_RE.search(raw):
+        return None
+
     path = ONT_PATH_RE.search(raw)
     if not path:
         return None
@@ -85,3 +95,13 @@ def parse_ploam_log(output):
             'active': active,
         })
     return entries
+
+
+# Cabeçalho RFC 3164 (padrão da OLT): "<142>Oct 19 17:11:00 VIA01_OURO_FINO cli[334]: ..."
+SYSLOG_HOSTNAME_RE = re.compile(r'^<\d+>\s*[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+(\S+)')
+
+
+def extract_hostname(raw):
+    """Hostname da OLT no cabeçalho do syslog, ou '' se não houver cabeçalho."""
+    match = SYSLOG_HOSTNAME_RE.match(raw)
+    return match.group(1) if match else ''
