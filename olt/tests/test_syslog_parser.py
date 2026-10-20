@@ -100,6 +100,37 @@ class ParseOntAlarmTests(SimpleTestCase):
         self.assertIsNone(parse_ont_alarm("vlanport alarm on lt:1/1/1"))
 
 
+class AlarmeRealBordaTests(SimpleTestCase):
+    """Mensagens reais da OLT de Borda (VIA01BM), recebidas via syslog msg-type all."""
+
+    TEXTO = ("<136>Oct 8 06:57:04 VIA01BM rOT1[291]: 70/10/08 06:57:04 major alarm occurred for "
+             "ont 1/1/2/8/18 (service affecting) : Remote Defect Indication from ONT")
+    TL1 = ('<136>Oct 8 06:57:04 VIA01BM rOT1[291]: ** 23442 REPT ALM ONT '
+           '"ONT-1-1-2-8-18:MJ,RDI,SA,10-8,6-57-4:\\"Remote Defect Indication from ONT\\","')
+
+    def test_formato_texto_gera_evento(self):
+        evento = parse_ont_alarm(self.TEXTO)
+        self.assertEqual(evento['pon'], '1/1/2/8')
+        self.assertEqual(evento['position'], 18)
+        self.assertEqual(evento['event_type'], 'other')
+        self.assertEqual(evento['alarm_type'], 'Remote Defect Indication from ONT')
+        self.assertFalse(evento['is_clear'])
+
+    def test_formato_tl1_e_ignorado_para_nao_duplicar(self):
+        self.assertIsNone(parse_ont_alarm(self.TL1))
+
+    def test_alarme_encerrado(self):
+        cleared = self.TEXTO.replace('alarm occurred', 'alarm cleared')
+        self.assertTrue(parse_ont_alarm(cleared)['is_clear'])
+
+    def test_perda_de_sinal_no_formato_texto(self):
+        los = self.TEXTO.replace('Remote Defect Indication from ONT', 'Loss of signal')
+        self.assertEqual(parse_ont_alarm(los)['event_type'], 'los')
+
+    def test_hostname(self):
+        self.assertEqual(extract_hostname(self.TEXTO), 'VIA01BM')
+
+
 class ExtractHostnameTests(SimpleTestCase):
 
     def test_cabecalho_real(self):
