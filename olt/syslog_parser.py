@@ -37,6 +37,18 @@ PLOAM_FLAG_TO_EVENT = {
 CLI_MESSAGE_RE = re.compile(r'\bcli\[\d+\]:|executeCommand|cmdstr:', re.IGNORECASE)
 
 
+# Formato real do alarme (OLT Borda, release 6.2):
+# "<136>Oct 8 06:57:04 VIA01BM rOT1[291]: 70/10/08 06:57:04 major alarm occurred
+#  for ont 1/1/2/8/18 (service affecting) : Remote Defect Indication from ONT"
+# A OLT também manda o mesmo alarme em TL1 ("REPT ALM ONT \"ONT-1-1-2-8-18:..."),
+# que não casa com ONT_PATH_RE (usa '-') - por isso não gera evento duplicado.
+ALARM_TEXT_RE = re.compile(
+    r'\b(?:(?P<severity>\w+)\s+)?alarm\s+(?P<action>occurred|cleared|clear)\s+for\s+ont\s+'
+    r'\d+/\d+/\d+/\d+/\d+[^:]*:\s*(?P<description>.+?)\s*$',
+    re.IGNORECASE,
+)
+
+
 def parse_ont_alarm(raw):
     """Mensagem de syslog crua -> dict do evento, ou None se não for alarme de ONT."""
     if CLI_MESSAGE_RE.search(raw):
@@ -53,14 +65,22 @@ def parse_ont_alarm(raw):
     else:
         event_type = 'other'
 
-    # Fica com o nome mais específico (ont-ploam-loss-sig em vez de ont-ploam).
-    alarm_names = ALARM_TYPE_RE.findall(raw)
-    alarm_type = max(alarm_names, key=len).lower() if alarm_names else ''
+    text = ALARM_TEXT_RE.search(raw)
+    if text:
+        # Descrição legível da OLT, ex.: "Remote Defect Indication from ONT".
+        alarm_type = text.group('description')[:50]
+        is_clear = text.group('action').lower() != 'occurred'
+    else:
+        # Fica com o nome mais específico (ont-ploam-loss-sig em vez de ont-ploam).
+        alarm_names = ALARM_TYPE_RE.findall(raw)
+        alarm_type = max(alarm_names, key=len).lower() if alarm_names else ''
+        is_clear = bool(CLEAR_RE.search(raw))
+
     return {
         'pon': path.group(1),
         'position': int(path.group(2)),
         'event_type': event_type,
-        'is_clear': bool(CLEAR_RE.search(raw)),
+        'is_clear': is_clear,
         'alarm_type': alarm_type,
     }
 
