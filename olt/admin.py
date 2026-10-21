@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig, Cto, ClienteFibraIxc, CtoInferencia, Vistoria, VistoriaPorta
+from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig, Cto, ClienteFibraIxc, CtoInferencia, Vistoria, VistoriaPorta, CorrecaoIxc
 from olt.utils import olt_connector
 
 
@@ -249,3 +249,11 @@ class VistoriaAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@register(CorrecaoIxc)
+class CorrecaoIxcAdmin(ReadOnlyAdmin):
+    """Auditoria das alterações feitas no IXC pelo sistema (registro antes/depois)."""
+    list_display = ('criado_em', 'cliente_nome', 'serial', 'caixa_antes', 'cto', 'usuario', 'status')
+    list_filter = ('status',)
+    search_fields = ('serial', 'cliente_nome', 'usuario')

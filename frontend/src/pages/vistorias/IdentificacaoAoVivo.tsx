@@ -1,44 +1,87 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, Loader2, Radio, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Radio, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import type { EventoAoVivo } from '@/types/vistoria'
+import type { EventoAoVivo, EventosResposta } from '@/types/vistoria'
 import { ClienteLinha } from './ClienteLinha'
 
 interface Props {
   vistoriaId: number
-  porta: number
-  /** Grava a porta com o cliente escolhido. */
-  onIdentificado: (evento: EventoAoVivo) => Promise<void>
+  /** Portas ainda sem registro - o cliente identificado pode ir para uma delas (opcional). */
+  portasLivres: number[]
+  /** Grava o cliente na caixa (porta null = porta desconhecida). */
+  onIdentificado: (evento: EventoAoVivo, porta: number | null) => Promise<void>
   /** OLT confirmou que o cliente voltou. */
-  onReconectado: (evento: EventoAoVivo) => Promise<void>
-  onSemOntAtiva: () => Promise<void>
+  onReconectado: (evento: EventoAoVivo, porta: number | null) => Promise<void>
+  onSemOntAtiva: (porta: number | null) => Promise<void>
+  onNovaIdentificacao: () => void
   onClose: () => void
 }
 
 type Fase = 'iniciando' | 'aguardando_queda' | 'aguardando_volta'
 
 const POLL_MS = 2000
-// Depois disso sem nenhuma queda, a porta provavelmente não tem ONT ativa.
+// Depois disso sem nenhuma queda, o drop desconectado provavelmente não tem ONT ativa.
 const SUGERIR_FANTASMA_S = 90
 
-interface Resposta {
-  agora: string
-  eventos: EventoAoVivo[]
+function SeletorPorta({ portas, value, onChange }: { portas: number[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+      aria-label="Porta"
+    >
+      <option value="">Porta não informada</option>
+      {portas.map((p) => (
+        <option key={p} value={p}>
+          Porta {p}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function avisos(e: EventoAoVivo, ponsDaCaixa: string[]) {
+  const lista: string[] = []
+  if (!e.mesma_pon_da_caixa) {
+    lista.push(
+      ponsDaCaixa.length
+        ? `Queda na PON ${e.pon}, que não é a PON desta caixa (${ponsDaCaixa.join(', ')}) - provavelmente outro ponto da rede.`
+        : `Queda na PON ${e.pon}. A PON desta caixa ainda não é conhecida - confira com o técnico.`,
+    )
+  }
+  if (e.caiu_junto > 1) {
+    lista.push(`${e.caiu_junto} ONTs da PON ${e.pon} caíram juntas - pode ser rompimento ou queda de energia, não a desconexão do técnico.`)
+  }
+  return lista
 }
 
 /**
- * "Desconecta e vê quem caiu", automático: escuta as desconexões (alarme
- * "ONT inativa" via syslog) a partir do momento em que a bancada começa, e
- * depois espera o mesmo cliente voltar - ninguém fica desconectado por esquecimento.
+ * "Desconecta e vê quem caiu", automático e sem depender da porta: escuta as
+ * desconexões (alarme "ONT inativa" via syslog), destaca as quedas na PON da
+ * caixa e avisa quando a queda parece ser em outro ponto da rede. Depois espera
+ * o mesmo cliente voltar - ninguém fica desconectado por esquecimento.
  */
-export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onReconectado, onSemOntAtiva, onClose }: Props) {
+export function IdentificacaoAoVivo({
+  vistoriaId,
+  portasLivres,
+  onIdentificado,
+  onReconectado,
+  onSemOntAtiva,
+  onNovaIdentificacao,
+  onClose,
+}: Props) {
   const [fase, setFase] = useState<Fase>('iniciando')
   const [desde, setDesde] = useState<string | null>(null)
+  const [ponsDaCaixa, setPonsDaCaixa] = useState<string[]>([])
   const [eventos, setEventos] = useState<EventoAoVivo[]>([])
   const [escolhido, setEscolhido] = useState<EventoAoVivo | null>(null)
+  const [portaEscolhida, setPortaEscolhida] = useState<number | null>(null)
+  const [portaPorEvento, setPortaPorEvento] = useState<Record<number, string>>({})
+  const [portaFantasma, setPortaFantasma] = useState('')
   const [segundos, setSegundos] = useState(0)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -48,16 +91,16 @@ export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onRecon
   // Relógio do servidor como ponto de partida (o do navegador pode estar adiantado).
   useEffect(() => {
     api
-      .get<Resposta>(`/vistorias/${vistoriaId}/eventos/`)
+      .get<EventosResposta>(`/vistorias/${vistoriaId}/eventos/`)
       .then((r) => {
         setDesde(r.data.agora)
+        setPonsDaCaixa(r.data.pons_da_caixa)
         setFase('aguardando_queda')
         inicio.current = Date.now()
       })
       .catch(() => setErro('Não foi possível falar com o servidor.'))
   }, [vistoriaId])
 
-  // Esperando a volta: o mesmo pon/posição com alarme encerrado depois da queda escolhida.
   const voltou = useMemo(
     () =>
       fase === 'aguardando_volta' &&
@@ -72,17 +115,18 @@ export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onRecon
   useEffect(() => {
     if (voltou && escolhido && !avisouVolta.current) {
       avisouVolta.current = true
-      onReconectado(escolhido).catch(() => undefined)
+      onReconectado(escolhido, portaEscolhida).catch(() => undefined)
     }
-  }, [voltou, escolhido, onReconectado])
+  }, [voltou, escolhido, portaEscolhida, onReconectado])
 
   useEffect(() => {
     if (!desde || voltou) return
     const id = setInterval(async () => {
       setSegundos(Math.round((Date.now() - inicio.current) / 1000))
       try {
-        const r = await api.get<Resposta>(`/vistorias/${vistoriaId}/eventos/`, { params: { desde } })
+        const r = await api.get<EventosResposta>(`/vistorias/${vistoriaId}/eventos/`, { params: { desde } })
         setEventos(r.data.eventos)
+        setPonsDaCaixa(r.data.pons_da_caixa)
         setErro(null)
       } catch {
         setErro('Falha ao consultar a OLT - tentando de novo…')
@@ -91,25 +135,34 @@ export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onRecon
     return () => clearInterval(id)
   }, [desde, voltou, vistoriaId])
 
+  // Uma linha por ONT (a queda mais recente). Ordem: candidatos da caixa na PON
+  // da caixa > outros na PON da caixa > o resto.
   const quedas = useMemo(() => {
     const vistos = new Set<string>()
-    return eventos
-      .filter((e) => !e.voltou)
+    const unicas = [...eventos]
       .reverse()
+      .filter((e) => !e.voltou)
       .filter((e) => {
         const chave = `${e.pon}/${e.position}`
         if (vistos.has(chave)) return false
         vistos.add(chave)
         return true
       })
-      .sort((a, b) => Number(b.candidato_desta_cto) - Number(a.candidato_desta_cto))
+    const peso = (e: EventoAoVivo) =>
+      (e.mesma_pon_da_caixa ? 4 : 0) + (e.candidato_desta_cto ? 2 : 0) + (e.caiu_junto === 1 ? 1 : 0)
+    return unicas.sort((a, b) => peso(b) - peso(a))
   }, [eventos])
+  const naPonDaCaixa = quedas.filter((e) => e.mesma_pon_da_caixa)
+  const foraDaPon = quedas.filter((e) => !e.mesma_pon_da_caixa)
 
   async function escolher(evento: EventoAoVivo) {
+    const bruto = portaPorEvento[evento.id] ?? ''
+    const porta = bruto ? Number(bruto) : null
     setSalvando(true)
     try {
-      await onIdentificado(evento)
+      await onIdentificado(evento, porta)
       setEscolhido(evento)
+      setPortaEscolhida(porta)
       setFase('aguardando_volta')
     } catch {
       // O erro já foi avisado por quem salvou; continua escutando.
@@ -118,11 +171,56 @@ export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onRecon
     }
   }
 
+  const linha = (e: EventoAoVivo) => {
+    const alertas = avisos(e, ponsDaCaixa)
+    return (
+      <div
+        key={e.id}
+        className={
+          alertas.length
+            ? 'flex flex-col gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2'
+            : 'flex flex-col gap-2 rounded-md border border-border px-3 py-2'
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <ClienteLinha
+            c={e}
+            extra={
+              <>
+                <Badge variant={e.mesma_pon_da_caixa ? 'success' : 'warning'}>PON {e.pon}</Badge>
+                {e.candidato_desta_cto && <Badge variant="success">Cliente desta caixa</Badge>}
+                <span className="text-xs text-muted-foreground">caiu às {new Date(e.ocorrido_em).toLocaleTimeString('pt-BR')}</span>
+              </>
+            }
+          />
+          <div className="flex items-center gap-2">
+            <SeletorPorta
+              portas={portasLivres}
+              value={portaPorEvento[e.id] ?? ''}
+              onChange={(v) => setPortaPorEvento((m) => ({ ...m, [e.id]: v }))}
+            />
+            <Button size="sm" disabled={salvando} onClick={() => escolher(e)}>
+              É este
+            </Button>
+          </div>
+        </div>
+        {alertas.map((a) => (
+          <div key={a} className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {a}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <Card className="gap-0 border-primary/50 py-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 font-semibold">
-          <Radio className="size-4 text-primary" /> Identificar porta {porta} por desconexão
+          <Radio className="size-4 text-primary" /> Identificar por desconexão
+          {ponsDaCaixa.length > 0 && (
+            <span className="text-xs font-normal text-muted-foreground">PON da caixa: {ponsDaCaixa.join(', ')}</span>
+          )}
         </div>
         <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent" aria-label="Fechar">
           <X className="size-4" />
@@ -139,55 +237,51 @@ export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onRecon
         {fase === 'aguardando_queda' && (
           <>
             <div className="rounded-md bg-primary/10 px-3 py-2">
-              <div className="font-medium">Peça para o técnico desconectar a porta {porta} agora.</div>
+              <div className="font-medium">Peça para o técnico desconectar o drop que quer identificar.</div>
               <div className="text-xs text-muted-foreground">
-                Escutando desconexões na OLT há {segundos}s. O alarme costuma chegar em alguns segundos.
+                Escutando desconexões na OLT há {segundos}s. O alarme costuma chegar em alguns segundos. Se souber a porta,
+                escolha ao lado do cliente - é opcional.
               </div>
             </div>
 
-            {quedas.length === 0 ? (
+            {quedas.length === 0 && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Nenhuma ONT caiu ainda…
               </div>
-            ) : (
+            )}
+
+            {naPonDaCaixa.length > 0 && (
               <div className="flex flex-col gap-2">
-                <div className="text-xs text-muted-foreground">
-                  ONTs que caíram desde o início. Outras ONTs da OLT podem cair por acaso nesse intervalo - as marcadas como
-                  candidatas são da lista desta caixa.
-                </div>
-                {quedas.map((e) => (
-                  <div
-                    key={e.id}
-                    className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-                  >
-                    <ClienteLinha
-                      c={e}
-                      extra={
-                        <>
-                          {e.candidato_desta_cto && <Badge variant="success">Candidato desta caixa</Badge>}
-                          <span className="text-xs text-muted-foreground">
-                            caiu às {new Date(e.ocorrido_em).toLocaleTimeString('pt-BR')}
-                          </span>
-                        </>
-                      }
-                    />
-                    <Button size="sm" disabled={salvando} onClick={() => escolher(e)}>
-                      É este
-                    </Button>
-                  </div>
-                ))}
+                <div className="text-xs font-medium text-muted-foreground">Na PON desta caixa</div>
+                {naPonDaCaixa.map(linha)}
               </div>
             )}
 
-            {segundos >= SUGERIR_FANTASMA_S && quedas.length === 0 && (
+            {foraDaPon.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <div className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Em outras PONs - provavelmente não é a desconexão do técnico
+                </div>
+                {foraDaPon.map(linha)}
+              </div>
+            )}
+
+            {segundos >= SUGERIR_FANTASMA_S && naPonDaCaixa.length === 0 && (
               <div className="flex flex-col gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-400">
                 <span>
-                  Nada caiu em {SUGERIR_FANTASMA_S}s. Se o drop está ligado nessa porta, ele não tem ONT ativa do outro lado:
-                  porta fantasma, candidata a liberar.
+                  Nada caiu na PON desta caixa em {SUGERIR_FANTASMA_S}s. Se o drop desconectado está ligado, não tem ONT ativa do
+                  outro lado: drop fantasma, porta a liberar.
                 </span>
-                <Button size="sm" variant="outline" className="w-fit" onClick={onSemOntAtiva}>
-                  Marcar porta {porta} como fantasma
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <SeletorPorta portas={portasLivres} value={portaFantasma} onChange={setPortaFantasma} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSemOntAtiva(portaFantasma ? Number(portaFantasma) : null)}
+                  >
+                    Registrar drop fantasma
+                  </Button>
+                </div>
               </div>
             )}
           </>
@@ -196,24 +290,23 @@ export function IdentificacaoAoVivo({ vistoriaId, porta, onIdentificado, onRecon
         {fase === 'aguardando_volta' && !voltou && escolhido && (
           <div className="flex flex-col gap-2">
             <div className="rounded-md bg-emerald-500/10 px-3 py-2">
-              Porta {porta} = <strong>{escolhido.cliente_nome || escolhido.serial}</strong>. Registrado.
+              <strong>{escolhido.cliente_nome || escolhido.serial}</strong> registrado nesta caixa
+              {portaEscolhida ? ` (porta ${portaEscolhida})` : ''}.
             </div>
             <div className="flex items-center gap-2 font-medium">
               <Loader2 className="size-4 animate-spin" /> Peça para reconectar - aguardando a ONT voltar…
             </div>
-            <div className="text-xs text-muted-foreground">
-              Não feche antes de confirmar: assim ninguém fica desconectado por engano.
-            </div>
+            <div className="text-xs text-muted-foreground">Não feche antes de confirmar: assim ninguém fica desconectado por engano.</div>
           </div>
         )}
 
         {voltou && escolhido && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 rounded-md bg-emerald-500/10 px-3 py-2 font-medium text-emerald-700 dark:text-emerald-400">
-              <CheckCircle2 className="size-4" /> {escolhido.cliente_nome || escolhido.serial} voltou. Porta {porta} conferida.
+              <CheckCircle2 className="size-4" /> {escolhido.cliente_nome || escolhido.serial} voltou. Conferido.
             </div>
-            <Button size="sm" className="w-fit" onClick={onClose}>
-              Próxima porta
+            <Button size="sm" className="w-fit" onClick={onNovaIdentificacao}>
+              Identificar outro cliente
             </Button>
           </div>
         )}
