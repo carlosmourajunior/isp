@@ -4,6 +4,8 @@
 data/postgres/
 data/redis/
 data/logs/
+# Projeto da rede (KMZ) - mapa da planta, não versionar
+data/kmz/
 
 # Django files
 staticfiles/

@@ -63,24 +63,24 @@ class TickTests(TestCase):
     def test_primeira_execucao_enfileira_todas_olts_ativas(self):
         self._ligar()
         self.assertEqual(tick(now=self.now, queue=self.queue), 'enqueued')
-        # 4 etapas por OLT ativa (2) + clientes do IXC uma vez só
-        self.assertEqual(len(self.queue.jobs), 9)
+        # 4 etapas por OLT ativa (2) + clientes do IXC uma vez só + inferência de CTO por OLT (2)
+        self.assertEqual(len(self.queue.jobs), 11)
         config = SchedulerConfig.load()
         self.assertEqual(config.last_run_at, self.now)
-        self.assertEqual(len(config.last_job_ids), 9)
+        self.assertEqual(len(config.last_job_ids), 11)
 
     def test_dentro_do_intervalo_espera(self):
         self._ligar(minutos=120)
         tick(now=self.now, queue=self.queue)
         self.assertEqual(tick(now=self.now + timedelta(minutes=60), queue=self.queue), 'waiting')
-        self.assertEqual(len(self.queue.jobs), 9)
+        self.assertEqual(len(self.queue.jobs), 11)
 
     def test_nao_sobrepoe_se_anterior_ainda_na_fila(self):
         self._ligar(minutos=30)
         tick(now=self.now, queue=self.queue)
-        self.queue.jobs['job-9'].status = 'started'
+        self.queue.jobs['job-11'].status = 'started'
         self.assertEqual(tick(now=self.now + timedelta(minutes=31), queue=self.queue), 'skipped')
-        self.assertEqual(len(self.queue.jobs), 9)
+        self.assertEqual(len(self.queue.jobs), 11)
 
     def test_enfileira_de_novo_quando_anterior_terminou(self):
         self._ligar(minutos=30)
@@ -88,7 +88,7 @@ class TickTests(TestCase):
         for job in self.queue.jobs.values():
             job.status = 'finished'
         self.assertEqual(tick(now=self.now + timedelta(minutes=31), queue=self.queue), 'enqueued')
-        self.assertEqual(len(self.queue.jobs), 18)
+        self.assertEqual(len(self.queue.jobs), 22)
 
     def test_desligar_pelo_admin_para_na_hora(self):
         self._ligar(minutos=30)

@@ -210,3 +210,17 @@ def comprehensive_update_task(olt_id=None, user=None, menu_item=None):
         for conn in connections.all():
             conn.close()
         raise
+
+
+@django_rq.job
+def infer_ctos_task(olt_id=None, user=None, menu_item=None):
+    """Inferência de CTO por ONT (olt/cto_inference.py). Só lê o banco."""
+    from olt.cto_inference import run_inference
+
+    job = rq.get_current_job()
+    add_metadata(job, user, menu_item)
+    olt = _get_olt(olt_id) or Olt.objects.filter(is_active=True).order_by('id').first()
+    job.meta['current_step'] = f"Inferindo CTOs ({olt.name})"
+    job.save_meta()
+    resumo = run_inference(olt)
+    return f"Inferência de CTO concluída ({olt.name}): {resumo['status']}"

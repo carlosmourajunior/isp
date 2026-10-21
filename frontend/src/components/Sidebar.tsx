@@ -17,6 +17,7 @@ import {
   Clock,
   Search,
   X,
+  MapPin,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -55,6 +56,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/clientes-fibra', label: 'Clientes Fibra', icon: Users },
       { to: '/ftth-boxes', label: 'Caixas FTTH', icon: Boxes },
+      { to: '/ctos', label: 'CTOs (ocupação)', icon: MapPin },
     ],
   },
   {

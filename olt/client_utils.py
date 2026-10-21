@@ -3,13 +3,67 @@ import json
 import logging
 import requests
 import os
-from .models import ONU, ClienteFibraIxc
+from .models import ONU, ClienteFibraIxc, Cto
 
 logger = logging.getLogger('olt.connector')
 
 
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def update_ctos():
+    """Sincroniza o cadastro de caixas (rad_caixa_ftth) do IXC em Cto.
+
+    Não toca nos campos que vêm do KMZ (ramal, portas, splitter) nem na OLT.
+    Devolve quantas caixas vieram do IXC.
+    """
+    from django.db import transaction
+
+    registros = _fetch_all_registros('rad_caixa_ftth', 'rad_caixa_ftth.id')
+    if not registros:
+        logger.error("IXC: rad_caixa_ftth veio vazio - CTOs não atualizadas")
+        return 0
+
+    with transaction.atomic():
+        # Só as caixas do IXC - as que existem só no KMZ não somem num sync.
+        Cto.objects.filter(origem=Cto.ORIGEM_IXC).update(is_active=False)
+        for r in registros:
+            Cto.objects.update_or_create(
+                ixc_id=str(r['id']),
+                defaults={
+                    'descricao': (r.get('descricao') or '').strip(),
+                    'latitude': _to_float(r.get('latitude')),
+                    'longitude': _to_float(r.get('longitude')),
+                    'capacidade': _to_int(r.get('capacidade')),
+                    'status': r.get('status') or '',
+                    'id_projeto': str(r.get('id_projeto') or ''),
+                    'origem': Cto.ORIGEM_IXC,
+                    'is_active': True,
+                },
+            )
+    logger.info(f"IXC: {len(registros)} CTOs sincronizadas")
+    return len(registros)
+
+
 def update_clientes():
     """Função para atualizar a lista de clientes fibra do IXC e atualizar o campo cliente_fibra nas ONUs."""
+
+    # CTOs primeiro (mesmo sync do IXC). Falha aqui não pode impedir o sync de clientes.
+    try:
+        update_ctos()
+    except Exception as e:
+        logger.error(f"IXC: falha ao sincronizar CTOs (seguindo com clientes): {e}")
 
     response = search_ixc_page(1)
     if response.status_code != 200:

@@ -4,12 +4,12 @@ Guia de referência para agentes de IA (e humanos) trabalhando neste repositóri
 
 ## Regra obrigatória: mudanças na API
 
-**Qualquer alteração na API (endpoints em `olt/api_urls.py`, views em `olt/api_views.py`,
-serializers, ou qualquer mudança de contrato — request/response, status code, campo
-novo/removido, autenticação, permissões) exige aprovação prévia do usuário antes de ser
-implementada.**
+**Alterar um endpoint que já existe exige aprovação prévia do usuário.** Isso inclui
+qualquer mudança de contrato de um endpoint existente (rota em `olt/api_urls.py`, view em
+`olt/api_views.py`, serializer): request/response, campo novo/removido/renomeado, status
+code, autenticação, permissões ou o significado de um valor retornado.
 
-Antes de tocar em qualquer código de API, o agente deve:
+Antes de alterar um endpoint existente, o agente deve:
 1. Descrever claramente o que vai mudar: endpoint(s) afetado(s), comportamento atual vs.
    novo, impacto no contrato (o frontend ou outros consumidores quebram?), e por quê.
 2. Esperar a aprovação explícita do usuário.
@@ -17,8 +17,12 @@ Antes de tocar em qualquer código de API, o agente deve:
 
 Isso vale mesmo quando a mudança parece pequena ou for um "efeito colateral" de outra
 tarefa (ex.: corrigir um bug em `olt/utils.py` que muda o formato de um campo retornado
-por um endpoint). Na dúvida se algo conta como "mudança na API", tratar como se contasse e
-descrever antes de agir.
+por um endpoint existente). Na dúvida se algo conta como alteração de endpoint existente,
+tratar como se contasse e descrever antes de agir.
+
+**Endpoints novos não precisam de aprovação prévia**, desde que não mudem o comportamento
+dos existentes. Seguir os padrões do projeto (rota em `olt/api_urls.py` com `name=`,
+`IsAuthenticated`, decorators de segurança quando tocar a OLT) e documentar o contrato.
 
 ## O que é este projeto
 
