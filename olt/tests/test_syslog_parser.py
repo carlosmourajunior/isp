@@ -130,6 +130,15 @@ class AlarmeRealBordaTests(SimpleTestCase):
     def test_hostname(self):
         self.assertEqual(extract_hostname(self.TEXTO), 'VIA01BM')
 
+    def test_ont_inativa(self):
+        inativa = self.TEXTO.replace('Remote Defect Indication from ONT', 'ONT is inactive')
+        evento = parse_ont_alarm(inativa)
+        self.assertEqual(evento['event_type'], 'inativa')
+        self.assertEqual(evento['alarm_type'], 'ONT is inactive')
+
+    def test_rdi_continua_outro(self):
+        self.assertEqual(parse_ont_alarm(self.TEXTO)['event_type'], 'other')
+
 
 class ExtractHostnameTests(SimpleTestCase):
 

@@ -21,6 +21,8 @@ ALARM_TYPE_RE = re.compile(r'\bont-[a-z]+(?:-[a-z]+)*\b', re.IGNORECASE)
 # cliente - evento individual, não diz nada sobre a CTO.
 LOS_RE = re.compile(r'loss[\s_-]*sig|loss[\s_-]*of[\s_-]*signal|\blosi?\b', re.IGNORECASE)
 DYING_GASP_RE = re.compile(r'dying[\s_-]*gasp|\bdgi?\b', re.IGNORECASE)
+# Desconexão na release 6.2: "... alarm occurred for ont 1/1/2/8/18 ... : ONT is inactive".
+INATIVA_RE = re.compile(r'\bONT\s+is\s+inactive\b', re.IGNORECASE)
 CLEAR_RE = re.compile(r'\bclear(ed)?\b|\bend(ed)?\b', re.IGNORECASE)
 
 # Flag do `show alarm log ont-ploam` -> tipo de evento.
@@ -60,6 +62,8 @@ def parse_ont_alarm(raw):
 
     if LOS_RE.search(raw):
         event_type = 'los'
+    elif INATIVA_RE.search(raw):
+        event_type = 'inativa'
     elif DYING_GASP_RE.search(raw):
         event_type = 'dying_gasp'
     else:

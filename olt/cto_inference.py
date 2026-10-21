@@ -40,6 +40,7 @@ W_COFALHA_POR_QUEDA = 0.5
 W_COFALHA_MAX = 3.0
 BURST_WINDOW_S = 3       # eventos da mesma PON até 3 s de distância = mesma queda
 BURST_MAX_FRACAO_PON = 0.5   # queda de mais da metade da PON (problema na PON inteira) não diz nada sobre CTO
+INSTAVEL_MAX_QUEDAS = 30     # ONT que cai mais que isso no período é instável: cai junto com todo mundo por acaso
 RAMAL_PON_MIN_ANCORAS = 2
 RAMAL_PON_MIN_FRACAO = 0.15
 
@@ -112,9 +113,14 @@ def aprender_perfis(onts):
 
 def detectar_quedas(eventos, onts_por_pon):
     """Eventos (pon, position, timestamp) -> lista de quedas: conjuntos de
-    posições da mesma PON que caíram juntas (até BURST_WINDOW_S entre eventos)."""
+    posições da mesma PON que caíram juntas (até BURST_WINDOW_S entre eventos).
+    ONTs instáveis (mais de INSTAVEL_MAX_QUEDAS eventos) ficam de fora."""
+    por_ont = Counter((pon, position) for pon, position, _ in eventos)
+    instaveis = {chave for chave, n in por_ont.items() if n > INSTAVEL_MAX_QUEDAS}
     por_pon = defaultdict(list)
     for pon, position, ts in eventos:
+        if (pon, position) in instaveis:
+            continue
         por_pon[pon].append((ts, position))
 
     quedas = []
@@ -344,8 +350,12 @@ def run_inference(olt, dias_eventos=30):
         list(Cto.objects.filter(is_active=True, olt__isnull=True))
 
     desde = timezone.now() - timedelta(days=dias_eventos)
+    # Só desconexões (LOS / ONT inativa): RDI e alarmes de nível oscilam o tempo
+    # todo e não indicam fibra em comum - contaminavam o agrupamento.
     eventos = [(e.pon, e.position, e.occurred_at) for e in
-               OntEvent.objects.filter(olt=olt, is_clear=False, occurred_at__gte=desde).only('pon', 'position', 'occurred_at')]
+               OntEvent.objects.filter(olt=olt, is_clear=False, occurred_at__gte=desde,
+                                       event_type__in=OntEvent.TYPES_QUEDA)
+               .only('pon', 'position', 'occurred_at')]
 
     resultado, perfis, pons_por_ramal, quedas = infer(onts, ctos, eventos)
 
