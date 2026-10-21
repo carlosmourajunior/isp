@@ -116,6 +116,8 @@ def update_clientes():
                 cliente_data = {
                     'mac': registro['mac'],
                     'nome': nome,
+                    'status_contrato': dados_reais['status_contrato'] if vinculado else '',
+                    'status_internet': dados_reais['status_internet'] if vinculado else '',
                     'id_contrato': registro.get('id_contrato', ''),
                     'vinculado': vinculado,
                     'latitude': registro.get('latitude', ''),
@@ -148,8 +150,9 @@ def _formata_endereco(*partes):
 def _build_cliente_lookup():
     """
     Busca cliente_contrato e cliente em bloco no IXC e monta um mapa
-    id_contrato -> {'nome', 'endereco'} com o nome/endereço reais do
-    cliente (razão social + endereço cadastral). Não guarda CPF/CNPJ nem
+    id_contrato -> {'nome', 'endereco', 'status_contrato', 'status_internet'}
+    com o nome/endereço reais do cliente (razão social + endereço cadastral)
+    e o status do contrato. Não guarda CPF/CNPJ nem
     nenhum outro dado sensível - só o necessário pra exibição.
 
     Não persiste nada: é um cache em memória usado só durante o sync.
@@ -180,6 +183,8 @@ def _build_cliente_lookup():
         lookup[id_contrato] = {
             'nome': cliente.get('razao', ''),
             'endereco': endereco,
+            'status_contrato': contrato.get('status') or '',
+            'status_internet': contrato.get('status_internet') or '',
         }
     return lookup
 

@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig, Cto, ClienteFibraIxc, CtoInferencia
+from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig, Cto, ClienteFibraIxc, CtoInferencia, Vistoria, VistoriaPorta
 from olt.utils import olt_connector
 
 
@@ -225,3 +225,27 @@ class CtoInferenciaAdmin(ReadOnlyAdmin):
     @admin.display(description="Por que a 2ª candidata")
     def motivos_alternativa(self, obj):
         return self._motivos(obj, 'alternativa')
+
+
+class VistoriaPortaInline(admin.TabularInline):
+    model = VistoriaPorta
+    extra = 0
+    fields = ('porta', 'resultado', 'metodo', 'cliente_nome', 'serial', 'pon', 'position', 'reconexao_confirmada', 'observacao')
+    readonly_fields = fields
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@register(Vistoria)
+class VistoriaAdmin(admin.ModelAdmin):
+    """Vistorias são feitas pela tela do frontend; aqui é consulta."""
+    list_display = ('cto', 'olt', 'tecnico', 'usuario', 'iniciada_em', 'finalizada_em')
+    list_filter = ('olt',)
+    search_fields = ('cto__descricao', 'tecnico', 'portas__cliente_nome', 'portas__serial')
+    readonly_fields = ('cto', 'olt', 'usuario', 'iniciada_em', 'finalizada_em')
+    inlines = [VistoriaPortaInline]
+
+    def has_add_permission(self, request):
+        return False

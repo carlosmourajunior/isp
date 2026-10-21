@@ -2,6 +2,7 @@
 Inferência de CTO por ONT: cruza o que a rede mostra com o cadastro.
 
 Sinais (cada um soma ou tira pontos de uma CTO candidata):
+- Vistoria em campo (VistoriaPorta): verdade de campo, prevalece sobre tudo.
 - Cadastro IXC (ClienteFibraIxc.id_caixa_ftth): ponto de partida, desatualizado.
 - PON: uma CTO é alimentada por uma PON. A PON de cada CTO (e de cada ramal do
   KMZ) é aprendida das "âncoras" - ONTs cujo cliente tem CTO no cadastro.
@@ -23,6 +24,7 @@ from olt.kmz import haversine_m
 logger = logging.getLogger(__name__)
 
 # Pesos e limites - ajustar com o resultado de campo.
+W_CAMPO = 10.0           # cliente identificado na caixa em vistoria
 W_CADASTRO = 3.0
 W_PON_CTO = 2.0          # PON da ONT = PON aprendida da própria CTO
 W_PON_RAMAL = 1.0        # PON da ONT = PON aprendida do ramal (CTO sem âncora própria)
@@ -58,8 +60,14 @@ class Ont:
     distance_km: float = None
     cliente_nome: str = ''
     cto_cadastro: object = None      # Cto ou None
+    cto_campo: object = None         # Cto confirmada em vistoria, ou None
     lat: float = None
     lon: float = None
+
+
+def ancora(ont):
+    """CTO em que a ONT serve de âncora: a da vistoria, senão a do cadastro."""
+    return ont.cto_campo or ont.cto_cadastro
 
 
 @dataclass
@@ -93,7 +101,7 @@ def aprender_perfis(onts):
     perfis = {}
     ramal_pons = defaultdict(Counter)
     for ont in onts:
-        cto = ont.cto_cadastro
+        cto = ancora(ont)
         if cto is None:
             continue
         perfil = perfis.setdefault(cto.pk, CtoPerfil(cto))
@@ -165,6 +173,10 @@ def contar_cofalhas(quedas, ancoras_por_posicao):
 def pontuar(ont, cto, perfil, pons_ramal, cofalhas_ont):
     score, motivos = 0.0, []
 
+    if ont.cto_campo is not None and ont.cto_campo.pk == cto.pk:
+        score += W_CAMPO
+        motivos.append(f"identificado nesta CTO em vistoria (+{W_CAMPO:g})")
+
     if ont.cto_cadastro is not None and ont.cto_cadastro.pk == cto.pk:
         score += W_CADASTRO
         motivos.append(f"cadastro IXC (+{W_CADASTRO:g})")
@@ -233,8 +245,9 @@ def candidatas(ont, ctos, perfis, pons_por_ramal):
         elif None not in (ont.lat, ont.lon, cto.latitude, cto.longitude) and \
                 haversine_m(ont.lat, ont.lon, cto.latitude, cto.longitude) <= GEO_CANDIDATE_M:
             escolhidas[cto.pk] = cto
-    if ont.cto_cadastro is not None:
-        escolhidas[ont.cto_cadastro.pk] = ont.cto_cadastro
+    for fixa in (ont.cto_cadastro, ont.cto_campo):
+        if fixa is not None:
+            escolhidas[fixa.pk] = fixa
     return list(escolhidas.values())
 
 
@@ -252,6 +265,11 @@ def classificar(ont, ranking):
     CTO provável ser a que a rede aponta e não a do cadastro."""
     if not ranking:
         return 'sem_candidata', ranking
+
+    if ont.cto_campo is not None:
+        # Verdade de campo: a CTO da vistoria vai para o topo, qualquer que seja o resto.
+        campo = [item for item in ranking if item[1].pk == ont.cto_campo.pk]
+        return 'vistoriado', campo + [item for item in ranking if item[1].pk != ont.cto_campo.pk]
 
     if ont.cto_cadastro is not None:
         por_evidencia = sorted(ranking, key=lambda item: evidencia(item, ont), reverse=True)
@@ -281,7 +299,7 @@ def infer(onts, ctos, eventos=()):
     perfis, pons_por_ramal = aprender_perfis(onts)
 
     onts_por_pon = Counter(o.pon for o in onts)
-    ancoras_por_posicao = {(o.pon, o.position): o.cto_cadastro.pk for o in onts if o.cto_cadastro is not None}
+    ancoras_por_posicao = {(o.pon, o.position): ancora(o).pk for o in onts if ancora(o) is not None}
     quedas = detectar_quedas(eventos, onts_por_pon)
     cofalhas = contar_cofalhas(quedas, ancoras_por_posicao)
 
@@ -290,7 +308,7 @@ def infer(onts, ctos, eventos=()):
         ranking = []
         for cto in candidatas(ont, ctos, perfis, pons_por_ramal):
             perfil = perfis.get(cto.pk)
-            if perfil is not None and ont.cto_cadastro is not None and cto.pk == ont.cto_cadastro.pk:
+            if perfil is not None and ancora(ont) is not None and cto.pk == ancora(ont).pk:
                 perfil = perfil.sem(ont)
             score, motivos = pontuar(ont, cto, perfil,
                                      pons_por_ramal.get((cto.olt_id, cto.ramal), set()) if cto.ramal else set(),
@@ -321,11 +339,16 @@ def run_inference(olt, dias_eventos=30):
     from django.db import transaction
     from django.utils import timezone
 
-    from olt.models import ONU, ClienteFibraIxc, Cto, CtoInferencia, OntEvent
+    from olt.models import ONU, ClienteFibraIxc, Cto, CtoInferencia, OntEvent, VistoriaPorta
     from olt.utils import parse_float
 
     clientes = {c.mac: c for c in ClienteFibraIxc.objects.filter(is_active=True)}
     ctos_por_ixc = {c.ixc_id: c for c in Cto.objects.filter(is_active=True).exclude(ixc_id=None)}
+    # Vistoria mais recente de cada serial (ordem crescente: a última sobrescreve).
+    campo = {}
+    for vp in (VistoriaPorta.objects.filter(resultado=VistoriaPorta.RESULTADO_CLIENTE).exclude(serial='')
+               .select_related('vistoria__cto').order_by('vistoria__iniciada_em', 'registrado_em')):
+        campo[vp.serial] = vp.vistoria.cto
 
     onts = []
     for onu in ONU.objects.filter(olt=olt):
@@ -336,6 +359,7 @@ def run_inference(olt, dias_eventos=30):
             distance_km=parse_float(onu.ont_olt),
             cliente_nome=cliente.nome if cliente else '',
             cto_cadastro=cto_cad,
+            cto_campo=campo.get(onu.serial),
             lat=parse_float(cliente.latitude) if cliente else None,
             lon=parse_float(cliente.longitude) if cliente else None,
         ))
@@ -345,9 +369,11 @@ def run_inference(olt, dias_eventos=30):
             o.lat = o.lon = None
 
     # CTOs da OLT (KMZ) + as do IXC sem OLT definida (Ouro Fino, sem KMZ nomeado):
-    # estas só viram candidatas por âncora ou geografia.
-    ctos = list(Cto.objects.filter(is_active=True).filter(olt=olt)) + \
-        list(Cto.objects.filter(is_active=True, olt__isnull=True))
+    # estas só viram candidatas por âncora ou geografia. Mesma instância por pk
+    # (cto_cadastro/cto_campo vêm de outras consultas).
+    ctos_por_pk = {c.pk: c for c in list(Cto.objects.filter(is_active=True).filter(olt=olt)) +
+                   list(Cto.objects.filter(is_active=True, olt__isnull=True))}
+    ctos = list(ctos_por_pk.values())
 
     desde = timezone.now() - timedelta(days=dias_eventos)
     # Só desconexões (LOS / ONT inativa): RDI e alarmes de nível oscilam o tempo
@@ -388,7 +414,8 @@ def run_inference(olt, dias_eventos=30):
 
     resumo = {
         'onts': len(onts),
-        'ancoras': sum(1 for o in onts if o.cto_cadastro is not None),
+        'ancoras': sum(1 for o in onts if ancora(o) is not None),
+        'vistoriados': sum(1 for o in onts if o.cto_campo is not None),
         'eventos': len(eventos),
         'quedas_uteis': len(quedas),
         'status': dict(Counter(status for _, status, _ in resultado)),

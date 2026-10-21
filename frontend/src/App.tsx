@@ -24,6 +24,8 @@ import { TemperatureAlertsPage } from '@/pages/TemperatureAlertsPage'
 import { TasksPage } from '@/pages/TasksPage'
 import { SchedulerPage } from '@/pages/SchedulerPage'
 import { SearchPage } from '@/pages/SearchPage'
+import { VistoriasPage } from '@/pages/vistorias/VistoriasPage'
+import { VistoriaPage } from '@/pages/vistorias/VistoriaPage'
 
 // Carregada sob demanda: traz o Leaflet (mapa), que não precisa pesar nas outras telas.
 const CtosPage = lazy(() => import('@/pages/ctos/CtosPage').then((m) => ({ default: m.CtosPage })))
@@ -77,6 +79,8 @@ function App() {
                       </Suspense>
                     }
                   />
+                  <Route path="/vistorias" element={<VistoriasPage />} />
+                  <Route path="/vistorias/:id" element={<VistoriaPage />} />
 
                   {/* Rede */}
                   <Route path="/olts" element={<OltsPage />} />

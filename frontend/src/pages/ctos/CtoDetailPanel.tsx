@@ -1,6 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { Loader2, X } from 'lucide-react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { ClipboardCheck, Loader2, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { papelStyles, situacaoStyles } from '@/lib/ctoStatus'
@@ -42,6 +44,11 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
   const { data, isLoading } = useQuery({
     queryKey: ['/ctos/', ctoId],
     queryFn: async () => (await api.get<CtoDetail>(`/ctos/${ctoId}/`)).data,
+  })
+  const navigate = useNavigate()
+  const iniciarVistoria = useMutation({
+    mutationFn: async () => (await api.post<{ id: number }>('/vistorias/', { cto: ctoId })).data,
+    onSuccess: (v) => navigate(`/vistorias/${v.id}`),
   })
 
   return (
@@ -86,6 +93,16 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
             />
             <Numero label="Provavelmente em outra" value={data.suspeitos} hint="Cadastrados aqui, rede aponta outra CTO" />
           </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-fit"
+            disabled={iniciarVistoria.isPending}
+            onClick={() => iniciarVistoria.mutate()}
+          >
+            <ClipboardCheck /> Iniciar vistoria desta caixa
+          </Button>
 
           {data.offline > 0 && (
             <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">

@@ -97,7 +97,7 @@ class BuildClienteLookupTests(SimpleTestCase):
     def test_monta_nome_e_endereco_reais_a_partir_do_contrato(self, mock_post):
         mock_post.side_effect = _por_recurso({
             'cliente_contrato': {'total': '1', 'registros': [
-                {'id': '2639', 'id_cliente': '2469'},
+                {'id': '2639', 'id_cliente': '2469', 'status': 'A', 'status_internet': 'CA'},
             ]},
             'cliente': {'total': '1', 'registros': [
                 {
@@ -114,6 +114,8 @@ class BuildClienteLookupTests(SimpleTestCase):
             '2639': {
                 'nome': 'Luana Aparecida de Moraes Silva',
                 'endereco': 'Zona Rural, SN, Chácara Rancho Tropeiro, Bogari',
+                'status_contrato': 'A',
+                'status_internet': 'CA',
             }
         })
 

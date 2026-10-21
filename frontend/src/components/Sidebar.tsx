@@ -18,6 +18,7 @@ import {
   Search,
   X,
   MapPin,
+  ClipboardCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -57,6 +58,7 @@ const navGroups: NavGroup[] = [
       { to: '/clientes-fibra', label: 'Clientes Fibra', icon: Users },
       { to: '/ftth-boxes', label: 'Caixas FTTH', icon: Boxes },
       { to: '/ctos', label: 'CTOs (ocupação)', icon: MapPin },
+      { to: '/vistorias', label: 'Vistoria de CTO', icon: ClipboardCheck },
     ],
   },
   {
