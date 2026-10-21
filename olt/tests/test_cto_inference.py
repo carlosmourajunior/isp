@@ -65,6 +65,22 @@ class InferTests(SimpleTestCase):
         resultado, *_ = infer(self.onts, [self.a, self.b, self.c, d])
         self.assertEqual(resultado_de(resultado, 8)[0], 'incerto')
 
+    def test_vistoria_prevalece_sobre_cadastro_e_rede(self):
+        # S7 está cadastrada na A e a rede aponta a B; em campo foi achada na A.
+        self.onts[6].cto_campo = self.a
+        resultado, *_ = infer(self.onts, [self.a, self.b, self.c])
+        status, ranking = resultado_de(resultado, 7)
+        self.assertEqual(status, 'vistoriado')
+        self.assertIs(ranking[0][1], self.a)
+
+    def test_vistoria_vira_ancora(self):
+        # S10 (PON sem nenhuma âncora) identificada na C em campo: a PON passa a ter candidata.
+        self.onts[9].cto_campo = self.c
+        self.onts.append(Ont('1/1/9/9', 2, 'S12', 1.0))
+        resultado, *_ = infer(self.onts, [self.a, self.b, self.c])
+        status, ranking = next((s, r) for o, s, r in resultado if o.serial == 'S12')
+        self.assertIs(ranking[0][1], self.c)
+
     def test_pon_sem_ancoras_fica_sem_candidata(self):
         resultado, *_ = infer(self.onts, [self.a, self.b, self.c])
         status, _ = next((s, r) for o, s, r in resultado if o.pon == '1/1/9/9')

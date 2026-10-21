@@ -135,6 +135,10 @@ class ClienteFibraIxc(models.Model):
     id_caixa_ftth = models.CharField(max_length=50, blank=True, null=True)
     is_active = models.BooleanField(default=True, verbose_name="Ativo")
     id_contrato = models.CharField(max_length=50, blank=True, default='', verbose_name="ID do contrato (IXC)")
+    # Status do contrato no IXC (cliente_contrato.status / status_internet), códigos crus.
+    # Rótulos e a regra "ativo/bloqueado/inativo" em olt/contrato.py.
+    status_contrato = models.CharField(max_length=5, blank=True, default='', verbose_name="Status do contrato (IXC)")
+    status_internet = models.CharField(max_length=5, blank=True, default='', verbose_name="Status da internet (IXC)")
     vinculado = models.BooleanField(
         default=False,
         verbose_name="Vinculado a contrato",
@@ -541,7 +545,9 @@ class CtoInferencia(models.Model):
     STATUS_DIVERGENTE = 'divergente'
     STATUS_INCERTO = 'incerto'
     STATUS_SEM_CANDIDATA = 'sem_candidata'
+    STATUS_VISTORIADO = 'vistoriado'
     STATUS_CHOICES = [
+        (STATUS_VISTORIADO, 'Vistoriado (confirmado em campo)'),
         (STATUS_CONFIRMADO, 'Confirmado (cadastro bate com a rede)'),
         (STATUS_PROVAVEL, 'Provável (sem cadastro, evidência forte)'),
         (STATUS_DIVERGENTE, 'Divergente (rede aponta outra CTO que a do cadastro)'),
@@ -576,3 +582,64 @@ class CtoInferencia(models.Model):
 
     def __str__(self):
         return f"{self.pon}/{self.position} -> {self.cto_provavel or '?'} ({self.status})"
+
+
+class Vistoria(models.Model):
+    """Verificação de uma CTO em campo (técnico na caixa + bancada no sistema).
+    Cada porta registrada vira verdade de campo para a inferência."""
+
+    cto = models.ForeignKey('Cto', on_delete=models.CASCADE, related_name='vistorias')
+    olt = models.ForeignKey(Olt, on_delete=models.SET_NULL, null=True, blank=True, related_name='vistorias')
+    usuario = models.CharField(max_length=150, blank=True, default='', verbose_name="Registrada por")
+    tecnico = models.CharField(max_length=150, blank=True, default='', verbose_name="Técnico em campo")
+    observacao = models.TextField(blank=True, default='')
+    iniciada_em = models.DateTimeField(auto_now_add=True)
+    finalizada_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Vistoria de CTO"
+        verbose_name_plural = "Vistorias de CTO"
+        ordering = ['-iniciada_em']
+
+    def __str__(self):
+        return f"Vistoria {self.cto} em {self.iniciada_em:%d/%m/%Y}"
+
+
+class VistoriaPorta(models.Model):
+    RESULTADO_CLIENTE = 'cliente'
+    RESULTADO_VAZIA = 'vazia'
+    RESULTADO_SEM_ONT_ATIVA = 'sem_ont_ativa'
+    RESULTADO_NAO_IDENTIFICADO = 'nao_identificado'
+    RESULTADO_CHOICES = [
+        (RESULTADO_CLIENTE, 'Cliente identificado'),
+        (RESULTADO_VAZIA, 'Porta vazia (sem drop)'),
+        # Tem drop, mas desconectar não derrubou ninguém: fantasma - porta a liberar.
+        (RESULTADO_SEM_ONT_ATIVA, 'Drop sem ONT ativa (fantasma)'),
+        (RESULTADO_NAO_IDENTIFICADO, 'Não identificado'),
+    ]
+    METODO_CHOICES = [
+        ('etiqueta', 'Etiqueta / nome informado'),
+        ('desconexao', 'Desconexão (alarme da OLT)'),
+        ('manual', 'Manual'),
+    ]
+
+    vistoria = models.ForeignKey(Vistoria, on_delete=models.CASCADE, related_name='portas')
+    porta = models.PositiveSmallIntegerField()
+    resultado = models.CharField(max_length=20, choices=RESULTADO_CHOICES)
+    metodo = models.CharField(max_length=20, choices=METODO_CHOICES, default='manual')
+    serial = models.CharField(max_length=30, blank=True, default='', db_index=True)
+    pon = models.CharField(max_length=20, blank=True, default='')
+    position = models.IntegerField(null=True, blank=True)
+    cliente_nome = models.CharField(max_length=255, blank=True, default='')
+    reconexao_confirmada = models.BooleanField(default=False, verbose_name="Reconexão confirmada pela OLT")
+    observacao = models.CharField(max_length=255, blank=True, default='')
+    registrado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Porta vistoriada"
+        verbose_name_plural = "Portas vistoriadas"
+        unique_together = ['vistoria', 'porta']
+        ordering = ['porta']
+
+    def __str__(self):
+        return f"{self.vistoria.cto} porta {self.porta}: {self.get_resultado_display()}"

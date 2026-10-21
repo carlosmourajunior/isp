@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views, cto_views, health_views, user_activity_views
+from . import api_views, cto_views, health_views, user_activity_views, vistoria_views
 
 app_name = 'api'
 
@@ -67,6 +67,16 @@ urlpatterns = [
     path('ctos/<int:pk>/', cto_views.cto_detail, name='cto_detail'),
     path('cto-inferencias/', cto_views.CtoInferenciaListAPIView.as_view(), name='cto_inferencia_list'),
     path('cto-inferencias/resumo/', cto_views.cto_inferencia_resumo, name='cto_inferencia_resumo'),
+
+    # Vistoria de CTO em campo (olt/vistoria_views.py)
+    path('vistorias/', vistoria_views.vistoria_list, name='vistoria_list'),
+    path('vistorias/clientes/', vistoria_views.vistoria_buscar_cliente, name='vistoria_buscar_cliente'),
+    path('vistorias/correcoes/', vistoria_views.vistoria_correcoes, name='vistoria_correcoes'),
+    path('vistorias/<int:pk>/', vistoria_views.vistoria_detail, name='vistoria_detail'),
+    path('vistorias/<int:pk>/portas/', vistoria_views.vistoria_porta_salvar, name='vistoria_porta_salvar'),
+    path('vistorias/<int:pk>/portas/<int:porta>/', vistoria_views.vistoria_porta_remover, name='vistoria_porta_remover'),
+    path('vistorias/<int:pk>/finalizar/', vistoria_views.vistoria_finalizar, name='vistoria_finalizar'),
+    path('vistorias/<int:pk>/eventos/', vistoria_views.vistoria_eventos, name='vistoria_eventos'),
 
     # Tarefas em background (RQ)
     path('tasks/', api_views.task_list, name='task_list'),
