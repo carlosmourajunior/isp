@@ -387,13 +387,19 @@ class OntEvent(models.Model):
     quedas simultâneas (mesma CTO caem juntas por LOS)."""
 
     TYPE_LOS = 'los'
+    TYPE_INATIVA = 'inativa'
     TYPE_DYING_GASP = 'dying_gasp'
     TYPE_OTHER = 'other'
     TYPE_CHOICES = [
         (TYPE_LOS, 'LOS (perda de sinal)'),
+        # "ONT is inactive": o alarme de desconexão que a OLT (release 6.2) realmente manda.
+        (TYPE_INATIVA, 'ONT inativa (saiu do ar)'),
         (TYPE_DYING_GASP, 'Dying gasp (falta de energia)'),
-        (TYPE_OTHER, 'Outro'),
+        (TYPE_OTHER, 'Outro (RDI, nível de sinal...)'),
     ]
+    # Tipos que indicam a ONT desconectada - os únicos que servem para
+    # inferir fibra em comum (RDI e alarmes de nível oscilam e são ruído).
+    TYPES_QUEDA = (TYPE_LOS, TYPE_INATIVA)
 
     olt = models.ForeignKey(Olt, on_delete=models.CASCADE, null=True, blank=True, related_name='ont_events', verbose_name="OLT")
     message = models.ForeignKey(OltSyslogMessage, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')

@@ -101,3 +101,11 @@ class DetectarQuedasTests(SimpleTestCase):
                    ('Q', 1, t0), ('Q', 2, t0), ('Q', 3, t0)]                    # PON Q inteira: descartada
         quedas = detectar_quedas(eventos, {'P': 10, 'Q': 4})
         self.assertEqual(quedas, [('P', {1, 2})])
+
+    def test_ont_instavel_fica_fora(self):
+        t0 = datetime(2026, 10, 20, 10, 0, 0)
+        # ONT 9 cai a cada minuto (instável); 1 e 2 caem juntas uma vez, com a 9 no meio.
+        eventos = [('P', 9, t0 + timedelta(minutes=i)) for i in range(40)]
+        eventos += [('P', 1, t0 + timedelta(minutes=5)), ('P', 2, t0 + timedelta(minutes=5, seconds=1))]
+        quedas = detectar_quedas(eventos, {'P': 20})
+        self.assertEqual(quedas, [('P', {1, 2})])
