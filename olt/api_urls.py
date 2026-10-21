@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views, health_views, user_activity_views
+from . import api_views, cto_views, health_views, user_activity_views
 
 app_name = 'api'
 
@@ -61,6 +61,12 @@ urlpatterns = [
 
     # Caixas FTTH
     path('olt/ftth-boxes/', api_views.ftth_boxes_by_occupancy, name='ftth_boxes_by_occupancy'),
+
+    # CTOs - inferência de ocupação (olt/cto_views.py)
+    path('ctos/', cto_views.cto_list, name='cto_list'),
+    path('ctos/<int:pk>/', cto_views.cto_detail, name='cto_detail'),
+    path('cto-inferencias/', cto_views.CtoInferenciaListAPIView.as_view(), name='cto_inferencia_list'),
+    path('cto-inferencias/resumo/', cto_views.cto_inferencia_resumo, name='cto_inferencia_resumo'),
 
     # Tarefas em background (RQ)
     path('tasks/', api_views.task_list, name='task_list'),

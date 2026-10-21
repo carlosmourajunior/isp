@@ -46,7 +46,8 @@ def pending_job_ids(queue, job_ids):
 def enqueue_full_update(queue, olts):
     """Mesma sequência do comprehensive_update_task, mas guardando os IDs
     de todos os jobs (lá só o job "pai" é conhecido, e ele termina antes dos
-    filhos). Clientes do IXC uma vez só - não é por OLT."""
+    filhos). Clientes do IXC (e CTOs) uma vez só - não é por OLT. No fim, a
+    inferência de CTO de cada OLT."""
     from olt import tasks
 
     steps = [
@@ -64,6 +65,11 @@ def enqueue_full_update(queue, olts):
     job = queue.enqueue(tasks.update_clientes_task, user=AUTO_USER,
                         menu_item="Atualização de Clientes - automática", job_timeout=1200)
     job_ids.append(job.id)
+    # Por último: depende das ONUs e dos clientes/CTOs atualizados acima (fila FIFO, um worker).
+    for olt in olts:
+        job = queue.enqueue(tasks.infer_ctos_task, olt_id=olt.id, user=AUTO_USER,
+                            menu_item=f"Inferência de CTOs ({olt.name}) - automática", job_timeout=600)
+        job_ids.append(job.id)
     return job_ids
 
 

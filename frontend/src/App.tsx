@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider, RequireAuth } from '@/lib/auth'
@@ -23,6 +24,9 @@ import { TemperatureAlertsPage } from '@/pages/TemperatureAlertsPage'
 import { TasksPage } from '@/pages/TasksPage'
 import { SchedulerPage } from '@/pages/SchedulerPage'
 import { SearchPage } from '@/pages/SearchPage'
+
+// Carregada sob demanda: traz o Leaflet (mapa), que não precisa pesar nas outras telas.
+const CtosPage = lazy(() => import('@/pages/ctos/CtosPage').then((m) => ({ default: m.CtosPage })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +69,14 @@ function App() {
                   {/* Clientes & Fibra */}
                   <Route path="/clientes-fibra" element={<ClientesFibraPage />} />
                   <Route path="/ftth-boxes" element={<FtthBoxesPage />} />
+                  <Route
+                    path="/ctos"
+                    element={
+                      <Suspense fallback={<div className="py-10 text-center text-muted-foreground">Carregando…</div>}>
+                        <CtosPage />
+                      </Suspense>
+                    }
+                  />
 
                   {/* Rede */}
                   <Route path="/olts" element={<OltsPage />} />

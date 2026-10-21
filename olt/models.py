@@ -468,3 +468,105 @@ class SchedulerConfig(models.Model):
     def __str__(self):
         estado = f"a cada {self.interval_minutes} min" if self.enabled else "desligada"
         return f"Atualização automática ({estado})"
+
+
+class Cto(models.Model):
+    """Caixa de atendimento (CTO). Base: cadastro do IXC (rad_caixa_ftth),
+    enriquecido com o projeto da rede (KMZ): ramal, portas e splitter. Caixas
+    que só existem no KMZ entram com origem='kmz'.
+
+    ClienteFibraIxc.id_caixa_ftth guarda o id do IXC (ixc_id) - a ligação é
+    por esse valor, sem FK, para não depender da ordem dos syncs.
+    """
+
+    ORIGEM_IXC = 'ixc'
+    ORIGEM_KMZ = 'kmz'
+    ORIGEM_CHOICES = [
+        (ORIGEM_IXC, 'IXC'),
+        # Caixa do projeto (KMZ) que não existe no cadastro do IXC - ainda
+        # assim é candidata na inferência (clientes dela não têm como estar
+        # cadastrados nela).
+        (ORIGEM_KMZ, 'Só no KMZ'),
+    ]
+
+    ixc_id = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="ID no IXC")
+    origem = models.CharField(max_length=5, choices=ORIGEM_CHOICES, default=ORIGEM_IXC, db_index=True)
+    # CA/CTO = atendimento; CD = distribuição/derivação (normalmente sem cliente direto).
+    tipo = models.CharField(max_length=5, blank=True, default='', verbose_name="Tipo")
+    descricao = models.CharField(max_length=100, db_index=True, verbose_name="Nome")
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    capacidade = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Capacidade (IXC)")
+    status = models.CharField(max_length=5, blank=True, default='', verbose_name="Status IXC")
+    id_projeto = models.CharField(max_length=20, blank=True, default='', verbose_name="Projeto IXC")
+    is_active = models.BooleanField(default=True, verbose_name="Presente no último sync do IXC")
+
+    # Preenchidos pela importação do KMZ (manage.py importar_kmz).
+    olt = models.ForeignKey(Olt, on_delete=models.SET_NULL, null=True, blank=True, related_name='ctos', verbose_name="OLT")
+    ramal = models.CharField(max_length=50, blank=True, default='', db_index=True, verbose_name="Ramal (KMZ)")
+    kmz_nome = models.CharField(max_length=100, blank=True, default='', verbose_name="Nome no KMZ")
+    kmz_portas = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Portas (KMZ)")
+    kmz_splitter = models.CharField(max_length=20, blank=True, default='', verbose_name="Splitter (KMZ)")
+    kmz_descricao = models.TextField(blank=True, default='', verbose_name="Descrição no KMZ")
+    kmz_match = models.CharField(max_length=20, blank=True, default='', verbose_name="Como casou com o KMZ")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "CTO"
+        verbose_name_plural = "CTOs"
+        ordering = ['descricao']
+
+    @property
+    def portas(self):
+        """Portas reais: o KMZ (projeto) prevalece sobre o IXC quando existe."""
+        return self.kmz_portas or self.capacidade
+
+    def __str__(self):
+        return self.descricao
+
+
+class CtoInferencia(models.Model):
+    """Resultado da inferência de CTO para cada ONT (olt/cto_inference.py).
+    Recalculado inteiro a cada execução (manage.py inferir_ctos)."""
+
+    STATUS_CONFIRMADO = 'confirmado'
+    STATUS_PROVAVEL = 'provavel'
+    STATUS_DIVERGENTE = 'divergente'
+    STATUS_INCERTO = 'incerto'
+    STATUS_SEM_CANDIDATA = 'sem_candidata'
+    STATUS_CHOICES = [
+        (STATUS_CONFIRMADO, 'Confirmado (cadastro bate com a rede)'),
+        (STATUS_PROVAVEL, 'Provável (sem cadastro, evidência forte)'),
+        (STATUS_DIVERGENTE, 'Divergente (rede aponta outra CTO que a do cadastro)'),
+        (STATUS_INCERTO, 'Incerto'),
+        (STATUS_SEM_CANDIDATA, 'Sem candidata'),
+    ]
+
+    olt = models.ForeignKey(Olt, on_delete=models.CASCADE, related_name='cto_inferencias')
+    pon = models.CharField(max_length=20)
+    position = models.IntegerField(verbose_name="Posição")
+    serial = models.CharField(max_length=30, db_index=True)
+    cliente_nome = models.CharField(max_length=255, blank=True, default='', verbose_name="Cliente")
+    distance_km = models.FloatField(null=True, blank=True, verbose_name="Distância (km)")
+    cto_cadastro = models.ForeignKey('Cto', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+                                     verbose_name="CTO no cadastro IXC")
+    cto_provavel = models.ForeignKey('Cto', on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='inferencias', verbose_name="CTO provável")
+    score = models.FloatField(null=True, blank=True)
+    cto_alternativa = models.ForeignKey('Cto', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+                                        verbose_name="2ª candidata")
+    score_alternativa = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True)
+    # {'provavel': [...], 'alternativa': [...], 'cadastro': [...]} - por que cada CTO ganhou/perdeu pontos.
+    motivos = models.JSONField(default=dict, blank=True)
+    calculado_em = models.DateTimeField(verbose_name="Calculado em")
+
+    class Meta:
+        verbose_name = "Inferência de CTO"
+        verbose_name_plural = "Inferências de CTO"
+        unique_together = ['olt', 'pon', 'position']
+        ordering = ['olt', 'pon', 'position']
+
+    def __str__(self):
+        return f"{self.pon}/{self.position} -> {self.cto_provavel or '?'} ({self.status})"

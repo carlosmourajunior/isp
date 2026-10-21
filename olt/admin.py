@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.contrib.admin import register
 from django.contrib import messages
-from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig
+from olt.models import ONU, Olt, OltUsers, PlacaOnu, AllowedIP, OntEvent, OltSyslogMessage, OntSnapshot, SchedulerConfig, Cto, ClienteFibraIxc, CtoInferencia
 from olt.utils import olt_connector
 
 
@@ -177,3 +177,51 @@ class SchedulerConfigAdmin(admin.ModelAdmin):
         if obj.scheduler_alive():
             return f"Ativo (último sinal há {segundos}s)"
         return f"Sem sinal há {segundos // 60} min - o container 'scheduler' está rodando?"
+
+
+@register(Cto)
+class CtoAdmin(ReadOnlyAdmin):
+    """CTOs vêm do IXC (sync_ctos_ixc) + KMZ (importar_kmz): só leitura."""
+    list_display = ('descricao', 'tipo', 'origem', 'ixc_id', 'olt', 'ramal', 'portas_display', 'clientes_cadastro', 'kmz_splitter', 'kmz_match', 'is_active')
+    list_filter = ('olt', 'origem', 'tipo', 'ramal', 'kmz_match', 'is_active', 'id_projeto')
+    search_fields = ('descricao', 'ixc_id', 'kmz_nome')
+
+    @admin.display(description="Portas")
+    def portas_display(self, obj):
+        return obj.portas
+
+    @admin.display(description="Clientes no cadastro IXC")
+    def clientes_cadastro(self, obj):
+        if not obj.ixc_id:
+            return '-'
+        return ClienteFibraIxc.objects.filter(id_caixa_ftth=obj.ixc_id, is_active=True).count()
+
+
+@register(CtoInferencia)
+class CtoInferenciaAdmin(ReadOnlyAdmin):
+    """Resultado de manage.py inferir_ctos."""
+    list_display = ('pon', 'position', 'serial', 'cliente_nome', 'distance_km', 'cto_cadastro', 'cto_provavel',
+                    'score', 'cto_alternativa', 'score_alternativa', 'status')
+    list_filter = ('olt', 'status', 'pon')
+    search_fields = ('serial', 'cliente_nome', 'cto_provavel__descricao', 'cto_cadastro__descricao')
+    list_select_related = ('cto_cadastro', 'cto_provavel', 'cto_alternativa')
+    readonly_fields = ('motivos_provavel', 'motivos_cadastro', 'motivos_alternativa')
+
+    @staticmethod
+    def _motivos(obj, chave):
+        motivos = obj.motivos or {}
+        if isinstance(motivos, list):  # formato antigo
+            return "; ".join(motivos) if chave == 'provavel' else ''
+        return "; ".join(motivos.get(chave, [])) or '-'
+
+    @admin.display(description="Por que a CTO provável")
+    def motivos_provavel(self, obj):
+        return self._motivos(obj, 'provavel')
+
+    @admin.display(description="Por que a CTO do cadastro perdeu")
+    def motivos_cadastro(self, obj):
+        return self._motivos(obj, 'cadastro')
+
+    @admin.display(description="Por que a 2ª candidata")
+    def motivos_alternativa(self, obj):
+        return self._motivos(obj, 'alternativa')
