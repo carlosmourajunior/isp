@@ -6,12 +6,16 @@ alarme de "ONT inativa" chega pelo syslog em segundos).
 Endpoints novos (não alteram nenhum existente):
     GET/POST /api/vistorias/                       listar / iniciar (body: {cto, tecnico})
     GET      /api/vistorias/<id>/                  vistoria + portas + candidatos da caixa
-    POST     /api/vistorias/<id>/portas/           registrar uma porta (upsert por número)
+    POST     /api/vistorias/<id>/portas/           registrar (porta opcional; upsert por porta ou por serial)
     DELETE   /api/vistorias/<id>/portas/<porta>/   desfazer o registro de uma porta
+    DELETE   /api/vistorias/<id>/registros/<rid>/  desfazer um registro (inclusive sem porta)
     POST     /api/vistorias/<id>/finalizar/        fecha e recalcula a inferência da OLT
-    GET      /api/vistorias/<id>/eventos/?desde=   desconexões/reconexões ao vivo
+    GET      /api/vistorias/<id>/eventos/?desde=   desconexões/reconexões ao vivo, com aviso de PON
+    (listagens e correções aceitam ?olt=)
     GET      /api/vistorias/clientes/?q=           busca cliente fora da lista de candidatos
     GET      /api/vistorias/correcoes/             cadastro IXC x campo + portas fantasma
+    POST     /api/vistorias/correcoes/aplicar/     corrige a CTO do cliente no próprio IXC (staff)
+    GET      /api/vistorias/correcoes/historico/   correções já enviadas ao IXC
 """
 from collections import Counter
 from datetime import timedelta
@@ -27,9 +31,13 @@ from rest_framework.response import Response
 
 from .contrato import situacao_contrato
 from .cto_views import papel
-from .models import ONU, ClienteFibraIxc, Cto, CtoInferencia, OntEvent, OntSnapshot, Vistoria, VistoriaPorta
+from .ixc_escrita import alterar_caixa, escrita_permitida
+from .models import (ONU, ClienteFibraIxc, CorrecaoIxc, Cto, CtoInferencia, OntEvent, OntSnapshot, Vistoria,
+                     VistoriaPorta)
 
 FANTASMA_OFFLINE_DIAS = 7
+# Quedas na mesma PON até esse intervalo são tratadas como simultâneas (rompimento, não o técnico).
+JANELA_SIMULTANEA_S = 5
 
 
 def _onu_por_serial(serials, olt_id=None):
@@ -92,6 +100,7 @@ def _vistoria_basico(v):
 
 def _porta_dict(p):
     return {
+        'id': p.id,
         'porta': p.porta,
         'resultado': p.resultado,
         'metodo': p.metodo,
@@ -121,8 +130,9 @@ def vistoria_list(request):
         return Response(_vistoria_basico(v), status=status.HTTP_201_CREATED)
 
     qs = Vistoria.objects.select_related('cto', 'olt').prefetch_related('portas')
-    if request.GET.get('cto'):
-        qs = qs.filter(cto_id=request.GET['cto'])
+    for campo in ('cto', 'olt'):
+        if request.GET.get(campo):
+            qs = qs.filter(**{f'{campo}_id': request.GET[campo]})
     resultado = []
     for v in qs[:200]:
         item = _vistoria_basico(v)
@@ -146,7 +156,7 @@ def vistoria_detail(request, pk):
     clientes = {c.mac: c for c in ClienteFibraIxc.objects.filter(is_active=True, mac__in=serials)}
     onus = _onu_por_serial(serials)
     ultimo_up = _ultima_vez_online(serials)
-    portas_por_serial = {p.serial: p.porta for p in v.portas.all() if p.serial}
+    portas_por_serial = {p.serial: p.porta for p in v.portas.all() if p.serial}  # porta pode ser None
 
     candidatos = []
     for serial in serials:
@@ -159,11 +169,12 @@ def vistoria_detail(request, pk):
         else:
             item['papel'] = papel(inf, cto.id)
         item['cadastrado_aqui'] = serial in cadastrados
+        item['registrado'] = serial in portas_por_serial
         item['porta_registrada'] = portas_por_serial.get(serial)
         candidatos.append(item)
 
     ordem = {'confirmado': 0, 'provavel': 1, 'veio_de_outra': 2, 'possivel': 3, 'suspeito': 4, 'sem_ont': 5}
-    candidatos.sort(key=lambda c: (c['porta_registrada'] is not None, ordem.get(c['papel'], 9), c['cliente_nome']))
+    candidatos.sort(key=lambda c: (c['registrado'], ordem.get(c['papel'], 9), c['cliente_nome']))
 
     dados = _vistoria_basico(v)
     dados['portas'] = [_porta_dict(p) for p in v.portas.all()]
@@ -175,14 +186,26 @@ def vistoria_detail(request, pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def vistoria_porta_salvar(request, pk):
+    """Registra uma porta ou um cliente da caixa.
+
+    - com `porta`: upsert pelo número da porta;
+    - sem `porta` e com cliente: upsert pelo serial (identificado por desconexão,
+      porta desconhecida - se ele já tinha porta registrada, ela é mantida);
+    - sem `porta` e sem cliente (ex.: drop sem ONT ativa): cria um registro novo.
+    """
     v = get_object_or_404(Vistoria, pk=pk)
-    try:
-        numero = int(request.data.get('porta'))
-    except (TypeError, ValueError):
-        return Response({'error': 'porta inválida'}, status=status.HTTP_400_BAD_REQUEST)
+    bruto = request.data.get('porta')
+    numero = None
+    if bruto not in (None, '', 'null'):
+        try:
+            numero = int(bruto)
+        except (TypeError, ValueError):
+            return Response({'error': 'porta inválida'}, status=status.HTTP_400_BAD_REQUEST)
+        if not 1 <= numero <= 64:
+            return Response({'error': 'porta inválida'}, status=status.HTTP_400_BAD_REQUEST)
     resultado = request.data.get('resultado')
-    if not 1 <= numero <= 64 or resultado not in dict(VistoriaPorta.RESULTADO_CHOICES):
-        return Response({'error': 'porta ou resultado inválido'}, status=status.HTTP_400_BAD_REQUEST)
+    if resultado not in dict(VistoriaPorta.RESULTADO_CHOICES):
+        return Response({'error': 'resultado inválido'}, status=status.HTTP_400_BAD_REQUEST)
 
     serial = (request.data.get('serial') or '').strip()
     if resultado == VistoriaPorta.RESULTADO_CLIENTE and not serial:
@@ -192,12 +215,8 @@ def vistoria_porta_salvar(request, pk):
 
     onu = ONU.objects.filter(serial=serial).first() if serial else None
     cliente = ClienteFibraIxc.objects.filter(mac=serial).first() if serial else None
-    if serial:
-        # O mesmo cliente não fica em duas portas da mesma vistoria.
-        v.portas.filter(serial=serial).exclude(porta=numero).delete()
-
     metodo = request.data.get('metodo') or 'manual'
-    porta, _ = VistoriaPorta.objects.update_or_create(vistoria=v, porta=numero, defaults={
+    dados = {
         'resultado': resultado,
         'metodo': metodo if metodo in dict(VistoriaPorta.METODO_CHOICES) else 'manual',
         'serial': serial,
@@ -206,8 +225,24 @@ def vistoria_porta_salvar(request, pk):
         'cliente_nome': (cliente.nome if cliente else '')[:255],
         'reconexao_confirmada': bool(request.data.get('reconexao_confirmada')),
         'observacao': (request.data.get('observacao') or '')[:255],
-    })
-    return Response(_porta_dict(porta))
+    }
+
+    if numero is not None:
+        if serial:
+            # O mesmo cliente não fica em dois registros da mesma vistoria.
+            v.portas.filter(serial=serial).exclude(porta=numero).delete()
+        registro, _ = VistoriaPorta.objects.update_or_create(vistoria=v, porta=numero, defaults=dados)
+    elif serial:
+        registro = v.portas.filter(serial=serial).first()
+        if registro is None:
+            registro = VistoriaPorta.objects.create(vistoria=v, porta=None, **dados)
+        else:
+            for campo, valor in dados.items():
+                setattr(registro, campo, valor)
+            registro.save()
+    else:
+        registro = VistoriaPorta.objects.create(vistoria=v, porta=None, **dados)
+    return Response(_porta_dict(registro))
 
 
 @api_view(['DELETE'])
@@ -215,6 +250,14 @@ def vistoria_porta_salvar(request, pk):
 def vistoria_porta_remover(request, pk, porta):
     v = get_object_or_404(Vistoria, pk=pk)
     v.portas.filter(porta=porta).delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def vistoria_registro_remover(request, pk, registro_id):
+    v = get_object_or_404(Vistoria, pk=pk)
+    v.portas.filter(id=registro_id).delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -245,12 +288,20 @@ def vistoria_eventos(request, pk):
 
     A bancada chama sem `desde` para pegar o relógio do servidor, pede ao técnico
     para desconectar e consulta a cada ~2 s.
+
+    Para separar a desconexão do técnico de quedas em outro ponto da rede, cada
+    evento diz se é na PON da caixa e quantas ONTs da mesma PON caíram junto.
     """
     v = get_object_or_404(Vistoria.objects.select_related('cto'), pk=pk)
     agora = timezone.now()
     desde = parse_datetime(request.GET.get('desde') or '')
+    # PONs da caixa: onde estão os clientes que a rede ou a vistoria colocam nela.
+    pons_da_caixa = sorted(
+        set(CtoInferencia.objects.filter(cto_provavel=v.cto).exclude(pon='').values_list('pon', flat=True))
+        | set(v.portas.exclude(pon='').values_list('pon', flat=True))
+    )
     if desde is None or v.olt_id is None:
-        return Response({'agora': agora, 'eventos': []})
+        return Response({'agora': agora, 'pons_da_caixa': pons_da_caixa, 'eventos': []})
 
     eventos = list(OntEvent.objects.filter(olt_id=v.olt_id, occurred_at__gt=desde,
                                            event_type__in=OntEvent.TYPES_QUEDA).order_by('occurred_at')[:200])
@@ -263,6 +314,14 @@ def vistoria_eventos(request, pk):
                    .select_related('cto_provavel')}
     candidatos = set(CtoInferencia.objects.filter(Q(cto_provavel=v.cto) | Q(cto_cadastro=v.cto))
                      .values_list('serial', flat=True))
+
+    # Quantas ONTs diferentes da mesma PON caíram até JANELA_SIMULTANEA_S antes/depois de cada queda.
+    quedas = [e for e in eventos if not e.is_clear]
+
+    def caiu_junto(evento):
+        return len({(q.pon, q.position) for q in quedas
+                    if q.pon == evento.pon
+                    and abs((q.occurred_at - evento.occurred_at).total_seconds()) <= JANELA_SIMULTANEA_S})
 
     resultado = []
     for e in eventos:
@@ -278,9 +337,11 @@ def vistoria_eventos(request, pk):
             'alarme': e.alarm_type,
             'voltou': e.is_clear,
             'candidato_desta_cto': serial in candidatos,
+            'mesma_pon_da_caixa': e.pon in pons_da_caixa,
+            'caiu_junto': caiu_junto(e) if not e.is_clear else 1,
         })
         resultado.append(item)
-    return Response({'agora': agora, 'eventos': resultado})
+    return Response({'agora': agora, 'pons_da_caixa': pons_da_caixa, 'eventos': resultado})
 
 
 @api_view(['GET'])
@@ -308,8 +369,13 @@ def vistoria_correcoes(request):
     - portas_fantasma: portas com drop mas sem ONT ativa (a liberar).
     Vale sempre o registro mais recente de cada serial / porta.
     """
+    olt_id = request.GET.get('olt')
+    portas_qs = VistoriaPorta.objects.all()
+    if olt_id:
+        portas_qs = portas_qs.filter(vistoria__olt_id=olt_id)
+
     ultimos = {}
-    for vp in (VistoriaPorta.objects.filter(resultado=VistoriaPorta.RESULTADO_CLIENTE).exclude(serial='')
+    for vp in (portas_qs.filter(resultado=VistoriaPorta.RESULTADO_CLIENTE).exclude(serial='')
                .select_related('vistoria__cto').order_by('vistoria__iniciada_em', 'registrado_em')):
         ultimos[vp.serial] = vp
     clientes = {c.mac: c for c in ClienteFibraIxc.objects.filter(mac__in=ultimos)}
@@ -334,13 +400,14 @@ def vistoria_correcoes(request):
         })
 
     fantasmas = {}
-    for vp in (VistoriaPorta.objects.filter(resultado=VistoriaPorta.RESULTADO_SEM_ONT_ATIVA)
+    for vp in (portas_qs.filter(resultado=VistoriaPorta.RESULTADO_SEM_ONT_ATIVA)
                .select_related('vistoria__cto').order_by('vistoria__iniciada_em')):
-        fantasmas[(vp.vistoria.cto_id, vp.porta)] = vp
+        # Sem porta: cada registro é um drop diferente (chave pelo id).
+        fantasmas[(vp.vistoria.cto_id, vp.porta or f'id{vp.id}')] = vp
     # Se uma vistoria mais nova registrou outra coisa na mesma porta, ela deixa de ser fantasma.
     mais_recente = {}
-    for vp in VistoriaPorta.objects.select_related('vistoria').order_by('vistoria__iniciada_em', 'registrado_em'):
-        mais_recente[(vp.vistoria.cto_id, vp.porta)] = vp.id
+    for vp in portas_qs.select_related('vistoria').order_by('vistoria__iniciada_em', 'registrado_em'):
+        mais_recente[(vp.vistoria.cto_id, vp.porta or f'id{vp.id}')] = vp.id
     portas_fantasma = [{
         'cto': {'id': vp.vistoria.cto_id, 'descricao': vp.vistoria.cto.descricao},
         'porta': vp.porta,
@@ -351,4 +418,55 @@ def vistoria_correcoes(request):
 
     divergentes.sort(key=lambda d: d['vistoriado_em'], reverse=True)
     portas_fantasma.sort(key=lambda d: d['vistoriado_em'], reverse=True)
-    return Response({'clientes': divergentes, 'portas_fantasma': portas_fantasma})
+    return Response({
+        'clientes': divergentes,
+        'portas_fantasma': portas_fantasma,
+        # O frontend só mostra o botão de corrigir no IXC quando faz sentido.
+        'escrita_ixc_permitida': escrita_permitida(),
+        'pode_corrigir': escrita_permitida() and (request.user.is_staff or request.user.is_superuser),
+    })
+
+
+def _correcao_dict(c):
+    return {
+        'id': c.id,
+        'serial': c.serial,
+        'cliente_nome': c.cliente_nome,
+        'caixa_antes': c.caixa_antes,
+        'cto': {'id': c.cto_id, 'descricao': c.cto.descricao} if c.cto_id else None,
+        'usuario': c.usuario,
+        'status': c.status,
+        'mensagem': c.mensagem,
+        'outros_campos_alterados': c.outros_campos_alterados,
+        'criado_em': c.criado_em,
+    }
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def vistoria_aplicar_correcao(request):
+    """Corrige a CTO do cliente no IXC. Body: {serial, cto}. Só staff, só com IXC_PERMITIR_ESCRITA."""
+    if not (request.user.is_staff or request.user.is_superuser):
+        return Response({'error': 'Só administradores podem alterar o IXC.'}, status=status.HTTP_403_FORBIDDEN)
+    if not escrita_permitida():
+        return Response({'error': 'Escrita no IXC desligada (IXC_PERMITIR_ESCRITA no .env do servidor).'},
+                        status=status.HTTP_403_FORBIDDEN)
+    serial = (request.data.get('serial') or '').strip()
+    cto = get_object_or_404(Cto, pk=request.data.get('cto'))
+    if not serial:
+        return Response({'error': 'informe o serial'}, status=status.HTTP_400_BAD_REQUEST)
+    porta = (VistoriaPorta.objects.filter(serial=serial, vistoria__cto=cto)
+             .order_by('-vistoria__iniciada_em').first())
+    correcao = alterar_caixa(serial, cto, request.user.get_username(), vistoria_porta=porta)
+    codigo = status.HTTP_200_OK if correcao.status != 'erro' else status.HTTP_502_BAD_GATEWAY
+    return Response(_correcao_dict(correcao), status=codigo)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def vistoria_historico_correcoes(request):
+    qs = CorrecaoIxc.objects.select_related('cto')
+    if request.GET.get('olt'):
+        olt_id = request.GET['olt']
+        qs = qs.filter(Q(vistoria_porta__vistoria__olt_id=olt_id) | Q(cto__olt_id=olt_id))
+    return Response([_correcao_dict(c) for c in qs[:200]])

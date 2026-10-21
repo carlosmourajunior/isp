@@ -85,6 +85,59 @@ class VistoriaApiTests(APITestCase):
         # Cliente sem serial é recusado
         self.assertEqual(self.client.post(url, {'porta': 3, 'resultado': 'cliente'}).status_code, 400)
 
+    def test_cliente_sem_porta_e_depois_com_porta(self):
+        url = reverse('api:vistoria_porta_salvar', args=[self.v['id']])
+        # Identificado por desconexão, porta desconhecida
+        r = self.client.post(url, {'resultado': 'cliente', 'serial': 'S1', 'metodo': 'desconexao'})
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertIsNone(r.data['porta'])
+        # Reconexão confirmada: atualiza o mesmo registro, não duplica
+        self.client.post(url, {'resultado': 'cliente', 'serial': 'S1', 'reconexao_confirmada': True})
+        dados = self.client.get(reverse('api:vistoria_detail', args=[self.v['id']])).data
+        self.assertEqual(len(dados['portas']), 1)
+        self.assertTrue(dados['portas'][0]['reconexao_confirmada'])
+        cand = {c['serial']: c for c in dados['candidatos']}
+        self.assertTrue(cand['S1']['registrado'])
+        self.assertIsNone(cand['S1']['porta_registrada'])
+        # Depois a etiqueta mostra a porta 4: o registro sem porta vira porta 4
+        self.client.post(url, {'porta': 4, 'resultado': 'cliente', 'serial': 'S1'})
+        portas = self.client.get(reverse('api:vistoria_detail', args=[self.v['id']])).data['portas']
+        self.assertEqual([p['porta'] for p in portas], [4])
+
+    def test_drop_fantasma_sem_porta_e_remover_por_id(self):
+        url = reverse('api:vistoria_porta_salvar', args=[self.v['id']])
+        a = self.client.post(url, {'resultado': 'sem_ont_ativa'}).data
+        self.client.post(url, {'resultado': 'sem_ont_ativa'})
+        self.assertEqual(len(self.client.get(reverse('api:vistoria_detail', args=[self.v['id']])).data['portas']), 2)
+        self.client.delete(reverse('api:vistoria_registro_remover', args=[self.v['id'], a['id']]))
+        self.assertEqual(len(self.client.get(reverse('api:vistoria_detail', args=[self.v['id']])).data['portas']), 1)
+
+    def test_eventos_avisam_pon_e_queda_simultanea(self):
+        url = reverse('api:vistoria_eventos', args=[self.v['id']])
+        inicio = self.client.get(url).data
+        self.assertEqual(inicio['pons_da_caixa'], ['1/1/2/8'])
+        agora = timezone.now()
+        # Desconexão do técnico (PON da caixa) + duas ONTs de outra PON caindo juntas
+        OntEvent.objects.create(olt=self.olt, occurred_at=agora, pon='1/1/2/8', position=1, event_type='inativa')
+        OntEvent.objects.create(olt=self.olt, occurred_at=agora, pon='1/1/1/3', position=7, event_type='inativa')
+        OntEvent.objects.create(olt=self.olt, occurred_at=agora + timedelta(seconds=2), pon='1/1/1/3',
+                                position=9, event_type='inativa')
+        eventos = self.client.get(url, {'desde': inicio['agora'].isoformat()}).data['eventos']
+        por_pos = {(e['pon'], e['position']): e for e in eventos}
+        self.assertTrue(por_pos[('1/1/2/8', 1)]['mesma_pon_da_caixa'])
+        self.assertEqual(por_pos[('1/1/2/8', 1)]['caiu_junto'], 1)
+        self.assertFalse(por_pos[('1/1/1/3', 7)]['mesma_pon_da_caixa'])
+        self.assertEqual(por_pos[('1/1/1/3', 7)]['caiu_junto'], 2)
+
+    def test_filtro_por_olt(self):
+        outra_olt = Olt.objects.create(name='OLT OF', host='10.0.0.2', username='u', password='p')
+        self.client.post(reverse('api:vistoria_porta_salvar', args=[self.v['id']]),
+                         {'porta': 1, 'resultado': 'cliente', 'serial': 'S4'})
+        self.assertEqual(len(self.client.get(reverse('api:vistoria_list'), {'olt': outra_olt.id}).data), 0)
+        self.assertEqual(len(self.client.get(reverse('api:vistoria_list'), {'olt': self.olt.id}).data), 1)
+        self.assertEqual(self.client.get(reverse('api:vistoria_correcoes'), {'olt': outra_olt.id}).data['clientes'], [])
+        self.assertEqual(len(self.client.get(reverse('api:vistoria_correcoes'), {'olt': self.olt.id}).data['clientes']), 1)
+
     def test_eventos_ao_vivo(self):
         url = reverse('api:vistoria_eventos', args=[self.v['id']])
         inicio = self.client.get(url).data

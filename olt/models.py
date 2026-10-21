@@ -624,7 +624,9 @@ class VistoriaPorta(models.Model):
     ]
 
     vistoria = models.ForeignKey(Vistoria, on_delete=models.CASCADE, related_name='portas')
-    porta = models.PositiveSmallIntegerField()
+    # Opcional: na identificação por desconexão o cliente é confirmado na caixa
+    # mesmo sem saber em qual porta está.
+    porta = models.PositiveSmallIntegerField(null=True, blank=True)
     resultado = models.CharField(max_length=20, choices=RESULTADO_CHOICES)
     metodo = models.CharField(max_length=20, choices=METODO_CHOICES, default='manual')
     serial = models.CharField(max_length=30, blank=True, default='', db_index=True)
@@ -642,4 +644,38 @@ class VistoriaPorta(models.Model):
         ordering = ['porta']
 
     def __str__(self):
-        return f"{self.vistoria.cto} porta {self.porta}: {self.get_resultado_display()}"
+        porta = f"porta {self.porta}" if self.porta else "sem porta"
+        return f"{self.vistoria.cto} {porta}: {self.get_resultado_display()}"
+
+
+class CorrecaoIxc(models.Model):
+    """Alteração feita no IXC pelo sistema (hoje: CTO do cliente fibra). Guarda
+    o registro antes/depois para auditoria e para restaurar se algo der errado."""
+
+    STATUS_CHOICES = [
+        ('ok', 'Aplicada'),
+        ('alerta', 'Aplicada, mas outros campos mudaram'),
+        ('erro', 'Falhou'),
+    ]
+
+    serial = models.CharField(max_length=30, db_index=True)
+    cliente_nome = models.CharField(max_length=255, blank=True, default='')
+    ixc_registro_id = models.CharField(max_length=50, blank=True, default='', verbose_name="ID em radpop_radio_cliente_fibra")
+    caixa_antes = models.CharField(max_length=50, blank=True, default='', verbose_name="id_caixa_ftth antes")
+    cto = models.ForeignKey('Cto', on_delete=models.SET_NULL, null=True, related_name='correcoes_ixc', verbose_name="CTO aplicada")
+    vistoria_porta = models.ForeignKey('VistoriaPorta', on_delete=models.SET_NULL, null=True, blank=True)
+    usuario = models.CharField(max_length=150)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    mensagem = models.TextField(blank=True, default='')
+    registro_antes = models.JSONField(default=dict, blank=True)
+    registro_depois = models.JSONField(default=dict, blank=True)
+    outros_campos_alterados = models.JSONField(default=list, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Correção no IXC"
+        verbose_name_plural = "Correções no IXC"
+        ordering = ['-criado_em']
+
+    def __str__(self):
+        return f"{self.serial}: {self.caixa_antes or '-'} -> {self.cto} ({self.status})"

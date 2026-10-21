@@ -72,9 +72,12 @@ urlpatterns = [
     path('vistorias/', vistoria_views.vistoria_list, name='vistoria_list'),
     path('vistorias/clientes/', vistoria_views.vistoria_buscar_cliente, name='vistoria_buscar_cliente'),
     path('vistorias/correcoes/', vistoria_views.vistoria_correcoes, name='vistoria_correcoes'),
+    path('vistorias/correcoes/aplicar/', vistoria_views.vistoria_aplicar_correcao, name='vistoria_aplicar_correcao'),
+    path('vistorias/correcoes/historico/', vistoria_views.vistoria_historico_correcoes, name='vistoria_historico_correcoes'),
     path('vistorias/<int:pk>/', vistoria_views.vistoria_detail, name='vistoria_detail'),
     path('vistorias/<int:pk>/portas/', vistoria_views.vistoria_porta_salvar, name='vistoria_porta_salvar'),
     path('vistorias/<int:pk>/portas/<int:porta>/', vistoria_views.vistoria_porta_remover, name='vistoria_porta_remover'),
+    path('vistorias/<int:pk>/registros/<int:registro_id>/', vistoria_views.vistoria_registro_remover, name='vistoria_registro_remover'),
     path('vistorias/<int:pk>/finalizar/', vistoria_views.vistoria_finalizar, name='vistoria_finalizar'),
     path('vistorias/<int:pk>/eventos/', vistoria_views.vistoria_eventos, name='vistoria_eventos'),
 

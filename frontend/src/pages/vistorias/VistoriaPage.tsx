@@ -15,10 +15,8 @@ import type { ClienteInfo, EventoAoVivo, PortaRegistro, PortaResultado, Vistoria
 import { ClienteLinha } from './ClienteLinha'
 import { IdentificacaoAoVivo } from './IdentificacaoAoVivo'
 
-type Acao = { tipo: 'etiqueta' | 'desconexao'; porta: number } | null
-
 interface SalvarPorta {
-  porta: number
+  porta: number | null
   resultado: PortaResultado
   serial?: string
   metodo?: 'etiqueta' | 'desconexao' | 'manual'
@@ -46,11 +44,28 @@ function EscolherCliente({
       : candidatos
   }, [candidatos, termo])
 
-  const { data: fora, isFetching } = useQuery({
+  const buscaAtiva = termo.trim().length >= 3
+  const { data: foraBruto, isFetching } = useQuery({
     queryKey: ['/vistorias/clientes/', termo],
     queryFn: async () => (await api.get<ClienteInfo[]>('/vistorias/clientes/', { params: { q: termo } })).data,
-    enabled: termo.trim().length >= 3 && filtrados.length === 0,
+    enabled: buscaAtiva,
   })
+  // Fora da lista = resultados do cadastro todo que não são candidatos desta caixa.
+  const fora = useMemo(() => {
+    const daCaixa = new Set(candidatos.map((c) => c.serial))
+    return (foraBruto ?? []).filter((c) => !daCaixa.has(c.serial))
+  }, [foraBruto, candidatos])
+
+  const opcao = (c: ClienteInfo, extra?: React.ReactNode) => (
+    <button
+      key={c.serial}
+      type="button"
+      onClick={() => onEscolher(c.serial)}
+      className="rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent"
+    >
+      <ClienteLinha c={c} extra={extra} />
+    </button>
+  )
 
   return (
     <Card className="gap-0 border-primary/50 py-0">
@@ -62,55 +77,48 @@ function EscolherCliente({
           Cancelar
         </Button>
       </div>
-      <div className="flex flex-col gap-2 px-4 py-3">
+      <div className="flex max-h-[28rem] flex-col gap-2 overflow-y-auto px-4 py-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             autoFocus
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
-            placeholder="Nome que o técnico leu na etiqueta…"
+            placeholder="Nome da etiqueta ou serial…"
             className="pl-8"
           />
         </div>
+
+        <div className="text-xs font-medium text-muted-foreground">Candidatos desta caixa</div>
         {filtrados.length > 0 ? (
-          <div className="flex max-h-80 flex-col gap-1 overflow-y-auto">
-            {filtrados.map((c) => (
-              <button
-                key={c.serial}
-                type="button"
-                onClick={() => onEscolher(c.serial)}
-                className="rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent"
-              >
-                <ClienteLinha c={c} />
-              </button>
-            ))}
-          </div>
-        ) : termo.trim().length >= 3 ? (
-          <div className="flex flex-col gap-1">
-            <div className="text-xs text-amber-700 dark:text-amber-400">
-              Não está entre os candidatos desta caixa - o cadastro dele aponta outra CTO. Resultados no cadastro todo:
-            </div>
-            {isFetching && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-            {(fora ?? []).map((c) => (
-              <button
-                key={c.serial}
-                type="button"
-                onClick={() => onEscolher(c.serial)}
-                className="rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent"
-              >
-                <ClienteLinha
-                  c={c}
-                  extra={c.cto_provavel && <span className="text-xs text-muted-foreground">rede aponta {c.cto_provavel.descricao}</span>}
-                />
-              </button>
-            ))}
-            {!isFetching && fora?.length === 0 && (
-              <div className="text-sm text-muted-foreground">Nenhum cliente com esse nome. Tente por desconexão.</div>
-            )}
-          </div>
+          filtrados.map((c) => opcao(c))
         ) : (
-          <div className="text-xs text-muted-foreground">Digite pelo menos 3 letras para buscar fora da lista.</div>
+          <div className="text-sm text-muted-foreground">Nenhum candidato com esse nome.</div>
+        )}
+
+        {buscaAtiva && (
+          <>
+            <div className="mt-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              No cadastro todo (cliente que o IXC coloca em outra caixa)
+              {isFetching && <Loader2 className="size-3 animate-spin" />}
+            </div>
+            {fora.map((c) =>
+              opcao(
+                c,
+                c.cto_provavel && (
+                  <span className="text-xs text-muted-foreground">rede aponta {c.cto_provavel.descricao}</span>
+                ),
+              ),
+            )}
+            {!isFetching && fora.length === 0 && (
+              <div className="text-sm text-muted-foreground">Nenhum outro cliente com esse nome. Tente por desconexão.</div>
+            )}
+          </>
+        )}
+        {!buscaAtiva && (
+          <div className="text-xs text-muted-foreground">
+            Digite 3 letras ou mais para procurar também no cadastro todo.
+          </div>
         )}
       </div>
     </Card>
@@ -122,7 +130,7 @@ function PortaCard({
   registro,
   ativa,
   finalizada,
-  onAcao,
+  onEtiqueta,
   onMarcar,
   onLimpar,
 }: {
@@ -130,7 +138,7 @@ function PortaCard({
   registro?: PortaRegistro
   ativa: boolean
   finalizada: boolean
-  onAcao: (tipo: 'etiqueta' | 'desconexao') => void
+  onEtiqueta: () => void
   onMarcar: (resultado: PortaResultado) => void
   onLimpar: () => void
 }) {
@@ -145,27 +153,12 @@ function PortaCard({
         )}
       </div>
 
-      {registro?.resultado === 'cliente' && (
-        <div className="text-sm">
-          <div className="font-medium">{registro.cliente_nome || registro.serial}</div>
-          <div className="text-xs text-muted-foreground">
-            {registro.serial} · {registro.metodo === 'desconexao' ? 'por desconexão' : 'por etiqueta'}
-            {registro.reconexao_confirmada && (
-              <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="size-3" /> voltou
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+      {registro?.resultado === 'cliente' && <RegistroCliente registro={registro} />}
 
       {!finalizada && (
         <div className="flex flex-wrap gap-1.5">
-          <Button size="sm" variant="outline" onClick={() => onAcao('etiqueta')}>
+          <Button size="sm" variant="outline" onClick={onEtiqueta}>
             <Tag /> Etiqueta
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => onAcao('desconexao')}>
-            <Radio /> Desconexão
           </Button>
           <Button size="sm" variant="ghost" onClick={() => onMarcar('vazia')}>
             Vazia
@@ -184,12 +177,31 @@ function PortaCard({
   )
 }
 
+function RegistroCliente({ registro }: { registro: PortaRegistro }) {
+  return (
+    <div className="text-sm">
+      <div className="font-medium">{registro.cliente_nome || registro.serial}</div>
+      <div className="text-xs text-muted-foreground">
+        {registro.serial}
+        {registro.pon && ` · PON ${registro.pon}`} · {registro.metodo === 'desconexao' ? 'por desconexão' : 'por etiqueta'}
+        {registro.reconexao_confirmada && (
+          <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="size-3" /> voltou
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function VistoriaPage() {
   const { id } = useParams()
   const vistoriaId = Number(id)
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [acao, setAcao] = useState<Acao>(null)
+  const [etiquetaPorta, setEtiquetaPorta] = useState<number | null>(null)
+  // 0 = painel de desconexão fechado; cada nova identificação troca a key e reinicia o painel.
+  const [identificacao, setIdentificacao] = useState(0)
   const [portasExtras, setPortasExtras] = useState(0)
 
   const queryKey = useMemo(() => ['/vistorias/', vistoriaId], [vistoriaId])
@@ -205,7 +217,7 @@ export function VistoriaPage() {
         await api.post(`/vistorias/${vistoriaId}/portas/`, dados)
         await recarregar()
       } catch {
-        toast.error('Não foi possível salvar a porta')
+        toast.error('Não foi possível salvar o registro')
         throw new Error('falha ao salvar')
       }
     },
@@ -213,7 +225,7 @@ export function VistoriaPage() {
   )
 
   const limpar = useMutation({
-    mutationFn: (porta: number) => api.delete(`/vistorias/${vistoriaId}/portas/${porta}/`),
+    mutationFn: (registroId: number) => api.delete(`/vistorias/${vistoriaId}/registros/${registroId}/`),
     onSuccess: () => recarregar(),
   })
 
@@ -226,6 +238,17 @@ export function VistoriaPage() {
     onError: () => toast.error('Erro ao finalizar a vistoria'),
   })
 
+  const onIdentificado = useCallback(
+    (e: EventoAoVivo, porta: number | null) =>
+      salvar({ porta, resultado: 'cliente', serial: e.serial, metodo: 'desconexao' }),
+    [salvar],
+  )
+  const onReconectado = useCallback(
+    (e: EventoAoVivo, porta: number | null) =>
+      salvar({ porta, resultado: 'cliente', serial: e.serial, metodo: 'desconexao', reconexao_confirmada: true }),
+    [salvar],
+  )
+
   if (isLoading || !v) {
     return (
       <div className="py-10 text-center text-muted-foreground">
@@ -235,11 +258,13 @@ export function VistoriaPage() {
   }
 
   const finalizada = Boolean(v.finalizada_em)
-  const totalPortas = Math.max(v.cto.portas ?? 8, ...v.portas.map((p) => p.porta)) + portasExtras
-  const porNumero = new Map(v.portas.map((p) => [p.porta, p]))
-  const pendentes = v.candidatos.filter((c) => c.porta_registrada === null)
+  const comPorta = v.portas.filter((p) => p.porta !== null)
+  const semPorta = v.portas.filter((p) => p.porta === null)
+  const totalPortas = Math.max(v.cto.portas ?? 8, ...comPorta.map((p) => p.porta as number)) + portasExtras
+  const porNumero = new Map(comPorta.map((p) => [p.porta as number, p]))
+  const portasLivres = Array.from({ length: totalPortas }, (_, i) => i + 1).filter((n) => !porNumero.has(n))
+  const pendentes = v.candidatos.filter((c) => !c.registrado)
   const fantasmas = pendentes.filter((c) => c.fantasma_provavel)
-  const registradas = v.portas.length
 
   return (
     <div>
@@ -259,9 +284,14 @@ export function VistoriaPage() {
           .join(' · ')}
         action={
           !finalizada && (
-            <Button onClick={() => finalizar.mutate()} disabled={finalizar.isPending || registradas === 0}>
-              {finalizar.isPending ? <Loader2 className="animate-spin" /> : <CheckCircle2 />} Finalizar vistoria
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setIdentificacao((n) => n + 1)}>
+                <Radio /> Identificar por desconexão
+              </Button>
+              <Button onClick={() => finalizar.mutate()} disabled={finalizar.isPending || v.portas.length === 0}>
+                {finalizar.isPending ? <Loader2 className="animate-spin" /> : <CheckCircle2 />} Finalizar vistoria
+              </Button>
+            </div>
           )
         }
       />
@@ -269,67 +299,91 @@ export function VistoriaPage() {
       {!finalizada && fantasmas.length > 0 && (
         <div className="mb-4 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
           {fantasmas.length} cliente(s) desta caixa com ONT offline e contrato inativo ou parado há dias - prováveis portas a
-          liberar. Ao identificar, use "Desconexão": se nada cair, a porta é fantasma.
+          liberar. Desconecte os drops sem etiqueta: se nada cair na PON da caixa, é drop fantasma.
         </div>
       )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex min-w-0 flex-col gap-4">
-          {acao?.tipo === 'desconexao' && (
+          {identificacao > 0 && !finalizada && (
             <IdentificacaoAoVivo
-              key={`d-${acao.porta}`}
+              key={identificacao}
               vistoriaId={vistoriaId}
-              porta={acao.porta}
-              onIdentificado={(e: EventoAoVivo) =>
-                salvar({ porta: acao.porta, resultado: 'cliente', serial: e.serial, metodo: 'desconexao' })
-              }
-              onReconectado={(e: EventoAoVivo) =>
-                salvar({
-                  porta: acao.porta,
-                  resultado: 'cliente',
-                  serial: e.serial,
-                  metodo: 'desconexao',
-                  reconexao_confirmada: true,
-                })
-              }
-              onSemOntAtiva={() =>
-                salvar({ porta: acao.porta, resultado: 'sem_ont_ativa', metodo: 'desconexao' })
-                  .then(() => setAcao(null))
+              portasLivres={portasLivres}
+              onIdentificado={onIdentificado}
+              onReconectado={onReconectado}
+              onSemOntAtiva={(porta) =>
+                salvar({ porta, resultado: 'sem_ont_ativa', metodo: 'desconexao' })
+                  .then(() => {
+                    toast.success('Drop fantasma registrado')
+                    setIdentificacao(0)
+                  })
                   .catch(() => undefined)
               }
-              onClose={() => setAcao(null)}
+              onNovaIdentificacao={() => setIdentificacao((n) => n + 1)}
+              onClose={() => setIdentificacao(0)}
             />
           )}
-          {acao?.tipo === 'etiqueta' && (
+          {etiquetaPorta !== null && (
             <EscolherCliente
-              key={`e-${acao.porta}`}
+              key={`e-${etiquetaPorta}`}
               candidatos={pendentes}
-              porta={acao.porta}
-              onClose={() => setAcao(null)}
+              porta={etiquetaPorta}
+              onClose={() => setEtiquetaPorta(null)}
               onEscolher={(serial) =>
-                salvar({ porta: acao.porta, resultado: 'cliente', serial, metodo: 'etiqueta' })
+                salvar({ porta: etiquetaPorta, resultado: 'cliente', serial, metodo: 'etiqueta' })
                   .then(() => {
-                    toast.success(`Porta ${acao.porta} registrada`)
-                    setAcao(null)
+                    toast.success(`Porta ${etiquetaPorta} registrada`)
+                    setEtiquetaPorta(null)
                   })
                   .catch(() => undefined)
               }
             />
           )}
 
+          {semPorta.length > 0 && (
+            <Card className="gap-0 py-0">
+              <div className="border-b border-border px-4 py-2.5 text-sm font-semibold">
+                Identificados nesta caixa, porta não informada ({semPorta.length})
+              </div>
+              <div className="flex flex-col divide-y divide-border">
+                {semPorta.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    {r.resultado === 'cliente' ? (
+                      <RegistroCliente registro={r} />
+                    ) : (
+                      <Badge variant={resultadoStyles[r.resultado].badge}>{resultadoStyles[r.resultado].label}</Badge>
+                    )}
+                    {!finalizada && (
+                      <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => limpar.mutate(r.id)}>
+                        Limpar
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 pb-2.5 text-xs text-muted-foreground">
+                Para indicar a porta depois, use "Etiqueta" na porta e escolha o mesmo cliente.
+              </div>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-            {Array.from({ length: totalPortas }, (_, i) => i + 1).map((n) => (
-              <PortaCard
-                key={n}
-                numero={n}
-                registro={porNumero.get(n)}
-                ativa={acao?.porta === n}
-                finalizada={finalizada}
-                onAcao={(tipo) => setAcao({ tipo, porta: n })}
-                onMarcar={(resultado) => salvar({ porta: n, resultado, metodo: 'manual' }).catch(() => undefined)}
-                onLimpar={() => limpar.mutate(n)}
-              />
-            ))}
+            {Array.from({ length: totalPortas }, (_, i) => i + 1).map((n) => {
+              const registro = porNumero.get(n)
+              return (
+                <PortaCard
+                  key={n}
+                  numero={n}
+                  registro={registro}
+                  ativa={etiquetaPorta === n}
+                  finalizada={finalizada}
+                  onEtiqueta={() => setEtiquetaPorta(n)}
+                  onMarcar={(resultado) => salvar({ porta: n, resultado, metodo: 'manual' }).catch(() => undefined)}
+                  onLimpar={() => registro && limpar.mutate(registro.id)}
+                />
+              )
+            })}
           </div>
           {!finalizada && (
             <Button variant="ghost" size="sm" className="w-fit" onClick={() => setPortasExtras((x) => x + 1)}>
@@ -342,17 +396,17 @@ export function VistoriaPage() {
           <div className="border-b border-border px-4 py-3">
             <div className="font-semibold">Quem deveria estar nesta caixa</div>
             <div className="text-xs text-muted-foreground">
-              {pendentes.length} ainda não conferido(s) · {registradas} porta(s) registrada(s)
+              {pendentes.length} ainda não conferido(s) · {v.portas.length} registro(s)
             </div>
           </div>
           <div className="flex max-h-[70vh] flex-col divide-y divide-border overflow-y-auto">
             {v.candidatos.map((c) => (
-              <div key={c.serial} className={cn('px-4 py-2.5 text-sm', c.porta_registrada !== null && 'opacity-60')}>
+              <div key={c.serial} className={cn('px-4 py-2.5 text-sm', c.registrado && 'opacity-60')}>
                 <ClienteLinha
                   c={c}
                   extra={
-                    c.porta_registrada !== null ? (
-                      <Badge variant="success">Porta {c.porta_registrada}</Badge>
+                    c.registrado ? (
+                      <Badge variant="success">{c.porta_registrada ? `Porta ${c.porta_registrada}` : 'Identificado'}</Badge>
                     ) : (
                       <span className="text-xs text-muted-foreground">{papelVistoriaLabel[c.papel]}</span>
                     )
@@ -362,7 +416,7 @@ export function VistoriaPage() {
             ))}
             {v.candidatos.length === 0 && (
               <div className="px-4 py-6 text-sm text-muted-foreground">
-                Nenhum cliente associado a esta caixa pelo cadastro ou pela rede. Use "Desconexão" porta a porta.
+                Nenhum cliente associado a esta caixa pelo cadastro ou pela rede. Use "Identificar por desconexão" drop a drop.
               </div>
             )}
           </div>
