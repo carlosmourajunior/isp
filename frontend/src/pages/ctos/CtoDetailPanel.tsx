@@ -80,8 +80,8 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
           <div className="grid grid-cols-3 gap-3">
             <Numero
               label="Ocupadas (estimado)"
-              value={`${data.ocupadas}/${data.portas ?? '?'}`}
-              hint="Confirmados + prováveis + cadastrados em outra CTO que a rede aponta para esta"
+              value={`${data.ocupadas}/${data.portas_uteis ?? '?'}`}
+              hint="Confirmados + prováveis + cadastrados em outra CTO que a rede aponta para esta, sobre as portas úteis"
             />
             <Numero label="Livres (estimado)" value={data.livres ?? '?'} />
             <Numero label="No cadastro IXC" value={data.ixc_id ? data.cadastro_ixc : '—'} />
@@ -93,6 +93,16 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
             />
             <Numero label="Provavelmente em outra" value={data.suspeitos} hint="Cadastrados aqui, rede aponta outra CTO" />
           </div>
+
+          {(data.splitters_extras.length > 0 || data.portas_inutilizadas.length > 0) && (
+            <p className="text-xs text-muted-foreground">
+              {data.portas_base ?? '?'} portas no projeto
+              {data.splitters_extras.map((n, i) => (
+                <span key={i}> + splitter de {n}</span>
+              ))}
+              {data.portas_inutilizadas.length > 0 && ` · porta(s) inutilizada(s): ${data.portas_inutilizadas.join(', ')}`}
+            </p>
+          )}
 
           <Button
             size="sm"

@@ -67,7 +67,7 @@ export function CtoMap({ ctos, selectedId, onSelect }: CtoMapProps) {
                 <div className="text-xs">
                   <div className="font-semibold">{cto.descricao}</div>
                   <div>
-                    {cto.ocupadas}/{cto.portas ?? '?'} ocupadas
+                    {cto.ocupadas}/{cto.portas_uteis ?? '?'} ocupadas
                     {cto.possiveis > 0 && ` (+${cto.possiveis} possíveis)`}
                   </div>
                   <div>{estilo.label}</div>

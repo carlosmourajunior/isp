@@ -55,7 +55,7 @@ function NovaVistoria({ oltId }: { oltId: string }) {
             <Button key={c.id} variant="outline" size="sm" disabled={iniciar.isPending} onClick={() => iniciar.mutate(c.id)}>
               {c.descricao}
               <span className="text-xs text-muted-foreground">
-                {c.ocupadas}/{c.portas ?? '?'}
+                {c.ocupadas}/{c.portas_uteis ?? '?'}
                 {!oltId && c.olt_nome ? ` · ${c.olt_nome}` : ''}
               </span>
             </Button>

@@ -62,6 +62,22 @@ class CtoApiTests(APITestCase):
         self.assertEqual(ctos['CA_001']['confirmados'], 3)
         self.assertEqual(ctos['CA_001']['possiveis'], 0)
 
+    def test_splitter_e_porta_inutilizada_mudam_a_capacidade(self):
+        # CA_001: 4 portas, 4 ocupadas -> cheia
+        url = reverse('api:cto_splitters', args=[self.a.id])
+        self.assertEqual(self.client.post(url, {'portas': 6}).status_code, 400)   # só 4 ou 8
+        r = self.client.post(url, {'portas': 8}).data
+        self.assertEqual((r['portas'], r['portas_uteis'], r['splitters_extras']), (12, 12, [8]))
+        r = self.client.post(reverse('api:cto_porta_inutilizada', args=[self.a.id]),
+                             {'porta': 10, 'inutilizada': True}, format='json').data
+        self.assertEqual((r['portas_uteis'], r['portas_inutilizadas']), (11, [10]))
+        a = {c['descricao']: c for c in self.client.get(reverse('api:cto_list')).data}['CA_001']
+        self.assertEqual((a['ocupadas'], a['livres'], a['situacao']), (4, 7, 'livre'))
+        # Desfazer o splitter: a porta 10 deixa de existir
+        r = self.client.delete(url).data
+        self.assertEqual((r['portas'], r['portas_inutilizadas']), (4, []))
+        self.assertEqual(Cto.objects.get(pk=self.a.pk).ajustado_por, 'u')
+
     def test_filtro_situacao(self):
         response = self.client.get(reverse('api:cto_list'), {'situacao': 'cheia'})
         self.assertEqual([c['descricao'] for c in response.data], ['CA_001'])

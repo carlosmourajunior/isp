@@ -109,7 +109,7 @@ export function CtosPage() {
     const desc = ordering.startsWith('-')
     const campo = ordering.replace('-', '')
     const valor = (c: Cto): number | string => {
-      if (campo === 'ocupacao') return c.portas ? c.ocupadas / c.portas : -1
+      if (campo === 'ocupacao') return c.portas_uteis ? c.ocupadas / c.portas_uteis : -1
       if (campo === 'descricao') return c.descricao
       if (campo === 'ocupadas') return c.ocupadas
       if (campo === 'suspeitos') return c.suspeitos
@@ -145,7 +145,7 @@ export function CtosPage() {
           const c = row.original
           return (
             <span>
-              {c.ocupadas}/{c.portas ?? '?'}
+              {c.ocupadas}/{c.portas_uteis ?? '?'}
               {c.possiveis > 0 && <span className="text-muted-foreground"> (+{c.possiveis} possíveis)</span>}
             </span>
           )

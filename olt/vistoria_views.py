@@ -116,7 +116,15 @@ def _cliente_info(serial, cliente, onu, inferencia=None, ultimo_up=None, agora=N
 def _vistoria_basico(v):
     return {
         'id': v.id,
-        'cto': {'id': v.cto_id, 'descricao': v.cto.descricao, 'portas': v.cto.portas, 'ramal': v.cto.ramal},
+        'cto': {
+            'id': v.cto_id,
+            'descricao': v.cto.descricao,
+            'portas': v.cto.portas,
+            'portas_base': v.cto.portas_base,
+            'splitters_extras': v.cto.splitters_extras or [],
+            'portas_inutilizadas': sorted(set(v.cto.portas_inutilizadas or [])),
+            'ramal': v.cto.ramal,
+        },
         'olt_id': v.olt_id,
         'olt_nome': v.olt.name if v.olt_id else None,
         'usuario': v.usuario,

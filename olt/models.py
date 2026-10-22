@@ -523,6 +523,13 @@ class Cto(models.Model):
     kmz_descricao = models.TextField(blank=True, default='', verbose_name="Descrição no KMZ")
     kmz_match = models.CharField(max_length=20, blank=True, default='', verbose_name="Como casou com o KMZ")
 
+    # Ajustes feitos em campo (vistoria). Ampliar = instalar um splitter inteiro (4 ou 8
+    # portas); inutilizar = porta que não pode ser usada (conector quebrado etc.).
+    splitters_extras = models.JSONField(default=list, blank=True, verbose_name="Splitters adicionados (portas de cada)")
+    portas_inutilizadas = models.JSONField(default=list, blank=True, verbose_name="Portas inutilizadas")
+    ajustado_em = models.DateTimeField(null=True, blank=True, verbose_name="Último ajuste em campo")
+    ajustado_por = models.CharField(max_length=150, blank=True, default='')
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -531,9 +538,24 @@ class Cto(models.Model):
         ordering = ['descricao']
 
     @property
-    def portas(self):
-        """Portas reais: o KMZ (projeto) prevalece sobre o IXC quando existe."""
+    def portas_base(self):
+        """Portas do projeto: o KMZ prevalece sobre o IXC quando existe."""
         return self.kmz_portas or self.capacidade
+
+    @property
+    def portas(self):
+        """Portas físicas: as do projeto mais os splitters adicionados em campo."""
+        extras = sum(self.splitters_extras or [])
+        if self.portas_base is None and not extras:
+            return None
+        return (self.portas_base or 0) + extras
+
+    @property
+    def portas_uteis(self):
+        """Portas que podem receber cliente (físicas menos as inutilizadas)."""
+        if self.portas is None:
+            return None
+        return max(0, self.portas - len(set(self.portas_inutilizadas or [])))
 
     def __str__(self):
         return self.descricao

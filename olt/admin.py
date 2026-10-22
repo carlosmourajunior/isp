@@ -182,7 +182,8 @@ class SchedulerConfigAdmin(admin.ModelAdmin):
 @register(Cto)
 class CtoAdmin(ReadOnlyAdmin):
     """CTOs vêm do IXC (sync_ctos_ixc) + KMZ (importar_kmz): só leitura."""
-    list_display = ('descricao', 'tipo', 'origem', 'ixc_id', 'olt', 'ramal', 'portas_display', 'clientes_cadastro', 'kmz_splitter', 'kmz_match', 'is_active')
+    list_display = ('descricao', 'tipo', 'origem', 'ixc_id', 'olt', 'ramal', 'portas_display', 'splitters_extras',
+                    'portas_inutilizadas', 'clientes_cadastro', 'kmz_splitter', 'kmz_match', 'is_active')
     list_filter = ('olt', 'origem', 'tipo', 'ramal', 'kmz_match', 'is_active', 'id_projeto')
     search_fields = ('descricao', 'ixc_id', 'kmz_nome')
 

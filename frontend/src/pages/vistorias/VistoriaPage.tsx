@@ -140,24 +140,36 @@ function PortaCard({
   numero,
   registro,
   ativa,
+  inutilizada,
   finalizada,
   onEtiqueta,
   onMarcar,
   onLimpar,
+  onInutilizar,
 }: {
   numero: number
   registro?: PortaRegistro
   ativa: boolean
+  inutilizada: boolean
   finalizada: boolean
   onEtiqueta: () => void
   onMarcar: (resultado: PortaResultado) => void
   onLimpar: () => void
+  onInutilizar: (inutilizar: boolean) => void
 }) {
   return (
-    <div className={cn('flex flex-col gap-2 rounded-lg border border-border p-3', ativa && 'border-primary ring-1 ring-primary')}>
+    <div
+      className={cn(
+        'flex flex-col gap-2 rounded-lg border border-border p-3',
+        ativa && 'border-primary ring-1 ring-primary',
+        inutilizada && 'border-dashed bg-muted/40',
+      )}
+    >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold">Porta {numero}</span>
-        {registro ? (
+        <span className={cn('text-sm font-semibold', inutilizada && 'text-muted-foreground line-through')}>Porta {numero}</span>
+        {inutilizada ? (
+          <Badge variant="secondary">Inutilizada</Badge>
+        ) : registro ? (
           <Badge variant={resultadoStyles[registro.resultado].badge}>{resultadoStyles[registro.resultado].label}</Badge>
         ) : (
           <Badge variant="outline">Pendente</Badge>
@@ -166,7 +178,13 @@ function PortaCard({
 
       {registro?.resultado === 'cliente' && <RegistroCliente registro={registro} />}
 
-      {!finalizada && (
+      {!finalizada && inutilizada && (
+        <Button size="sm" variant="ghost" className="w-fit" onClick={() => onInutilizar(false)}>
+          Reativar porta
+        </Button>
+      )}
+
+      {!finalizada && !inutilizada && (
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="outline" onClick={onEtiqueta}>
             <Tag /> Etiqueta
@@ -182,6 +200,9 @@ function PortaCard({
               Limpar
             </Button>
           )}
+          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => onInutilizar(true)}>
+            Inutilizar
+          </Button>
         </div>
       )}
     </div>
@@ -213,7 +234,6 @@ export function VistoriaPage() {
   const [etiquetaPorta, setEtiquetaPorta] = useState<number | null>(null)
   // 0 = painel de desconexão fechado; cada nova identificação troca a key e reinicia o painel.
   const [identificacao, setIdentificacao] = useState(0)
-  const [portasExtras, setPortasExtras] = useState(0)
 
   const queryKey = useMemo(() => ['/vistorias/', vistoriaId], [vistoriaId])
   const { data: v, isLoading } = useQuery({
@@ -238,6 +258,26 @@ export function VistoriaPage() {
   const limpar = useMutation({
     mutationFn: (registroId: number) => api.delete(`/vistorias/${vistoriaId}/registros/${registroId}/`),
     onSuccess: () => recarregar(),
+  })
+
+  const ajustarCto = useMutation({
+    mutationFn: async (acao: { tipo: 'splitter'; portas: 4 | 8 } | { tipo: 'desfazer' } | { tipo: 'porta'; porta: number; inutilizada: boolean }) => {
+      if (!v) return
+      const base = `/ctos/${v.cto.id}`
+      if (acao.tipo === 'splitter') return api.post(`${base}/splitters/`, { portas: acao.portas })
+      if (acao.tipo === 'desfazer') return api.delete(`${base}/splitters/`)
+      return api.post(`${base}/portas-inutilizadas/`, { porta: acao.porta, inutilizada: acao.inutilizada })
+    },
+    onSuccess: (_, acao) => {
+      if (acao.tipo === 'splitter') toast.success(`Splitter de ${acao.portas} portas adicionado à caixa`)
+      if (acao.tipo === 'desfazer') toast.success('Último splitter removido')
+      recarregar()
+      queryClient.invalidateQueries({ queryKey: ['/ctos/'] })
+    },
+    onError: (e: unknown) => {
+      const erro = (e as { response?: { data?: { error?: string } } }).response?.data?.error
+      toast.error('Não foi possível ajustar a caixa', erro)
+    },
   })
 
   const finalizar = useMutation({
@@ -271,9 +311,12 @@ export function VistoriaPage() {
   const finalizada = Boolean(v.finalizada_em)
   const comPorta = v.portas.filter((p) => p.porta !== null)
   const semPorta = v.portas.filter((p) => p.porta === null)
-  const totalPortas = Math.max(v.cto.portas ?? 8, ...comPorta.map((p) => p.porta as number)) + portasExtras
+  const totalPortas = Math.max(v.cto.portas ?? 8, ...comPorta.map((p) => p.porta as number))
   const porNumero = new Map(comPorta.map((p) => [p.porta as number, p]))
-  const portasLivres = Array.from({ length: totalPortas }, (_, i) => i + 1).filter((n) => !porNumero.has(n))
+  const inutilizadas = new Set(v.cto.portas_inutilizadas)
+  const portasLivres = Array.from({ length: totalPortas }, (_, i) => i + 1).filter(
+    (n) => !porNumero.has(n) && !inutilizadas.has(n),
+  )
   const pendentes = v.candidatos.filter((c) => !c.registrado)
   const fantasmas = pendentes.filter((c) => c.fantasma_provavel)
 
@@ -388,19 +431,45 @@ export function VistoriaPage() {
                   numero={n}
                   registro={registro}
                   ativa={etiquetaPorta === n}
+                  inutilizada={inutilizadas.has(n)}
                   finalizada={finalizada}
                   onEtiqueta={() => setEtiquetaPorta(n)}
                   onMarcar={(resultado) => salvar({ porta: n, resultado, metodo: 'manual' }).catch(() => undefined)}
                   onLimpar={() => registro && limpar.mutate(registro.id)}
+                  onInutilizar={(inutilizada) => ajustarCto.mutate({ tipo: 'porta', porta: n, inutilizada })}
                 />
               )
             })}
           </div>
-          {!finalizada && (
-            <Button variant="ghost" size="sm" className="w-fit" onClick={() => setPortasExtras((x) => x + 1)}>
-              <Plus /> Porta a mais (caixa ampliada)
-            </Button>
-          )}
+          <Card className="gap-2 px-4 py-3">
+            <div className="text-sm">
+              <span className="font-medium">{v.cto.portas ?? '?'} portas</span>
+              <span className="text-muted-foreground">
+                {' '}
+                ({v.cto.portas_base ?? '?'} do projeto
+                {v.cto.splitters_extras.map((n, i) => (
+                  <span key={i}> + splitter de {n}</span>
+                ))}
+                ){inutilizadas.size > 0 && ` · ${inutilizadas.size} inutilizada(s)`}
+              </span>
+            </div>
+            {!finalizada && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Caixa ampliada? Adicione o splitter instalado:</span>
+                <Button size="sm" variant="outline" disabled={ajustarCto.isPending} onClick={() => ajustarCto.mutate({ tipo: 'splitter', portas: 4 })}>
+                  <Plus /> Splitter de 4 portas
+                </Button>
+                <Button size="sm" variant="outline" disabled={ajustarCto.isPending} onClick={() => ajustarCto.mutate({ tipo: 'splitter', portas: 8 })}>
+                  <Plus /> Splitter de 8 portas
+                </Button>
+                {v.cto.splitters_extras.length > 0 && (
+                  <Button size="sm" variant="ghost" disabled={ajustarCto.isPending} onClick={() => ajustarCto.mutate({ tipo: 'desfazer' })}>
+                    Desfazer último splitter
+                  </Button>
+                )}
+              </div>
+            )}
+          </Card>
         </div>
 
         <Card className="gap-0 self-start py-0">
