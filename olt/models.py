@@ -129,6 +129,9 @@ class PlacaOnu(models.Model):
 class ClienteFibraIxc(models.Model):
     mac = models.CharField(max_length=255)
     nome = models.CharField(max_length=255)
+    # Login PPPoE do registro de cliente fibra (radpop_radio_cliente_fibra). Um mesmo
+    # titular pode ter vários logins/ONUs, cada um numa caixa - o login é o que os separa.
+    login = models.CharField(max_length=255, blank=True, default='', db_index=True)
     latitude = models.CharField(max_length=50, blank=True, null=True)
     longitude = models.CharField(max_length=50, blank=True, null=True)
     endereco = models.TextField(blank=True, null=True)

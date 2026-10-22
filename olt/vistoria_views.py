@@ -18,7 +18,7 @@ Endpoints novos (não alteram nenhum existente):
     GET      /api/vistorias/correcoes/historico/   correções já enviadas ao IXC
     GET      /api/ixc/escrita/                     a escrita no IXC está ligada? este usuário pode?
 """
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import timedelta
 
 from django.db.models import Max, Q
@@ -54,7 +54,32 @@ def _ultima_vez_online(serials):
                 .values('serial').annotate(m=Max('taken_at')).values_list('serial', 'm'))
 
 
-def _cliente_info(serial, cliente, onu, inferencia=None, ultimo_up=None, agora=None):
+def _chave_titular(cliente):
+    """Mesmo titular = mesmo nome real do IXC. Sem contrato vinculado o "nome" é o
+    próprio login, então não agrupa."""
+    if cliente is None or not cliente.vinculado or not (cliente.nome or '').strip():
+        return None
+    return ' '.join(cliente.nome.upper().split())
+
+
+def outros_logins_por_serial(clientes):
+    """{serial: [{serial, login}, ...]} com os OUTROS logins/ONUs do mesmo titular.
+
+    Um cliente com dois logins aparece duas vezes com o mesmo nome; na vistoria
+    isso precisa ficar visível para a bancada não escolher o login errado.
+    """
+    chaves = {c.mac: _chave_titular(c) for c in clientes}
+    nomes = {c.nome for c in clientes if chaves[c.mac]}
+    grupos = defaultdict(list)
+    for outro in ClienteFibraIxc.objects.filter(is_active=True, vinculado=True, nome__in=nomes):
+        chave = _chave_titular(outro)
+        if chave:
+            grupos[chave].append({'serial': outro.mac, 'login': outro.login})
+    return {serial: [o for o in grupos.get(chave, []) if o['serial'] != serial]
+            for serial, chave in chaves.items() if chave}
+
+
+def _cliente_info(serial, cliente, onu, inferencia=None, ultimo_up=None, agora=None, outros_logins=None):
     """Dados de um cliente/ONT como a bancada precisa ver."""
     agora = agora or timezone.now()
     codigo, rotulo = situacao_contrato(cliente)
@@ -69,6 +94,8 @@ def _cliente_info(serial, cliente, onu, inferencia=None, ultimo_up=None, agora=N
     return {
         'serial': serial,
         'cliente_nome': cliente.nome if cliente else '',
+        'login': (cliente.login or '') if cliente else '',
+        'outros_logins': outros_logins or [],
         'endereco': (cliente.endereco or '') if cliente else '',
         'pon': onu.pon if onu else (inferencia.pon if inferencia else ''),
         'position': onu.position if onu else (inferencia.position if inferencia else None),
@@ -159,12 +186,14 @@ def vistoria_detail(request, pk):
     onus = _onu_por_serial(serials)
     ultimo_up = _ultima_vez_online(serials)
     portas_por_serial = {p.serial: p.porta for p in v.portas.all() if p.serial}  # porta pode ser None
+    outros = outros_logins_por_serial(list(clientes.values()))
 
     candidatos = []
     for serial in serials:
         inf = inferencias.get(serial)
         onu = onus.get(serial)
-        item = _cliente_info(serial, clientes.get(serial), onu, inf, ultimo_up.get(serial), agora)
+        item = _cliente_info(serial, clientes.get(serial), onu, inf, ultimo_up.get(serial), agora,
+                             outros_logins=outros.get(serial))
         if inf is None:
             # Cadastrado aqui no IXC, mas a ONT nem aparece na OLT: provável contrato antigo.
             item['papel'] = 'sem_ont'
@@ -326,11 +355,13 @@ def vistoria_eventos(request, pk):
                     if q.pon == evento.pon
                     and abs((q.occurred_at - evento.occurred_at).total_seconds()) <= JANELA_SIMULTANEA_S})
 
+    outros = outros_logins_por_serial(list(clientes.values()))
     resultado = []
     for e in eventos:
         onu = onus.get((e.pon, e.position))
         serial = e.serial or (onu.serial if onu else '')
-        item = _cliente_info(serial, clientes.get(serial), onu, inferencias.get(serial), agora=agora)
+        item = _cliente_info(serial, clientes.get(serial), onu, inferencias.get(serial), agora=agora,
+                             outros_logins=outros.get(serial))
         item.update({
             'id': e.id,
             'ocorrido_em': e.occurred_at,
@@ -350,17 +381,20 @@ def vistoria_eventos(request, pk):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def vistoria_buscar_cliente(request):
-    """Cliente que não está na lista de candidatos (nome da etiqueta ou serial)."""
+    """Cliente que não está na lista de candidatos (nome da etiqueta, login ou serial)."""
     termo = (request.GET.get('q') or '').strip()
     if len(termo) < 3:
         return Response([])
     clientes = list(ClienteFibraIxc.objects.filter(is_active=True)
-                    .filter(Q(nome__icontains=termo) | Q(mac__icontains=termo)).order_by('nome')[:20])
+                    .filter(Q(nome__icontains=termo) | Q(mac__icontains=termo) | Q(login__icontains=termo))
+                    .order_by('nome', 'login')[:20])
     serials = {c.mac for c in clientes}
     onus = _onu_por_serial(serials)
     inferencias = {i.serial: i for i in CtoInferencia.objects.filter(serial__in=serials).select_related('cto_provavel')}
+    outros = outros_logins_por_serial(clientes)
     agora = timezone.now()
-    return Response([_cliente_info(c.mac, c, onus.get(c.mac), inferencias.get(c.mac), agora=agora) for c in clientes])
+    return Response([_cliente_info(c.mac, c, onus.get(c.mac), inferencias.get(c.mac), agora=agora,
+                                   outros_logins=outros.get(c.mac)) for c in clientes])
 
 
 @api_view(['GET'])

@@ -201,6 +201,20 @@ class VistoriaApiTests(APITestCase):
         ClienteFibraIxc.objects.filter(mac='S4').update(id_caixa_ftth='96')   # IXC corrigido
         self.assertEqual(self.client.get(reverse('api:vistoria_correcoes')).data['clientes'], [])
 
+    def test_mesmo_titular_com_dois_logins(self):
+        # S1 e um segundo login do mesmo titular, em outra caixa
+        ClienteFibraIxc.objects.filter(mac='S1').update(login='cliente1_casa')
+        ClienteFibraIxc.objects.create(mac='S9', nome='Cliente 1', login='cliente1_loja', vinculado=True,
+                                       id_caixa_ftth='97', status_contrato='A')
+        dados = self.client.get(reverse('api:vistoria_detail', args=[self.v['id']])).data
+        s1 = next(c for c in dados['candidatos'] if c['serial'] == 'S1')
+        self.assertEqual(s1['login'], 'cliente1_casa')
+        self.assertEqual(s1['outros_logins'], [{'serial': 'S9', 'login': 'cliente1_loja'}])
+        # Busca pelo login acha só aquele login
+        r = self.client.get(reverse('api:vistoria_buscar_cliente'), {'q': 'cliente1_loja'}).data
+        self.assertEqual([c['serial'] for c in r], ['S9'])
+        self.assertEqual(r[0]['outros_logins'], [{'serial': 'S1', 'login': 'cliente1_casa'}])
+
     def test_busca_cliente(self):
         r = self.client.get(reverse('api:vistoria_buscar_cliente'), {'q': 'Cliente 4'}).data
         self.assertEqual([c['serial'] for c in r], ['S4'])

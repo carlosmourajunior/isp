@@ -6,9 +6,18 @@ export type PortaMetodo = 'etiqueta' | 'desconexao' | 'manual'
 export type Contrato = 'ativo' | 'bloqueado' | 'inativo' | 'sem_contrato'
 export type PapelVistoria = 'confirmado' | 'provavel' | 'veio_de_outra' | 'possivel' | 'suspeito' | 'sem_ont'
 
+export interface OutroLogin {
+  serial: string
+  login: string
+}
+
 export interface ClienteInfo {
   serial: string
   cliente_nome: string
+  /** Login PPPoE - separa os vários logins/ONUs de um mesmo titular. */
+  login: string
+  /** Outros logins/ONUs do mesmo titular (podem estar em outras caixas). */
+  outros_logins: OutroLogin[]
   endereco: string
   pon: string
   position: number | null

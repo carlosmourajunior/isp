@@ -40,7 +40,12 @@ function EscolherCliente({
   const filtrados = useMemo(() => {
     const t = termo.trim().toLowerCase()
     return t
-      ? candidatos.filter((c) => c.cliente_nome.toLowerCase().includes(t) || c.serial.toLowerCase().includes(t))
+      ? candidatos.filter(
+          (c) =>
+            c.cliente_nome.toLowerCase().includes(t) ||
+            c.login.toLowerCase().includes(t) ||
+            c.serial.toLowerCase().includes(t),
+        )
       : candidatos
   }, [candidatos, termo])
 
@@ -64,6 +69,12 @@ function EscolherCliente({
       className="rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent"
     >
       <ClienteLinha c={c} extra={extra} />
+      {c.outros_logins.length > 0 && (
+        <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+          Este titular tem outro(s) login(s): {c.outros_logins.map((o) => o.login || o.serial).join(', ')}. Confira qual é o
+          desta caixa pela etiqueta - na dúvida, identifique por desconexão.
+        </div>
+      )}
     </button>
   )
 
@@ -84,7 +95,7 @@ function EscolherCliente({
             autoFocus
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
-            placeholder="Nome da etiqueta ou serial…"
+            placeholder="Nome, login da etiqueta ou serial…"
             className="pl-8"
           />
         </div>
