@@ -2,7 +2,7 @@
 
 export type CtoSituacao = 'livre' | 'quase_cheia' | 'cheia' | 'acima' | 'sem_capacidade'
 
-export type InferenciaStatus = 'confirmado' | 'provavel' | 'divergente' | 'incerto' | 'sem_candidata'
+export type InferenciaStatus = 'vistoriado' | 'confirmado' | 'provavel' | 'divergente' | 'incerto' | 'sem_candidata'
 
 /** Papel de um cliente em relação à CTO consultada. */
 export type CtoPapel = 'confirmado' | 'provavel' | 'veio_de_outra' | 'possivel' | 'suspeito'

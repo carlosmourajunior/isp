@@ -19,6 +19,7 @@ export const situacaoStyles: Record<CtoSituacao, { label: string; color: string;
 }
 
 export const statusInferenciaStyles: Record<InferenciaStatus, { label: string; badge: BadgeVariant }> = {
+  vistoriado: { label: 'Vistoriado', badge: 'success' },
   confirmado: { label: 'Confirmado', badge: 'success' },
   provavel: { label: 'Provável', badge: 'warning' },
   divergente: { label: 'Divergente', badge: 'destructive' },

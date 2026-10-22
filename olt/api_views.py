@@ -544,6 +544,14 @@ def olt_connection_status(request):
 # NÃO fazem parte do contrato congelado de parceiros (API_DOCUMENTATION.md) -
 # essa distinção é só de uso/documentação, tecnicamente vivem no mesmo /api/.
 
+def _utc(dt):
+    """O RQ guarda datetimes "naive" em UTC; com fuso explícito o navegador converte certo."""
+    from datetime import timezone as dt_timezone
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=dt_timezone.utc)
+
+
 def _job_info(job, include_error=False):
     info = {
         'id': job.id,
@@ -554,10 +562,28 @@ def _job_info(job, include_error=False):
         'menu_item': job.meta.get('menu_item', 'N/A'),
         'started_at': job.meta.get('started_at', 'N/A'),
         'current_step': job.meta.get('current_step', 'N/A'),
+        # ISO com fuso (UTC) - o frontend mostra no horário local.
+        'enqueued_at': _utc(job.enqueued_at),
+        'ended_at': _utc(job.ended_at),
     }
     if include_error:
         info['error_message'] = job.exc_info
     return info
+
+
+TASK_LIST_LIMITE = 10
+
+
+def _jobs_mais_recentes(queue, registry, include_error=False):
+    """Os N jobs mais recentes de um registro do RQ.
+
+    O registro ordena pelo vencimento (= término + TTL), do mais antigo para o
+    mais novo - pegar o começo da lista mostrava sempre os jobs mais velhos.
+    """
+    ids = registry.get_job_ids()
+    jobs = [j for j in (queue.fetch_job(i) for i in ids[-TASK_LIST_LIMITE * 3:]) if j is not None]
+    jobs.sort(key=lambda j: _utc(j.ended_at or j.started_at or j.enqueued_at or j.created_at), reverse=True)
+    return [_job_info(j, include_error=include_error) for j in jobs[:TASK_LIST_LIMITE]]
 
 
 @api_view(['GET'])
@@ -566,37 +592,28 @@ def task_list(request):
     """
     Status das tarefas em background (RQ). Substitui a página tasks.html,
     que hoje só se atualiza via full-page reload a cada 5s.
+
+    Em execução, concluídas e com falha: os 10 mais recentes. Na fila: os 10
+    próximos. `totais` traz o tamanho de cada lista.
     """
     queue = get_queue('default')
 
-    running_jobs = []
-    for job_id in queue.started_job_registry.get_job_ids()[:5]:
-        job = queue.fetch_job(job_id)
-        if job is not None:
-            running_jobs.append(_job_info(job))
-
-    queued_jobs = []
-    for job in list(queue.jobs)[:5]:
-        if job is not None and job.get_status() in ['queued', 'deferred']:
-            queued_jobs.append(_job_info(job))
-
-    failed_jobs = []
-    for job_id in queue.failed_job_registry.get_job_ids()[:5]:
-        job = queue.fetch_job(job_id)
-        if job is not None:
-            failed_jobs.append(_job_info(job, include_error=True))
-
-    finished_jobs = []
-    for job_id in queue.finished_job_registry.get_job_ids()[:5]:
-        job = queue.fetch_job(job_id)
-        if job is not None:
-            finished_jobs.append(_job_info(job))
+    # Na fila: os próximos a rodar (ordem da fila).
+    queued_jobs = [_job_info(job) for job in list(queue.jobs)[:TASK_LIST_LIMITE]
+                   if job is not None and job.get_status() in ['queued', 'deferred']]
 
     return Response({
-        'running_jobs': running_jobs,
+        'running_jobs': _jobs_mais_recentes(queue, queue.started_job_registry),
         'queued_jobs': queued_jobs,
-        'finished_jobs': finished_jobs,
-        'failed_jobs': failed_jobs,
+        'finished_jobs': _jobs_mais_recentes(queue, queue.finished_job_registry),
+        'failed_jobs': _jobs_mais_recentes(queue, queue.failed_job_registry, include_error=True),
+        # Quantos existem em cada lista (as listas acima trazem só os mais recentes).
+        'totais': {
+            'running': queue.started_job_registry.count,
+            'queued': len(queue),
+            'finished': queue.finished_job_registry.count,
+            'failed': queue.failed_job_registry.count,
+        },
     })
 
 

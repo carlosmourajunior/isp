@@ -5,6 +5,7 @@ portas e splitter, marca a OLT e cria as caixas que só existem no KMZ
 
     python manage.py importar_kmz "data/kmz/Borda da mata.kml" --olt 1 --dry-run --detalhe
     python manage.py importar_kmz "data/kmz/Borda da mata.kml" --olt 1
+    python manage.py importar_kmz /tmp/inconfidentes.kml            # sem OLT no sistema ainda
 
 Rodar sync_ctos_ixc antes (o KMZ complementa o cadastro do IXC). Pode ser
 rodado de novo sem duplicar nada.
@@ -14,7 +15,8 @@ from collections import Counter
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from olt.kmz import haversine_m, iter_placemarks, match_ctos, normalize_name, parse_cto_placemark, read_kml_bytes
+from olt.kmz import (haversine_m, iter_placemarks, match_ctos, nome_para_exibir, normalize_name, parse_cto_placemark,
+                     read_kml_bytes)
 from olt.models import Cto, Olt
 
 # Reimportação: caixa só-KMZ com mesmo nome até esta distância é a mesma caixa.
@@ -26,7 +28,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('arquivo')
-        parser.add_argument('--olt', type=int, required=True, help='id da OLT que atende essa rede')
+        parser.add_argument('--olt', type=int, help='id da OLT que atende essa rede (opcional: sem ele as caixas '
+                                                    'entram sem OLT e mantêm a que já tinham)')
         parser.add_argument('--dry-run', action='store_true', help='Só mostra o resultado, não grava')
         parser.add_argument('--detalhe', action='store_true',
                             help='Lista as caixas sem par com a CTO do IXC mais próxima e a distância')
@@ -34,10 +37,12 @@ class Command(BaseCommand):
                             help='Não cria as caixas que só existem no KMZ')
 
     def handle(self, *args, **options):
-        try:
-            olt = Olt.objects.get(id=options['olt'])
-        except Olt.DoesNotExist:
-            raise CommandError(f"OLT {options['olt']} não existe")
+        olt = None
+        if options['olt']:
+            try:
+                olt = Olt.objects.get(id=options['olt'])
+            except Olt.DoesNotExist:
+                raise CommandError(f"OLT {options['olt']} não existe")
 
         ixc_ctos = list(Cto.objects.filter(is_active=True, origem=Cto.ORIGEM_IXC))
         if not ixc_ctos:
@@ -60,7 +65,8 @@ class Command(BaseCommand):
                           f"(por nome: {metodos.get('nome', 0)}, por coordenada: {metodos.get('coordenada', 0)}) | "
                           f"só no KMZ: {len(sem_par)} | duplicadas no KMZ (ignoradas): {len(duplicadas)}")
         self.stdout.write(f"Casadas por ramal: {dict(sorted(Counter(k['ramal'] or '(sem ramal)' for k, _, _, _ in best.values()).items()))}")
-        self.stdout.write(f"Só no KMZ por tipo: {dict(Counter(k['tipo'] for k in sem_par))}")
+        self.stdout.write(f"Só no KMZ por tipo: {dict(Counter(k['tipo'] for k in sem_par))}"
+                          f" | sem nome no KMZ: {sum(1 for k in kmz_ctos if not k['name'])}")
         if duplicadas:
             self.stdout.write("Duplicadas (mesmo nome, mesma CTO do IXC, mais longe): "
                               + ', '.join(f"{k['name']} ({k['ramal'] or 'sem ramal'})" for k in duplicadas))
@@ -72,7 +78,7 @@ class Command(BaseCommand):
                 c, d = min(((c, haversine_m(k['lat'], k['lon'], c.latitude, c.longitude)) for c in com_coord),
                            key=lambda x: x[1], default=(None, None))
                 perto = f"{c.descricao} (IXC {c.ixc_id}) a {d:.0f} m" if c else "nenhuma CTO do IXC com coordenada"
-                self.stdout.write(f"  {k['name']:<24} {k['ramal'] or '(sem ramal)':<11} -> {perto}")
+                self.stdout.write(f"  {nome_para_exibir(k):<32} {k['ramal'] or '(sem ramal)':<11} -> {perto}")
 
         if options['dry_run']:
             self.stdout.write(self.style.WARNING("--dry-run: nada gravado"))
@@ -89,25 +95,27 @@ class Command(BaseCommand):
                 for kmz in sem_par:
                     cto = next((c for c in existentes
                                 if normalize_name(c.kmz_nome) == normalize_name(kmz['name'])
+                                and c.latitude is not None
                                 and haversine_m(kmz['lat'], kmz['lon'], c.latitude, c.longitude) <= SAME_KMZ_BOX_M), None)
                     if cto is None:
                         cto = Cto(origem=Cto.ORIGEM_KMZ, ixc_id=None)
                         criadas += 1
                     else:
                         atualizadas_kmz += 1
-                    cto.descricao = kmz['name'][:100]
+                    cto.descricao = nome_para_exibir(kmz)[:100]
                     cto.latitude, cto.longitude = kmz['lat'], kmz['lon']
                     cto.is_active = True
                     self._aplicar_kmz(cto, kmz, olt, 'so_kmz')
                     cto.save()
 
         self.stdout.write(self.style.SUCCESS(
-            f"OLT {olt.name}: {len(best)} CTOs do IXC enriquecidas com o KMZ, "
+            f"OLT {olt.name if olt else '(não informada)'}: {len(best)} CTOs do IXC enriquecidas com o KMZ, "
             f"{criadas} caixas só-KMZ criadas, {atualizadas_kmz} atualizadas"))
 
     @staticmethod
     def _aplicar_kmz(cto, kmz, olt, metodo):
-        cto.olt = olt
+        if olt is not None:
+            cto.olt = olt
         cto.tipo = kmz['tipo']
         cto.ramal = kmz['ramal']
         cto.kmz_nome = kmz['name'][:100]

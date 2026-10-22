@@ -20,6 +20,8 @@ interface Job {
   started_at?: string
   current_step?: string
   error_message?: string
+  enqueued_at?: string | null
+  ended_at?: string | null
 }
 
 interface TaskListResponse {
@@ -27,6 +29,18 @@ interface TaskListResponse {
   queued_jobs: Job[]
   finished_jobs: Job[]
   failed_jobs: Job[]
+  totais?: { running: number; queued: number; finished: number; failed: number }
+}
+
+/** "Concluídas (10 de 230)" quando a API traz só os mais recentes. */
+function titulo(rotulo: string, mostrados: number, total?: number) {
+  return total !== undefined && total > mostrados ? `${rotulo} (${mostrados} mais recentes de ${total})` : `${rotulo} (${mostrados})`
+}
+
+function quando(job: Job) {
+  const iso = job.ended_at ?? job.enqueued_at
+  // ISO com fuso vindo da API -> horário local do navegador.
+  return iso ? new Date(iso).toLocaleString('pt-BR') : job.started_at || job.created_at
 }
 
 const triggers = [
@@ -52,7 +66,7 @@ function JobList({ jobs, emptyMessage, showError }: { jobs: Job[]; emptyMessage:
             <Badge variant={job.status === 'failed' ? 'destructive' : 'outline'}>{job.status}</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            {job.user} · {job.started_at || job.created_at}
+            {job.user} · {quando(job)}
             {job.current_step ? ` · ${job.current_step}` : ''}
           </p>
           {showError && job.error_message && (
@@ -146,7 +160,7 @@ export function TasksPage() {
           <Card className="gap-0 overflow-hidden py-0">
             <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border py-3.5">
               <RefreshCw className="size-4 text-primary" />
-              <CardTitle className="text-foreground">Em execução ({data?.running_jobs.length ?? 0})</CardTitle>
+              <CardTitle className="text-foreground">{titulo('Em execução', data?.running_jobs.length ?? 0, data?.totais?.running)}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <JobList jobs={data?.running_jobs ?? []} emptyMessage="Nenhuma tarefa em execução." />
@@ -156,7 +170,7 @@ export function TasksPage() {
           <Card className="gap-0 overflow-hidden py-0">
             <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border py-3.5">
               <Loader2 className="size-4 text-muted-foreground" />
-              <CardTitle className="text-foreground">Na fila ({data?.queued_jobs.length ?? 0})</CardTitle>
+              <CardTitle className="text-foreground">{titulo('Na fila', data?.queued_jobs.length ?? 0, data?.totais?.queued)}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <JobList jobs={data?.queued_jobs ?? []} emptyMessage="Nenhuma tarefa na fila." />
@@ -166,7 +180,7 @@ export function TasksPage() {
           <Card className="gap-0 overflow-hidden py-0">
             <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border py-3.5">
               <AlertCircle className="size-4 text-destructive" />
-              <CardTitle className="text-foreground">Falharam ({data?.failed_jobs.length ?? 0})</CardTitle>
+              <CardTitle className="text-foreground">{titulo('Falharam', data?.failed_jobs.length ?? 0, data?.totais?.failed)}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <JobList jobs={data?.failed_jobs ?? []} emptyMessage="Nenhuma falha recente." showError />
@@ -175,7 +189,7 @@ export function TasksPage() {
 
           <Card className="gap-0 overflow-hidden py-0">
             <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border py-3.5">
-              <CardTitle className="text-foreground">Concluídas ({data?.finished_jobs.length ?? 0})</CardTitle>
+              <CardTitle className="text-foreground">{titulo('Concluídas', data?.finished_jobs.length ?? 0, data?.totais?.finished)}</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <JobList jobs={data?.finished_jobs ?? []} emptyMessage="Nenhuma tarefa concluída recentemente." />

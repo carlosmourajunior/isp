@@ -634,6 +634,11 @@ class VistoriaPorta(models.Model):
     position = models.IntegerField(null=True, blank=True)
     cliente_nome = models.CharField(max_length=255, blank=True, default='')
     reconexao_confirmada = models.BooleanField(default=False, verbose_name="Reconexão confirmada pela OLT")
+    # id_caixa_ftth do cliente no IXC quando foi registrado aqui. Se o IXC mudar
+    # depois disso, o IXC volta a ser a verdade (ver olt/verdade.py).
+    # None = registro antigo, de antes deste campo existir.
+    caixa_ixc_no_registro = models.CharField(max_length=50, null=True, blank=True,
+                                             verbose_name="Caixa no IXC na hora da vistoria")
     observacao = models.CharField(max_length=255, blank=True, default='')
     registrado_em = models.DateTimeField(auto_now=True)
 

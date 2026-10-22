@@ -56,6 +56,12 @@ class CtoApiTests(APITestCase):
         self.assertEqual(ctos['CA_002']['suspeitos'], 1)
         self.assertEqual(ctos['CA_002']['situacao'], 'livre')
 
+    def test_vistoriado_conta_como_ocupada(self):
+        CtoInferencia.objects.filter(serial='S5').update(status='vistoriado')
+        ctos = {c['descricao']: c for c in self.client.get(reverse('api:cto_list')).data}
+        self.assertEqual(ctos['CA_001']['confirmados'], 3)
+        self.assertEqual(ctos['CA_001']['possiveis'], 0)
+
     def test_filtro_situacao(self):
         response = self.client.get(reverse('api:cto_list'), {'situacao': 'cheia'})
         self.assertEqual([c['descricao'] for c in response.data], ['CA_001'])

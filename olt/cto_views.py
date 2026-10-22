@@ -43,6 +43,7 @@ def papel(inferencia, cto_id):
     """Papel do cliente em relação à CTO consultada."""
     if inferencia.cto_provavel_id == cto_id:
         return {
+            'vistoriado': 'confirmado',     # confirmado em campo
             'confirmado': 'confirmado',
             'provavel': 'provavel',
             'divergente': 'veio_de_outra',   # cadastrado em outra CTO, rede aponta esta

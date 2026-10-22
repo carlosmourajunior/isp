@@ -162,7 +162,7 @@ class VistoriaApiTests(APITestCase):
         self.assertEqual(corr['clientes'][0]['cto_cadastro'], 'CA_097')
         self.assertEqual([(p['cto']['descricao'], p['porta']) for p in corr['portas_fantasma']], [('CA_096', 5)])
 
-        with mock.patch('olt.tasks.infer_ctos_task.delay') as delay:
+        with mock.patch('olt.tasks.update_clientes_task.delay') as delay:
             delay.return_value.id = 'job-1'
             r = self.client.post(reverse('api:vistoria_finalizar', args=[self.v['id']]))
         self.assertIsNotNone(r.data['finalizada_em'])
@@ -176,6 +176,30 @@ class VistoriaApiTests(APITestCase):
         inf = CtoInferencia.objects.get(serial='S4')
         self.assertEqual(inf.status, 'vistoriado')
         self.assertEqual(inf.cto_provavel, self.cto)
+
+    def test_ixc_volta_a_ser_verdade_quando_muda_depois_da_vistoria(self):
+        from olt.cto_inference import run_inference
+        # Campo: S4 está na 96 (IXC diz 97) -> pendente, vistoria prevalece.
+        self.client.post(reverse('api:vistoria_porta_salvar', args=[self.v['id']]),
+                         {'porta': 1, 'resultado': 'cliente', 'serial': 'S4'})
+        run_inference(self.olt)
+        self.assertEqual(CtoInferencia.objects.get(serial='S4').status, 'vistoriado')
+        self.assertEqual(len(self.client.get(reverse('api:vistoria_correcoes')).data['clientes']), 1)
+
+        # Alguém muda S4 direto no IXC para a 97... de novo não: para outra caixa (98).
+        Cto.objects.create(ixc_id='98', descricao='CA_098', olt=self.olt, kmz_portas=8)
+        ClienteFibraIxc.objects.filter(mac='S4').update(id_caixa_ftth='98')
+        run_inference(self.olt)
+        inf = CtoInferencia.objects.get(serial='S4')
+        self.assertNotEqual(inf.status, 'vistoriado')            # o IXC voltou a valer
+        self.assertEqual(inf.cto_cadastro.descricao, 'CA_098')
+        self.assertEqual(self.client.get(reverse('api:vistoria_correcoes')).data['clientes'], [])
+
+    def test_correcao_aplicada_sai_da_lista(self):
+        self.client.post(reverse('api:vistoria_porta_salvar', args=[self.v['id']]),
+                         {'porta': 1, 'resultado': 'cliente', 'serial': 'S4'})
+        ClienteFibraIxc.objects.filter(mac='S4').update(id_caixa_ftth='96')   # IXC corrigido
+        self.assertEqual(self.client.get(reverse('api:vistoria_correcoes')).data['clientes'], [])
 
     def test_busca_cliente(self):
         r = self.client.get(reverse('api:vistoria_buscar_cliente'), {'q': 'Cliente 4'}).data
