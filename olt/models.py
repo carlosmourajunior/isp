@@ -109,8 +109,11 @@ class ONU(models.Model):
         modelo do aparelho, às vezes "undefined") e nunca corresponde de
         fato ao nome cadastrado no IXC, então exigir os dois descartava
         vínculos que já existiam por serial.
+
+        Só conta registro ainda presente no IXC (is_active): um cliente fibra
+        apagado no IXC fica no banco como inativo e não pode manter o "Sim".
         """
-        existe = ClienteFibraIxc.objects.filter(mac=self.serial).exists()
+        existe = ClienteFibraIxc.objects.filter(mac=self.serial, is_active=True).exists()
         self.cliente_fibra = existe
         self.save()
 

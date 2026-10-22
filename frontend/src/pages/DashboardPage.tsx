@@ -136,7 +136,7 @@ export function DashboardPage() {
               to="/onus?situacao=offline"
               tone={stats.onus_offline > 0 ? 'destructive' : 'default'}
             />
-            <StatCard label="Clientes Fibra" value={stats.clientes_fibra} icon={Activity} to="/clientes-fibra" />
+            <StatCard label="Clientes Fibra" value={stats.clientes_fibra} icon={Activity} to="/onus" />
             <StatCard
               label="Sinal Baixo"
               value={stats.onus_sinal_baixo}

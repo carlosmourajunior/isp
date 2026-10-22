@@ -312,7 +312,7 @@ class olt_connector():
             new_onu.olt = self.olt
             # Casa só por serial - desc1 é um campo livre da OLT que não
             # corresponde ao nome cadastrado no IXC (ver ONU.update_cliente_fibra_status).
-            new_onu.cliente_fibra = ClienteFibraIxc.objects.filter(mac=data['sernum']).exists()
+            new_onu.cliente_fibra = ClienteFibraIxc.objects.filter(mac=data['sernum'], is_active=True).exists()
 
             new_onu.pon = data['pon']
             new_onu.position = data['position']

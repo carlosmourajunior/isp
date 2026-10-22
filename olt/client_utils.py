@@ -137,11 +137,19 @@ def update_clientes():
         # (opcional - pode manter histórico marcando como inativo)
         # ClienteFibraIxc.objects.filter(is_active=False).delete()
 
-    onus = ONU.objects.all()
-    for onu in onus:
-        onu.update_cliente_fibra_status()
+    marcar_clientes_fibra()
 
     logger.info("IXC: sincronização de clientes fibra concluída")
+
+
+def marcar_clientes_fibra():
+    """Marca ONU.cliente_fibra pelo serial, em lote (mesma regra de
+    ONU.update_cliente_fibra_status: só registros ainda presentes no IXC)."""
+    ativos = set(ClienteFibraIxc.objects.filter(is_active=True).values_list('mac', flat=True))
+    sim = ONU.objects.filter(serial__in=ativos).exclude(cliente_fibra=True).update(cliente_fibra=True)
+    nao = ONU.objects.exclude(serial__in=ativos).exclude(cliente_fibra=False).update(cliente_fibra=False)
+    logger.info(f"IXC: cliente_fibra marcado em {sim} ONUs e desmarcado em {nao}")
+    return sim, nao
 
 
 def _formata_endereco(*partes):
