@@ -116,6 +116,8 @@ def update_clientes():
                 cliente_data = {
                     'mac': registro['mac'],
                     'nome': nome,
+                    # "nome" em radpop_radio_cliente_fibra é o login PPPoE.
+                    'login': (registro.get('login') or registro.get('nome') or '')[:255],
                     'status_contrato': dados_reais['status_contrato'] if vinculado else '',
                     'status_internet': dados_reais['status_internet'] if vinculado else '',
                     'id_contrato': registro.get('id_contrato', ''),

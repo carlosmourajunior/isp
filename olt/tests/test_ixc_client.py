@@ -164,6 +164,8 @@ class UpdateClientesEnriquecimentoTests(TestCase):
         cliente = ClienteFibraIxc.objects.get(mac='ALCL:FBCC7D34')
         self.assertEqual(cliente.nome, 'Luana Aparecida de Moraes Silva')
         self.assertEqual(cliente.endereco, 'Zona Rural, SN, Chácara Rancho Tropeiro, Bogari')
+        # O "nome" do radpop é o login PPPoE - guardado à parte do nome real.
+        self.assertEqual(cliente.login, 'luanamoraes')
 
     @mock.patch('olt.client_utils.requests.post')
     def test_cai_para_dados_do_radpop_quando_nao_ha_contrato_correspondente(self, mock_post):

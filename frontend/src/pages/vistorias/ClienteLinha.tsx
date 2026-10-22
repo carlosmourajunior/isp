@@ -11,6 +11,14 @@ export function ClienteLinha({ c, extra }: { c: ClienteInfo; extra?: React.React
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="inline-block size-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />
         <span className="font-medium text-foreground">{c.cliente_nome || '(sem cliente no IXC)'}</span>
+        {c.login && c.login !== c.cliente_nome && (
+          <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-foreground">{c.login}</span>
+        )}
+        {c.outros_logins.length > 0 && (
+          <Badge variant="warning" title={`Outros logins: ${c.outros_logins.map((o) => o.login || o.serial).join(', ')}`}>
+            +{c.outros_logins.length} login{c.outros_logins.length > 1 ? 's' : ''}
+          </Badge>
+        )}
         {c.fantasma_provavel && <Badge variant="destructive">Fantasma provável</Badge>}
         {extra}
       </div>
