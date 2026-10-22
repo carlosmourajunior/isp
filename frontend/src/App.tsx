@@ -10,8 +10,6 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { OnusPage } from '@/pages/onus/OnusPage'
 import { SinalPage } from '@/pages/sinal/SinalPage'
 import { PortDetailPage } from '@/pages/onus/PortDetailPage'
-import { MacAddressesPage } from '@/pages/onus/MacAddressesPage'
-import { ClientesFibraPage } from '@/pages/ClientesFibraPage'
 import { OltsPage } from '@/pages/OltsPage'
 import { PortasPage } from '@/pages/PortasPage'
 import { TemperatureAlertsPage } from '@/pages/TemperatureAlertsPage'
@@ -62,10 +60,10 @@ function App() {
                   <Route path="/onus/sinal-baixo" element={<Navigate to="/sinal?faixa=critico" replace />} />
                   <Route path="/onus/sinal-alerta" element={<Navigate to="/sinal?faixa=alerta" replace />} />
                   <Route path="/onus/porta/:slot/:port" element={<PortDetailPage />} />
-                  <Route path="/mac-addresses" element={<MacAddressesPage />} />
+                  <Route path="/mac-addresses" element={<Navigate to="/onus" replace />} />
 
                   {/* Clientes & Fibra */}
-                  <Route path="/clientes-fibra" element={<ClientesFibraPage />} />
+                  <Route path="/clientes-fibra" element={<Navigate to="/onus" replace />} />
                   <Route path="/ftth-boxes" element={<Navigate to="/ctos" replace />} />
                   <Route
                     path="/ctos"

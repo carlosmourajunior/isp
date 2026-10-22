@@ -2,8 +2,6 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   Router,
-  ScanLine,
-  Users,
   Network,
   Server,
   Signal,
@@ -39,13 +37,11 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/onus', label: 'ONUs', icon: Router, end: true },
       { to: '/sinal', label: 'Sinal óptico', icon: Signal },
-      { to: '/mac-addresses', label: 'MAC Addresses', icon: ScanLine },
     ],
   },
   {
-    label: 'Clientes & Fibra',
+    label: 'CTOs',
     items: [
-      { to: '/clientes-fibra', label: 'Clientes Fibra', icon: Users },
       { to: '/ctos', label: 'CTOs (ocupação)', icon: MapPin },
       { to: '/vistorias', label: 'Vistoria de CTO', icon: ClipboardCheck },
     ],

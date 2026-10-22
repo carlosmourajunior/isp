@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views, cto_views, health_views, sinal_views, user_activity_views, vistoria_views
+from . import api_views, cto_views, health_views, ixc_correcoes_views, sinal_views, user_activity_views, vistoria_views
 
 app_name = 'api'
 
@@ -69,6 +69,11 @@ urlpatterns = [
     path('ctos/<int:pk>/portas-inutilizadas/', cto_views.cto_porta_inutilizada, name='cto_porta_inutilizada'),
     path('cto-inferencias/', cto_views.CtoInferenciaListAPIView.as_view(), name='cto_inferencia_list'),
     path('cto-inferencias/resumo/', cto_views.cto_inferencia_resumo, name='cto_inferencia_resumo'),
+
+    # Correções de CTO no IXC: histórico com reversão e aplicação em lote (olt/ixc_correcoes_views.py)
+    path('ixc/correcoes/', ixc_correcoes_views.correcoes_historico, name='ixc_correcoes_historico'),
+    path('ixc/correcoes/lote/', ixc_correcoes_views.correcoes_lote, name='ixc_correcoes_lote'),
+    path('ixc/correcoes/<int:pk>/reverter/', ixc_correcoes_views.correcao_reverter, name='ixc_correcao_reverter'),
 
     # Sinal óptico: faixas e variação (olt/sinal_views.py)
     path('sinal/resumo/', sinal_views.sinal_resumo, name='sinal_resumo'),
