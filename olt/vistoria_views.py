@@ -16,6 +16,7 @@ Endpoints novos (não alteram nenhum existente):
     GET      /api/vistorias/correcoes/             cadastro IXC x campo + portas fantasma
     POST     /api/vistorias/correcoes/aplicar/     corrige a CTO do cliente no próprio IXC (staff)
     GET      /api/vistorias/correcoes/historico/   correções já enviadas ao IXC
+    GET      /api/ixc/escrita/                     a escrita no IXC está ligada? este usuário pode?
 """
 from collections import Counter
 from datetime import timedelta
@@ -32,6 +33,7 @@ from rest_framework.response import Response
 from .contrato import situacao_contrato
 from .cto_views import papel
 from .ixc_escrita import alterar_caixa, escrita_permitida
+from .verdade import caixa_no_ixc, correcao_pendente
 from .models import (ONU, ClienteFibraIxc, CorrecaoIxc, Cto, CtoInferencia, OntEvent, OntSnapshot, Vistoria,
                      VistoriaPorta)
 
@@ -225,6 +227,8 @@ def vistoria_porta_salvar(request, pk):
         'cliente_nome': (cliente.nome if cliente else '')[:255],
         'reconexao_confirmada': bool(request.data.get('reconexao_confirmada')),
         'observacao': (request.data.get('observacao') or '')[:255],
+        # O que o IXC dizia neste momento - se mudar depois, o IXC volta a valer.
+        'caixa_ixc_no_registro': caixa_no_ixc(cliente) if serial else None,
     }
 
     if numero is not None:
@@ -264,18 +268,17 @@ def vistoria_registro_remover(request, pk, registro_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def vistoria_finalizar(request, pk):
-    from .tasks import infer_ctos_task
+    from .tasks import update_clientes_task
 
     v = get_object_or_404(Vistoria.objects.select_related('cto', 'olt'), pk=pk)
     v.finalizada_em = timezone.now()
     v.observacao = (request.data.get('observacao') or v.observacao)
     v.save(update_fields=['finalizada_em', 'observacao'])
-    job_id = None
-    if v.olt_id:
-        # O resultado de campo entra na inferência na hora, sem esperar o próximo ciclo.
-        job = infer_ctos_task.delay(olt_id=v.olt_id, user=request.user.get_username(),
-                                    menu_item=f"Inferência de CTOs após vistoria de {v.cto.descricao}")
-        job_id = job.id
+    # Traz o IXC atualizado e, no fim, a sincronização recalcula a inferência - o
+    # resultado de campo e o que mudou no IXC entram juntos, sem esperar o ciclo.
+    job = update_clientes_task.delay(user=request.user.get_username(),
+                                     menu_item=f"Sincronização com o IXC após vistoria de {v.cto.descricao}")
+    job_id = job.id
     dados = _vistoria_basico(v)
     dados['job_id'] = job_id
     return Response(dados)
@@ -385,8 +388,9 @@ def vistoria_correcoes(request):
     for serial, vp in ultimos.items():
         cto_campo = vp.vistoria.cto
         cliente = clientes.get(serial)
-        id_cadastro = (cliente.id_caixa_ftth or '') if cliente else ''
-        if id_cadastro and id_cadastro == cto_campo.ixc_id:
+        id_cadastro = caixa_no_ixc(cliente)
+        # Já está igual no IXC, ou o IXC mudou depois da vistoria (aí o IXC vale).
+        if not correcao_pendente(vp, cliente):
             continue
         cto_cad = ctos_ixc.get(id_cadastro)
         divergentes.append({
@@ -421,9 +425,10 @@ def vistoria_correcoes(request):
     return Response({
         'clientes': divergentes,
         'portas_fantasma': portas_fantasma,
-        # O frontend só mostra o botão de corrigir no IXC quando faz sentido.
+        # O frontend mostra o botão sempre; desabilitado com o motivo quando não pode.
         'escrita_ixc_permitida': escrita_permitida(),
-        'pode_corrigir': escrita_permitida() and (request.user.is_staff or request.user.is_superuser),
+        'pode_corrigir': _estado_escrita(request.user)['pode_corrigir'],
+        'motivo_sem_escrita': _estado_escrita(request.user)['motivo'],
     })
 
 
@@ -470,3 +475,21 @@ def vistoria_historico_correcoes(request):
         olt_id = request.GET['olt']
         qs = qs.filter(Q(vistoria_porta__vistoria__olt_id=olt_id) | Q(cto__olt_id=olt_id))
     return Response([_correcao_dict(c) for c in qs[:200]])
+
+
+def _estado_escrita(user):
+    permitida = escrita_permitida()
+    staff = bool(user.is_staff or user.is_superuser)
+    if not permitida:
+        motivo = 'Escrita no IXC desligada no servidor (IXC_PERMITIR_ESCRITA).'
+    elif not staff:
+        motivo = 'Só administradores podem alterar o IXC.'
+    else:
+        motivo = ''
+    return {'permitida': permitida, 'pode_corrigir': permitida and staff, 'motivo': motivo}
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ixc_escrita_estado(request):
+    return Response(_estado_escrita(request.user))

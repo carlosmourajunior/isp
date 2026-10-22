@@ -2,10 +2,14 @@
 Leitura do projeto da rede (KMZ/KML) e casamento das caixas com o cadastro
 de CTOs do IXC.
 
-O KMZ de Borda da Mata tem caixas nomeadas (CA_235, CTO MC-01, CD_...)
-dentro de pastas "Ramais/Ramal NN", com descrição no formato:
-    "08/26  M.P. Inicial: 31% ...  F.O.01 -> Splitter 1:8"
-(08 = portas). O IXC importa desse mesmo KMZ, então os nomes batem.
+Formatos conhecidos:
+- Borda da Mata: caixas nomeadas (CA_235, CTO MC-01, CD_...) em pastas
+  "Ramais/Ramal NN", descrição "08/26  M.P. Inicial: 31% ...  F.O.01 -> Splitter 1:8"
+  (08 = portas). O IXC importa desse mesmo KMZ, então os nomes batem.
+- Ouro Fino: caixas SEM nome ("Marcador sem título") na pasta "CTO" - casam
+  com o IXC só por coordenada.
+- Inconfidentes: "CTO-01-03" na pasta "Caixas de Terminação"; os "CD-xx" ficam em
+  "Caixas de Emenda" (emenda, não atendimento).
 """
 import math
 import re
@@ -14,6 +18,11 @@ import xml.etree.ElementTree as ET
 
 CTO_NAME_RE = re.compile(r'^\s*(CA|CTO|CD)\b|^\s*(CA|CTO|CD)[_\-\s]', re.IGNORECASE)
 RAMAL_RE = re.compile(r'Ramal\s*(\d+)', re.IGNORECASE)
+# Pastas cujos pontos são caixas de atendimento mesmo sem nome reconhecível.
+PASTA_CAIXAS_RE = re.compile(r'^(CTOS?|CAIXAS? DE (TERMINA|ATENDIMENTO).*)$', re.IGNORECASE)
+# O Google Earth dá esses nomes a marcadores criados sem nome.
+NOMES_VAZIOS = {'', 'MARCADOR SEM TÍTULO', 'MARCADOR DE LOCAL SEM TÍTULO', 'UNTITLED PLACEMARK'}
+DESCARTAR_RE = re.compile(r'EMENDA|POSTE|RESERVA', re.IGNORECASE)
 PORTAS_RE = re.compile(r'^\s*(\d{1,3})\s*/\s*(\d{1,4})')
 SPLITTER_RE = re.compile(r'Splitter\s*(1:\d+)', re.IGNORECASE)
 
@@ -90,19 +99,31 @@ def cto_tipo(name):
     return match.group(1).upper() if match else ''
 
 
+def nome_vazio(name):
+    return (name or '').strip().upper() in NOMES_VAZIOS
+
+
 def parse_cto_placemark(pm):
-    """Placemark de caixa -> dados do KMZ, ou None se não for caixa."""
-    if not CTO_NAME_RE.match(pm['name'] or ''):
+    """Placemark de caixa -> dados do KMZ, ou None se não for caixa.
+
+    É caixa se o nome começa com CA/CTO/CD ou se está numa pasta de caixas
+    (ex.: "CTO", "Caixas de Terminação") - mesmo sem nome.
+    """
+    pasta = pm['folder'].split('/')[-1].strip() if pm['folder'] else ''
+    pela_pasta = bool(PASTA_CAIXAS_RE.match(pasta))
+    if not CTO_NAME_RE.match(pm['name'] or '') and not pela_pasta:
         return None
-    # Caixas de emenda e pontos da pasta de postes não são caixas de atendimento.
-    if 'EMENDA' in (pm['name'] or '').upper() or 'POSTE' in pm['folder'].upper():
+    # Emendas, postes e reservas técnicas não são caixas de atendimento.
+    if DESCARTAR_RE.search(pm['name'] or '') or DESCARTAR_RE.search(pm['folder']):
         return None
+    if nome_vazio(pm['name']):
+        pm = {**pm, 'name': ''}
     ramal = RAMAL_RE.search(pm['folder'])
     portas = PORTAS_RE.match(pm['description'])
     splitter = SPLITTER_RE.search(pm['description'])
     return {
         **pm,
-        'tipo': cto_tipo(pm['name']),
+        'tipo': cto_tipo(pm['name']) or 'CTO',
         'ramal': f"Ramal {int(ramal.group(1)):02d}" if ramal else '',
         'portas': int(portas.group(1)) if portas else None,
         'splitter': splitter.group(1) if splitter else '',
@@ -139,7 +160,8 @@ def match_ctos(kmz_ctos, ixc_ctos):
 
     result = []
     for k in kmz_ctos:
-        candidates = by_name.get(normalize_name(k['name']), [])
+        # Caixa sem nome no KMZ: só a coordenada serve.
+        candidates = by_name.get(normalize_name(k['name']), []) if k['name'] else []
         best = None
         for c in candidates:
             d = dist(k, c)
@@ -156,3 +178,8 @@ def match_ctos(kmz_ctos, ixc_ctos):
         else:
             result.append((k, None, '', None))
     return result
+
+
+def nome_para_exibir(kmz):
+    """Caixa sem nome no KMZ e sem par no IXC precisa de algum nome na tela."""
+    return kmz['name'] or f"Sem nome ({kmz['lat']:.5f}, {kmz['lon']:.5f})"

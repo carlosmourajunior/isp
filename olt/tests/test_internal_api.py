@@ -59,8 +59,40 @@ class TaskStatusTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             set(response.data.keys()),
-            {'running_jobs', 'queued_jobs', 'finished_jobs', 'failed_jobs'},
+            {'running_jobs', 'queued_jobs', 'finished_jobs', 'failed_jobs', 'totais'},
         )
+
+    def test_task_list_mostra_os_mais_recentes(self):
+        from datetime import datetime, timedelta
+
+        def job(i, fim):
+            j = MagicMock(id=f'job-{i}', func_name='olt.tasks.x', created_at=fim, enqueued_at=fim,
+                          started_at=fim, ended_at=fim, exc_info=None)
+            j.get_status.return_value = 'finished'
+            j.meta = {'user': 'Sistema Automático', 'menu_item': f'Job {i}'}
+            return j
+
+        base = datetime(2026, 10, 22, 10, 0, 0)
+        # O registro do RQ devolve do mais antigo para o mais novo (por vencimento).
+        jobs = {f'job-{i}': job(i, base + timedelta(minutes=i)) for i in range(15)}
+        registro = MagicMock(count=15)
+        registro.get_job_ids.return_value = list(jobs)
+        vazio = MagicMock(count=0)
+        vazio.get_job_ids.return_value = []
+        fila = MagicMock(finished_job_registry=registro, started_job_registry=vazio, failed_job_registry=vazio,
+                         jobs=[])
+        fila.__len__.return_value = 0
+        fila.fetch_job.side_effect = jobs.get
+
+        with patch('olt.api_views.get_queue', return_value=fila):
+            response = self.client.get(reverse('api:task_list'))
+
+        concluidas = response.data['finished_jobs']
+        self.assertEqual(len(concluidas), 10)
+        self.assertEqual(concluidas[0]['menu_item'], 'Job 14')      # o mais recente primeiro
+        self.assertEqual(concluidas[-1]['menu_item'], 'Job 5')
+        self.assertEqual(response.data['totais']['finished'], 15)
+        self.assertEqual(concluidas[0]['ended_at'].utcoffset(), timedelta(0))
 
     def test_scheduler_status_retorna_scheduler_e_queue(self):
         response = self.client.get(reverse('api:scheduler_status_api'))

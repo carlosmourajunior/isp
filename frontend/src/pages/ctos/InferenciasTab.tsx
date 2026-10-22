@@ -1,11 +1,17 @@
 import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
+import { api } from '@/lib/api'
+import { useToast } from '@/lib/toast'
+import { ConfirmDialog, useConfirmDialog } from '@/components/ConfirmDialog'
+import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/DataTable'
 import { SelectFilter } from '@/components/SelectFilter'
 import { Badge } from '@/components/ui/badge'
 import { usePaginatedApi } from '@/hooks/usePaginatedApi'
 import { statusInferenciaStyles } from '@/lib/ctoStatus'
 import type { CtoInferencia, CtoRef, InferenciaStatus } from '@/types/ctos'
+import type { CorrecaoIxc, EstadoEscritaIxc } from '@/types/vistoria'
 
 interface InferenciasTabProps {
   oltId: string
@@ -23,6 +29,31 @@ export function InferenciasTab({ oltId, onSelectCto }: InferenciasTabProps) {
   const [search, setSearch] = useState('')
   const [statusFiltro, setStatusFiltro] = useState<string>('divergente')
   const [ordering, setOrdering] = useState('pon')
+
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const confirmar = useConfirmDialog<CtoInferencia>()
+  const { data: escrita } = useQuery({
+    queryKey: ['/ixc/escrita/'],
+    queryFn: async () => (await api.get<EstadoEscritaIxc>('/ixc/escrita/')).data,
+    staleTime: 60_000,
+  })
+  const corrigir = useMutation({
+    mutationFn: async (i: CtoInferencia) =>
+      (await api.post<CorrecaoIxc>('/vistorias/correcoes/aplicar/', { serial: i.serial, cto: i.cto_provavel?.id })).data,
+    onSuccess: (r) => {
+      if (r.status === 'ok') toast.success(`${r.cliente_nome || r.serial} atualizado no IXC`, `Agora em ${r.cto?.descricao}.`)
+      else toast.error('Atualizado, mas confira no IXC', r.mensagem)
+    },
+    onError: (e: unknown) => {
+      const dados = (e as { response?: { data?: { mensagem?: string; error?: string } } }).response?.data
+      toast.error('O IXC não foi alterado', dados?.mensagem || dados?.error)
+    },
+    onSettled: () => {
+      confirmar.close()
+      queryClient.invalidateQueries({ queryKey: ['/cto-inferencias/'] })
+    },
+  })
 
   const { data, isLoading, isFetching } = usePaginatedApi<CtoInferencia>({
     endpoint: '/cto-inferencias/',
@@ -93,10 +124,55 @@ export function InferenciasTab({ oltId, onSelectCto }: InferenciasTabProps) {
           )
         },
       },
+      {
+        id: 'ixc',
+        header: '',
+        cell: ({ row }) => {
+          const i = row.original
+          // Só faz sentido quando a rede aponta uma CTO do IXC diferente da cadastrada.
+          if (!i.cto_provavel || i.cto_provavel.id === i.cto_cadastro?.id) return null
+          if (!['divergente', 'provavel', 'vistoriado'].includes(i.status)) return null
+          return (
+            <span title={escrita?.pode_corrigir ? undefined : escrita?.motivo}>
+              <Button size="sm" variant="outline" disabled={!escrita?.pode_corrigir} onClick={() => confirmar.open(i)}>
+                Atualizar no IXC
+              </Button>
+            </span>
+          )
+        },
+      },
     ]
-  }, [onSelectCto])
+  }, [onSelectCto, escrita, confirmar])
 
+  const alvo = confirmar.target
   return (
+    <>
+    <ConfirmDialog
+      open={confirmar.isOpen}
+      title="Atualizar a CTO no IXC?"
+      description={
+        alvo && (
+          <>
+            <strong>{alvo.cliente_nome || alvo.serial}</strong> passa de{' '}
+            <strong>{alvo.cto_cadastro?.descricao ?? 'sem caixa'}</strong> para{' '}
+            <strong>{alvo.cto_provavel?.descricao}</strong> no IXC.
+            {alvo.status !== 'vistoriado' && (
+              <>
+                {' '}
+                <br />
+                <br />
+                Atenção: isso vem da <strong>inferência</strong>, não de uma vistoria em campo. Para teste, prefira um
+                cliente que você conheça.
+              </>
+            )}
+          </>
+        )
+      }
+      confirmLabel="Atualizar no IXC"
+      isLoading={corrigir.isPending}
+      onConfirm={() => alvo && corrigir.mutate(alvo)}
+      onCancel={confirmar.close}
+    />
     <DataTable
       columns={columns}
       data={data?.results ?? []}
@@ -129,5 +205,6 @@ export function InferenciasTab({ oltId, onSelectCto }: InferenciasTabProps) {
         />
       }
     />
+    </>
   )
 }

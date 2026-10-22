@@ -17,6 +17,9 @@ class FakeJob:
     def __init__(self, job_id, status='queued'):
         self.id = job_id
         self.status = status
+        self.started_at = None
+        self.enqueued_at = timezone.now()
+        self.timeout = 1200
 
     def get_status(self, refresh=False):
         return self.status
@@ -63,24 +66,24 @@ class TickTests(TestCase):
     def test_primeira_execucao_enfileira_todas_olts_ativas(self):
         self._ligar()
         self.assertEqual(tick(now=self.now, queue=self.queue), 'enqueued')
-        # 4 etapas por OLT ativa (2) + clientes do IXC uma vez só + inferência de CTO por OLT (2)
-        self.assertEqual(len(self.queue.jobs), 11)
+        # 4 etapas por OLT ativa (2) + clientes do IXC uma vez só (que depois enfileira a inferência)
+        self.assertEqual(len(self.queue.jobs), 9)
         config = SchedulerConfig.load()
         self.assertEqual(config.last_run_at, self.now)
-        self.assertEqual(len(config.last_job_ids), 11)
+        self.assertEqual(len(config.last_job_ids), 9)
 
     def test_dentro_do_intervalo_espera(self):
         self._ligar(minutos=120)
         tick(now=self.now, queue=self.queue)
         self.assertEqual(tick(now=self.now + timedelta(minutes=60), queue=self.queue), 'waiting')
-        self.assertEqual(len(self.queue.jobs), 11)
+        self.assertEqual(len(self.queue.jobs), 9)
 
     def test_nao_sobrepoe_se_anterior_ainda_na_fila(self):
         self._ligar(minutos=30)
         tick(now=self.now, queue=self.queue)
-        self.queue.jobs['job-11'].status = 'started'
+        self.queue.jobs['job-9'].status = 'started'
         self.assertEqual(tick(now=self.now + timedelta(minutes=31), queue=self.queue), 'skipped')
-        self.assertEqual(len(self.queue.jobs), 11)
+        self.assertEqual(len(self.queue.jobs), 9)
 
     def test_enfileira_de_novo_quando_anterior_terminou(self):
         self._ligar(minutos=30)
@@ -88,7 +91,29 @@ class TickTests(TestCase):
         for job in self.queue.jobs.values():
             job.status = 'finished'
         self.assertEqual(tick(now=self.now + timedelta(minutes=31), queue=self.queue), 'enqueued')
-        self.assertEqual(len(self.queue.jobs), 22)
+        self.assertEqual(len(self.queue.jobs), 18)
+
+    def test_job_morto_por_restart_do_worker_nao_trava(self):
+        # Worker reiniciado no meio do job: o Redis deixa 'started' para sempre.
+        self._ligar(minutos=30)
+        tick(now=self.now, queue=self.queue)
+        for job in self.queue.jobs.values():
+            job.status = 'finished'
+        travado = self.queue.jobs['job-3']
+        travado.status = 'started'
+        travado.started_at = self.now
+        # Limite = timeout do job (20 min) + folga (10 min) = 30 min; aos 31 min ele é dado como morto.
+        self.assertEqual(tick(now=self.now + timedelta(minutes=31), queue=self.queue), 'enqueued')
+
+    def test_job_rodando_dentro_do_timeout_ainda_segura(self):
+        self._ligar(minutos=30)
+        tick(now=self.now, queue=self.queue)
+        for job in self.queue.jobs.values():
+            job.status = 'finished'
+        rodando = self.queue.jobs['job-3']
+        rodando.status = 'started'
+        rodando.started_at = self.now + timedelta(minutes=20)
+        self.assertEqual(tick(now=self.now + timedelta(minutes=31), queue=self.queue), 'skipped')
 
     def test_desligar_pelo_admin_para_na_hora(self):
         self._ligar(minutos=30)

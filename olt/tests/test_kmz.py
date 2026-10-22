@@ -56,6 +56,39 @@ class KmzParseTests(SimpleTestCase):
         self.assertNotEqual(normalize_name('CA_03'), normalize_name('CA_003'))
 
 
+KML_OUTRAS_CIDADES = b"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<Folder><name>CTO</name>
+  <Placemark><name>Marcador sem t\xc3\xadtulo</name><Point><coordinates>-46.2,-22.3,0</coordinates></Point></Placemark>
+</Folder>
+<Folder><name>Caixas de Termina\xc3\xa7ao</name>
+  <Placemark><name>CTO-01-03</name><Point><coordinates>-46.3,-22.4,0</coordinates></Point></Placemark>
+</Folder>
+<Folder><name>Caixas de Emenda</name>
+  <Placemark><name>CD-01</name><Point><coordinates>-46.4,-22.5,0</coordinates></Point></Placemark>
+</Folder>
+<Folder><name>Reserva Tecnica</name>
+  <Placemark><name>RESERVA</name><Point><coordinates>-46.5,-22.6,0</coordinates></Point></Placemark>
+</Folder>
+</Document></kml>"""
+
+
+class OutrasCidadesTests(SimpleTestCase):
+    """Ouro Fino (caixas sem nome na pasta CTO) e Inconfidentes (CTO-xx-yy; CD = emenda)."""
+
+    def test_reconhece_caixa_pela_pasta_e_descarta_emenda(self):
+        caixas = [c for c in (parse_cto_placemark(p) for p in iter_placemarks(KML_OUTRAS_CIDADES)) if c]
+        self.assertEqual(sorted(c['name'] for c in caixas), ['', 'CTO-01-03'])
+        self.assertTrue(all(c['tipo'] == 'CTO' for c in caixas))
+
+    def test_caixa_sem_nome_casa_so_por_coordenada(self):
+        sem_nome = [c for c in (parse_cto_placemark(p) for p in iter_placemarks(KML_OUTRAS_CIDADES))
+                    if c and not c['name']]
+        [(_, cto, metodo, _)] = match_ctos(sem_nome, [ixc('CA_900', -22.30005, -46.20005), ixc('CA_001', -22.9, -46.9)])
+        self.assertEqual(metodo, 'coordenada')
+        self.assertEqual(cto.descricao, 'CA_900')
+
+
 class MatchCtosTests(SimpleTestCase):
 
     def test_nome_igual_e_perto_casa_por_nome(self):

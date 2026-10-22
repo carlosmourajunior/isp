@@ -195,7 +195,7 @@ export function CtosPage() {
         <Card className="gap-1 py-4">
           <CardHeader>
             <CardTitle>Clientes confirmados</CardTitle>
-            <CardValue>{porStatus?.confirmado ?? '—'}</CardValue>
+            <CardValue>{porStatus ? porStatus.confirmado + (porStatus.vistoriado ?? 0) : '—'}</CardValue>
           </CardHeader>
         </Card>
         <Card className="gap-1 py-4">

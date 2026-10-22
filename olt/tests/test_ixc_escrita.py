@@ -108,3 +108,11 @@ class CorrecaoIxcApiTests(APITestCase):
         r = self.aplicar(fake)
         self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(fake.puts, [])
+
+    def test_estado_da_escrita(self):
+        r = self.client.get(reverse('api:ixc_escrita_estado')).data
+        self.assertEqual(r, {'permitida': True, 'pode_corrigir': True, 'motivo': ''})
+        self.client.force_authenticate(User.objects.create_user('bancada2', password='p'))
+        r = self.client.get(reverse('api:ixc_escrita_estado')).data
+        self.assertFalse(r['pode_corrigir'])
+        self.assertIn('administradores', r['motivo'])

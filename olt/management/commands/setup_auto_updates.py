@@ -35,5 +35,30 @@ class Command(BaseCommand):
         self.stdout.write(f"Status: {status['status']} | ligada: {config.enabled} | a cada {config.interval_minutes} min")
         for job in status['jobs']:
             self.stdout.write(f"  Próxima execução: {job['next_run']}")
+        self.stdout.write(f"  Última execução: {config.last_run_at or '-'}")
+        self.stdout.write(f"  Último sinal do processo: {config.heartbeat_at or '-'}")
+        self.stdout.write(f"  Resultado da última verificação: {config.last_run_summary or '-'}")
         if config.enabled and status['status'] == 'not_running':
             self.stdout.write(self.style.WARNING("O container 'scheduler' não está respondendo."))
+        self._jobs_do_ultimo_ciclo(config)
+
+    def _jobs_do_ultimo_ciclo(self, config):
+        """Diagnóstico: em que pé estão os jobs do último ciclo."""
+        from django_rq import get_queue
+        from rq.exceptions import NoSuchJobError
+        from rq.job import Job
+
+        if not config.last_job_ids:
+            return
+        queue = get_queue('default')
+        self.stdout.write("  Jobs do último ciclo:")
+        for job_id in config.last_job_ids:
+            try:
+                job = Job.fetch(job_id, connection=queue.connection)
+            except NoSuchJobError:
+                self.stdout.write(f"    {job_id[:8]}  (expirado no Redis)")
+                continue
+            status = job.get_status()
+            status = getattr(status, 'value', status)
+            self.stdout.write(f"    {job_id[:8]}  {status:<9} {job.func_name.split('.')[-1]:<30} "
+                              f"{job.meta.get('menu_item', '')}")

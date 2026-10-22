@@ -70,6 +70,13 @@ def update_clientes_task(user=None, menu_item=None):
     job.save_meta()
     
     update_clientes()
+
+    # O cadastro do IXC mudou: recalcula a inferência de todas as OLTs ativas
+    # (mudanças feitas direto no IXC aparecem no mapa logo depois do sync).
+    queue = get_queue('default')
+    for olt in Olt.objects.filter(is_active=True).order_by('id'):
+        queue.enqueue(infer_ctos_task, olt_id=olt.id, user=user,
+                      menu_item=f"Inferência de CTOs ({olt.name})", job_timeout=600)
     return "Atualização de clientes concluída"
 
 @django_rq.job

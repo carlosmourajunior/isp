@@ -2,7 +2,8 @@
 Inferência de CTO por ONT: cruza o que a rede mostra com o cadastro.
 
 Sinais (cada um soma ou tira pontos de uma CTO candidata):
-- Vistoria em campo (VistoriaPorta): verdade de campo, prevalece sobre tudo.
+- Vistoria em campo (VistoriaPorta): prevalece sobre tudo enquanto a correção não
+  subiu para o IXC; se o IXC mudou depois da vistoria, vale o IXC (olt/verdade.py).
 - Cadastro IXC (ClienteFibraIxc.id_caixa_ftth): ponto de partida, desatualizado.
 - PON: uma CTO é alimentada por uma PON. A PON de cada CTO (e de cada ramal do
   KMZ) é aprendida das "âncoras" - ONTs cujo cliente tem CTO no cadastro.
@@ -341,14 +342,18 @@ def run_inference(olt, dias_eventos=30):
 
     from olt.models import ONU, ClienteFibraIxc, Cto, CtoInferencia, OntEvent, VistoriaPorta
     from olt.utils import parse_float
+    from olt.verdade import campo_prevalece
 
     clientes = {c.mac: c for c in ClienteFibraIxc.objects.filter(is_active=True)}
     ctos_por_ixc = {c.ixc_id: c for c in Cto.objects.filter(is_active=True).exclude(ixc_id=None)}
     # Vistoria mais recente de cada serial (ordem crescente: a última sobrescreve).
-    campo = {}
+    # Só vale enquanto o IXC não mudou depois dela - o IXC é a verdade (olt/verdade.py).
+    ultimos = {}
     for vp in (VistoriaPorta.objects.filter(resultado=VistoriaPorta.RESULTADO_CLIENTE).exclude(serial='')
                .select_related('vistoria__cto').order_by('vistoria__iniciada_em', 'registrado_em')):
-        campo[vp.serial] = vp.vistoria.cto
+        ultimos[vp.serial] = vp
+    campo = {serial: vp.vistoria.cto for serial, vp in ultimos.items()
+             if campo_prevalece(vp, clientes.get(serial))}
 
     onts = []
     for onu in ONU.objects.filter(olt=olt):

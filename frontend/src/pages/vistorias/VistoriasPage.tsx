@@ -201,10 +201,15 @@ function CorrecoesIxc({ oltId }: { oltId: string }) {
   const alvo = confirmar.target
   return (
     <div className="flex flex-col gap-4">
-      {!data.escrita_ixc_permitida && (
+      {!data.pode_corrigir && (
         <div className="rounded-md bg-secondary px-3 py-2 text-xs text-muted-foreground">
-          A correção direto no IXC está desligada. Para ligar, coloque <code>IXC_PERMITIR_ESCRITA=true</code> no .env do
-          servidor (só administradores verão o botão).
+          {data.motivo_sem_escrita}
+          {!data.escrita_ixc_permitida && (
+            <>
+              {' '}
+              Para ligar, coloque <code>IXC_PERMITIR_ESCRITA=true</code> no .env do servidor e recrie o container web.
+            </>
+          )}
         </div>
       )}
       <Card className="gap-0 overflow-hidden py-0">
@@ -219,7 +224,7 @@ function CorrecoesIxc({ oltId }: { oltId: string }) {
               <th className="px-4 py-2 font-medium">Cadastro IXC</th>
               <th className="px-4 py-2 font-medium">Corrigir para</th>
               <th className="px-4 py-2 font-medium">Vistoria</th>
-              {data.pode_corrigir && <th className="px-4 py-2" />}
+              <th className="px-4 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -239,17 +244,17 @@ function CorrecoesIxc({ oltId }: { oltId: string }) {
                     {new Date(c.vistoriado_em).toLocaleDateString('pt-BR')}
                   </Link>
                 </td>
-                {data.pode_corrigir && (
-                  <td className="px-4 py-2 text-right">
-                    {c.cto_campo.ixc_id ? (
-                      <Button size="sm" variant="outline" onClick={() => confirmar.open(c)}>
+                <td className="px-4 py-2 text-right">
+                  {c.cto_campo.ixc_id ? (
+                    <span title={data.pode_corrigir ? undefined : data.motivo_sem_escrita}>
+                      <Button size="sm" variant="outline" disabled={!data.pode_corrigir} onClick={() => confirmar.open(c)}>
                         Corrigir no IXC
                       </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">cadastre a caixa no IXC</span>
-                    )}
-                  </td>
-                )}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">cadastre a caixa no IXC</span>
+                  )}
+                </td>
               </tr>
             ))}
             {data.clientes.length === 0 && (

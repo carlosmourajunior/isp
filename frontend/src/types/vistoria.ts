@@ -104,6 +104,13 @@ export interface Correcoes {
   }[]
   escrita_ixc_permitida: boolean
   pode_corrigir: boolean
+  motivo_sem_escrita: string
+}
+
+export interface EstadoEscritaIxc {
+  permitida: boolean
+  pode_corrigir: boolean
+  motivo: string
 }
 
 export interface CorrecaoIxc {

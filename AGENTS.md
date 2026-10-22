@@ -43,6 +43,12 @@ slots, alertas de sinal, disparo de sincronizações (RQ background jobs) e cada
 - **Atualização automática**: container próprio `scheduler` (`manage.py run_scheduler` +
   [olt/auto_update.py](olt/auto_update.py)) — processo **único**. Liga/desliga e intervalo
   ficam no admin ("Atualização automática", model `SchedulerConfig`), desligada por padrão.
+- **Escrita no IXC** (única): a tela de vistoria corrige a CTO do cliente fibra
+  (`radpop_radio_cliente_fibra.id_caixa_ftth`) via [olt/ixc_escrita.py](olt/ixc_escrita.py).
+  Desligada por padrão (`IXC_PERMITIR_ESCRITA=true` para ligar), só staff, lê o registro
+  inteiro e devolve inteiro com um campo trocado, relê e compara, e grava tudo em
+  `CorrecaoIxc` (registro antes/depois). Qualquer outra escrita no IXC deve seguir o mesmo
+  padrão e ser combinada com o usuário antes.
 - **Syslog das OLTs**: container `syslog_collector` (`manage.py run_syslog_collector`), UDP
   5140 — grava `OltSyslogMessage` e `OntEvent` (base da inferência de ocupação de CTO).
 - **SSH para OLT**: `netmiko` (device_type `alcatel_aos`, definido por OLT cadastrada).

@@ -11,6 +11,8 @@ cada minuto.
 """
 import logging
 
+from datetime import timezone as dt_timezone
+
 from django.utils import timezone
 from django_rq import get_queue
 from rq.exceptions import NoSuchJobError
@@ -30,15 +32,44 @@ def _status_name(job):
     return getattr(status, 'value', status)
 
 
-def pending_job_ids(queue, job_ids):
-    """Jobs da execução anterior que ainda não terminaram."""
+# Folga além do job_timeout para considerar um job "rodando" como morto.
+FOLGA_JOB_MORTO_S = 600
+# Job "na fila" há mais que isso não vai mais rodar (fila perdida/limpa).
+FILA_ABANDONADA_S = 12 * 3600
+
+
+def _job_morto(job, agora):
+    """Job que o Redis ainda marca como pendente, mas que não vai terminar nunca.
+
+    Acontece quando o rq_worker é reiniciado no meio do job (deploy do Watchtower,
+    restart): o status fica 'started' para sempre e o scheduler travaria esperando.
+    """
+    status = _status_name(job)
+    if status == 'started':
+        inicio = job.started_at or job.enqueued_at
+        limite = (job.timeout or 1200) + FOLGA_JOB_MORTO_S
+    elif status in ('queued', 'deferred', 'scheduled'):
+        inicio = job.enqueued_at
+        limite = FILA_ABANDONADA_S
+    else:
+        return False
+    if inicio is None:
+        return False
+    if inicio.tzinfo is None:
+        inicio = inicio.replace(tzinfo=dt_timezone.utc)
+    return (agora - inicio).total_seconds() > limite
+
+
+def pending_job_ids(queue, job_ids, agora=None):
+    """Jobs da execução anterior que ainda não terminaram (ignorando os mortos)."""
+    agora = agora or timezone.now()
     pending = []
     for job_id in job_ids:
         try:
             job = Job.fetch(job_id, connection=queue.connection)
         except NoSuchJobError:
             continue
-        if _status_name(job) in PENDING_STATUSES:
+        if _status_name(job) in PENDING_STATUSES and not _job_morto(job, agora):
             pending.append(job_id)
     return pending
 
@@ -46,8 +77,8 @@ def pending_job_ids(queue, job_ids):
 def enqueue_full_update(queue, olts):
     """Mesma sequência do comprehensive_update_task, mas guardando os IDs
     de todos os jobs (lá só o job "pai" é conhecido, e ele termina antes dos
-    filhos). Clientes do IXC (e CTOs) uma vez só - não é por OLT. No fim, a
-    inferência de CTO de cada OLT."""
+    filhos). Clientes do IXC (e CTOs) uma vez só - não é por OLT; ao terminar,
+    ela enfileira a inferência de CTO de cada OLT."""
     from olt import tasks
 
     steps = [
@@ -65,11 +96,8 @@ def enqueue_full_update(queue, olts):
     job = queue.enqueue(tasks.update_clientes_task, user=AUTO_USER,
                         menu_item="Atualização de Clientes - automática", job_timeout=1200)
     job_ids.append(job.id)
-    # Por último: depende das ONUs e dos clientes/CTOs atualizados acima (fila FIFO, um worker).
-    for olt in olts:
-        job = queue.enqueue(tasks.infer_ctos_task, olt_id=olt.id, user=AUTO_USER,
-                            menu_item=f"Inferência de CTOs ({olt.name}) - automática", job_timeout=600)
-        job_ids.append(job.id)
+    # A inferência de CTO de cada OLT é enfileirada pela própria sincronização de
+    # clientes, ao terminar (tasks.update_clientes_task).
     return job_ids
 
 
@@ -89,7 +117,7 @@ def tick(now=None, queue=None):
         return 'waiting'
 
     queue = queue or get_queue('default')
-    pending = pending_job_ids(queue, config.last_job_ids or [])
+    pending = pending_job_ids(queue, config.last_job_ids or [], agora=now)
     if pending:
         # Re-tenta a cada minuto até a anterior terminar; loga só na primeira vez.
         if not config.last_run_summary.startswith('Aguardando'):
