@@ -65,6 +65,8 @@ urlpatterns = [
     # CTOs - inferência de ocupação (olt/cto_views.py)
     path('ctos/', cto_views.cto_list, name='cto_list'),
     path('ctos/<int:pk>/', cto_views.cto_detail, name='cto_detail'),
+    path('ctos/<int:pk>/splitters/', cto_views.cto_splitters, name='cto_splitters'),
+    path('ctos/<int:pk>/portas-inutilizadas/', cto_views.cto_porta_inutilizada, name='cto_porta_inutilizada'),
     path('cto-inferencias/', cto_views.CtoInferenciaListAPIView.as_view(), name='cto_inferencia_list'),
     path('cto-inferencias/resumo/', cto_views.cto_inferencia_resumo, name='cto_inferencia_resumo'),
 

@@ -10,7 +10,13 @@ Endpoints novos - não alteram nenhum existente:
 
 Ocupação estimada = confirmados + prováveis + vindos de outra CTO (divergentes
 cuja CTO provável é esta). Incertos não entram na conta; aparecem como
-"possíveis" para mostrar a faixa de incerteza.
+"possíveis" para mostrar a faixa de incerteza. A capacidade usada é a de portas
+úteis: projeto + splitters adicionados em campo - portas inutilizadas.
+
+Ajustes de campo (endpoints novos):
+    POST   /api/ctos/<id>/splitters/           {portas: 4|8} adiciona um splitter
+    DELETE /api/ctos/<id>/splitters/           desfaz o último splitter adicionado
+    POST   /api/ctos/<id>/portas-inutilizadas/ {porta, inutilizada: true|false}
 """
 from collections import Counter, defaultdict
 
@@ -20,6 +26,8 @@ from rest_framework import filters, generics, serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import status as http_status
+from django.utils import timezone
 
 from .models import ONU, ClienteFibraIxc, Cto, CtoInferencia
 
@@ -77,6 +85,10 @@ def _cto_basico(cto):
         'latitude': cto.latitude,
         'longitude': cto.longitude,
         'portas': cto.portas,
+        'portas_base': cto.portas_base,
+        'portas_uteis': cto.portas_uteis,
+        'splitters_extras': cto.splitters_extras or [],
+        'portas_inutilizadas': sorted(set(cto.portas_inutilizadas or [])),
         'splitter': cto.kmz_splitter,
     }
 
@@ -145,7 +157,7 @@ def cto_list(request):
     resultado = []
     for cto in ctos:
         item = _cto_basico(cto)
-        item.update(_ocupacao(contagens[cto.id], cto.portas))
+        item.update(_ocupacao(contagens[cto.id], cto.portas_uteis))
         item['cadastro_ixc'] = cadastro.get(cto.ixc_id, 0) if cto.ixc_id else 0
         if situacao_filtro and item['situacao'] != situacao_filtro:
             continue
@@ -188,7 +200,7 @@ def cto_detail(request, pk):
 
     contagens = _contagens_por_cto(linhas, oper)
     dados = _cto_basico(cto)
-    dados.update(_ocupacao(contagens[cto.id], cto.portas))
+    dados.update(_ocupacao(contagens[cto.id], cto.portas_uteis))
     dados['cadastro_ixc'] = (ClienteFibraIxc.objects.filter(is_active=True, id_caixa_ftth=cto.ixc_id).count()
                              if cto.ixc_id else 0)
     dados['pons'] = sorted({c['pon'] for c in clientes if c['papel'] != 'suspeito'})
@@ -251,3 +263,65 @@ def cto_inferencia_resumo(request):
         'por_status': {s: por_status.get(s, 0) for s, _ in CtoInferencia.STATUS_CHOICES},
         'calculado_em': qs.aggregate(m=Max('calculado_em'))['m'],
     })
+
+
+SPLITTERS_PERMITIDOS = (4, 8)
+
+
+def _registrar_ajuste(cto, request):
+    cto.ajustado_em = timezone.now()
+    cto.ajustado_por = request.user.get_username()
+    cto.save(update_fields=['splitters_extras', 'portas_inutilizadas', 'ajustado_em', 'ajustado_por'])
+
+
+def _resposta_ajuste(cto):
+    return Response(_cto_basico(cto))
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def cto_splitters(request, pk):
+    """Ampliar a caixa = instalar um splitter inteiro (4 ou 8 portas)."""
+    cto = get_object_or_404(Cto.objects.select_related('olt'), pk=pk)
+    extras = list(cto.splitters_extras or [])
+    if request.method == 'DELETE':
+        if not extras:
+            return Response({'error': 'Nenhum splitter adicionado para desfazer.'}, status=http_status.HTTP_400_BAD_REQUEST)
+        extras.pop()
+    else:
+        try:
+            portas = int(request.data.get('portas'))
+        except (TypeError, ValueError):
+            portas = None
+        if portas not in SPLITTERS_PERMITIDOS:
+            return Response({'error': 'Splitter deve ser de 4 ou 8 portas.'}, status=http_status.HTTP_400_BAD_REQUEST)
+        extras.append(portas)
+    cto.splitters_extras = extras
+    # Portas inutilizadas além do novo total deixam de existir.
+    if cto.portas is not None:
+        cto.portas_inutilizadas = [p for p in (cto.portas_inutilizadas or []) if p <= cto.portas]
+    _registrar_ajuste(cto, request)
+    return _resposta_ajuste(cto)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cto_porta_inutilizada(request, pk):
+    """Marca/desmarca uma porta como inutilizada (não recebe cliente)."""
+    cto = get_object_or_404(Cto.objects.select_related('olt'), pk=pk)
+    try:
+        porta = int(request.data.get('porta'))
+    except (TypeError, ValueError):
+        return Response({'error': 'porta inválida'}, status=http_status.HTTP_400_BAD_REQUEST)
+    if porta < 1 or (cto.portas is not None and porta > cto.portas):
+        return Response({'error': f'A caixa tem {cto.portas} portas.'}, status=http_status.HTTP_400_BAD_REQUEST)
+    inutilizadas = set(cto.portas_inutilizadas or [])
+    marcar = request.data.get('inutilizada')
+    marcar = marcar if isinstance(marcar, bool) else str(marcar).lower() in ('1', 'true', 'sim')
+    if marcar:
+        inutilizadas.add(porta)
+    else:
+        inutilizadas.discard(porta)
+    cto.portas_inutilizadas = sorted(inutilizadas)
+    _registrar_ajuste(cto, request)
+    return _resposta_ajuste(cto)

@@ -58,7 +58,15 @@ export interface PortaRegistro {
 
 export interface VistoriaBasica {
   id: number
-  cto: { id: number; descricao: string; portas: number | null; ramal: string }
+  cto: {
+    id: number
+    descricao: string
+    portas: number | null
+    portas_base: number | null
+    splitters_extras: number[]
+    portas_inutilizadas: number[]
+    ramal: string
+  }
   olt_id: number | null
   olt_nome: string | null
   usuario: string

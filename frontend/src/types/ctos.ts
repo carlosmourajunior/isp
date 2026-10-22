@@ -23,7 +23,13 @@ export interface Cto {
   ramal: string
   latitude: number | null
   longitude: number | null
+  /** Portas físicas: projeto + splitters adicionados em campo. */
   portas: number | null
+  portas_base: number | null
+  /** Portas que podem receber cliente (físicas - inutilizadas). */
+  portas_uteis: number | null
+  splitters_extras: number[]
+  portas_inutilizadas: number[]
   splitter: string
   confirmados: number
   provaveis: number
