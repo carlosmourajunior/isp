@@ -142,3 +142,36 @@ export interface CorrecaoIxc {
   outros_campos_alterados: string[]
   criado_em: string
 }
+
+export interface CaixaIxc {
+  ixc_id: string
+  id: number | null
+  descricao: string
+}
+
+/** /api/ixc/correcoes/ - histórico com reversão. */
+export interface AlteracaoIxc {
+  id: number
+  tipo: 'correcao' | 'reversao'
+  reverte_id: number | null
+  serial: string
+  cliente_nome: string
+  caixa_antes: CaixaIxc | null
+  caixa_depois: CaixaIxc | null
+  usuario: string
+  status: 'ok' | 'alerta' | 'erro'
+  mensagem: string
+  outros_campos_alterados: string[]
+  criado_em: string
+  vistoria_id: number | null
+  pode_reverter: boolean
+  motivo_nao_reverter: string | null
+  revertida: { id: number; em: string; por: string } | null
+}
+
+export interface LoteResultado {
+  resultados: AlteracaoIxc[]
+  ok: number
+  alerta: number
+  erro: number
+}

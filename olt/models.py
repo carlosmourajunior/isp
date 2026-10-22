@@ -691,10 +691,18 @@ class CorrecaoIxc(models.Model):
         ('erro', 'Falhou'),
     ]
 
+    TIPO_CORRECAO = 'correcao'
+    TIPO_REVERSAO = 'reversao'
+    TIPO_CHOICES = [(TIPO_CORRECAO, 'Correção'), (TIPO_REVERSAO, 'Reversão')]
+
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default=TIPO_CORRECAO)
+    reverte = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reversoes',
+                                verbose_name="Correção desfeita por esta reversão")
     serial = models.CharField(max_length=30, db_index=True)
     cliente_nome = models.CharField(max_length=255, blank=True, default='')
     ixc_registro_id = models.CharField(max_length=50, blank=True, default='', verbose_name="ID em radpop_radio_cliente_fibra")
     caixa_antes = models.CharField(max_length=50, blank=True, default='', verbose_name="id_caixa_ftth antes")
+    caixa_depois = models.CharField(max_length=50, blank=True, default='', verbose_name="id_caixa_ftth enviado")
     cto = models.ForeignKey('Cto', on_delete=models.SET_NULL, null=True, related_name='correcoes_ixc', verbose_name="CTO aplicada")
     vistoria_porta = models.ForeignKey('VistoriaPorta', on_delete=models.SET_NULL, null=True, blank=True)
     usuario = models.CharField(max_length=150)
@@ -711,4 +719,4 @@ class CorrecaoIxc(models.Model):
         ordering = ['-criado_em']
 
     def __str__(self):
-        return f"{self.serial}: {self.caixa_antes or '-'} -> {self.cto} ({self.status})"
+        return f"{self.serial}: {self.caixa_antes or '-'} -> {self.caixa_depois or self.cto} ({self.status})"

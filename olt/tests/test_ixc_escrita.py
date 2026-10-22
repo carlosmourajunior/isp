@@ -116,3 +116,61 @@ class CorrecaoIxcApiTests(APITestCase):
         r = self.client.get(reverse('api:ixc_escrita_estado')).data
         self.assertFalse(r['pode_corrigir'])
         self.assertIn('administradores', r['motivo'])
+
+
+@mock.patch.dict('os.environ', AMBIENTE)
+class LoteEReversaoTests(APITestCase):
+
+    def setUp(self):
+        self.admin = User.objects.create_user('admin', password='p', is_staff=True)
+        self.client.force_authenticate(self.admin)
+        self.cto = Cto.objects.create(ixc_id='96', descricao='CA_096')
+        self.cto_antiga = Cto.objects.create(ixc_id='97', descricao='CA_097')
+        ClienteFibraIxc.objects.create(mac='ALCL:B3FD63A5', nome='Fulano', id_caixa_ftth='97')
+        self.fake = IxcFake(REGISTRO)
+
+    def chamar(self, url, dados=None):
+        with mock.patch('olt.ixc_escrita.requests.post', side_effect=self.fake.post), \
+                mock.patch('olt.ixc_escrita.requests.put', side_effect=self.fake.put):
+            return self.client.post(url, dados or {}, format='json')
+
+    def test_lote(self):
+        r = self.chamar(reverse('api:ixc_correcoes_lote'), {'itens': [
+            {'serial': 'ALCL:B3FD63A5', 'cto': self.cto.id},
+            {'serial': 'ALCL:B3FD63A5', 'cto': self.cto.id},      # repetido: ignora
+            {'serial': 'NAOEXISTE', 'cto': 9999},                   # CTO inválida: ignora
+        ]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual((r.data['ok'], r.data['erro'], len(r.data['resultados'])), (1, 0, 1))
+        self.assertEqual(r.data['resultados'][0]['caixa_depois']['descricao'], 'CA_096')
+        self.assertTrue(r.data['resultados'][0]['pode_reverter'])
+
+    def test_reverter_volta_caixa_antiga(self):
+        self.chamar(reverse('api:ixc_correcoes_lote'), {'itens': [{'serial': 'ALCL:B3FD63A5', 'cto': self.cto.id}]})
+        correcao = CorrecaoIxc.objects.get()
+        r = self.chamar(reverse('api:ixc_correcao_reverter', args=[correcao.id]))
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual((r.data['tipo'], r.data['status'], r.data['reverte_id']), ('reversao', 'ok', correcao.id))
+        self.assertEqual(self.fake.registro['id_caixa_ftth'], '97')
+        self.assertEqual(self.fake.puts[-1][1], {**REGISTRO, 'ultima_atualizacao': '2026-10-21 10:40:00'})
+        self.assertEqual(ClienteFibraIxc.objects.get().id_caixa_ftth, '97')
+        # Histórico: a original aparece como revertida e não reverte de novo.
+        h = {c['id']: c for c in self.client.get(reverse('api:ixc_correcoes_historico')).data}
+        self.assertEqual(h[correcao.id]['revertida']['por'], 'admin')
+        self.assertFalse(h[correcao.id]['pode_reverter'])
+        r = self.chamar(reverse('api:ixc_correcao_reverter', args=[correcao.id]))
+        self.assertEqual(r.status_code, 409)
+
+    def test_nao_reverte_se_ixc_mudou_depois(self):
+        self.chamar(reverse('api:ixc_correcoes_lote'), {'itens': [{'serial': 'ALCL:B3FD63A5', 'cto': self.cto.id}]})
+        self.fake.registro['id_caixa_ftth'] = '50'       # alguém mudou direto no IXC
+        r = self.chamar(reverse('api:ixc_correcao_reverter', args=[CorrecaoIxc.objects.get().id]))
+        self.assertEqual(r.status_code, 502)
+        self.assertIn('alguém mudou depois', r.data['mensagem'])
+        self.assertEqual(self.fake.registro['id_caixa_ftth'], '50')
+        self.assertEqual(len(self.fake.puts), 1)
+
+    def test_so_staff(self):
+        self.client.force_authenticate(User.objects.create_user('u', password='p'))
+        r = self.client.post(reverse('api:ixc_correcoes_lote'), {'itens': []}, format='json')
+        self.assertEqual(r.status_code, 403)
