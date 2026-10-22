@@ -133,7 +133,7 @@ export function DashboardPage() {
               label="Offline"
               value={stats.onus_offline}
               icon={AlertTriangle}
-              to="/onus/offline"
+              to="/onus?situacao=offline"
               tone={stats.onus_offline > 0 ? 'destructive' : 'default'}
             />
             <StatCard label="Clientes Fibra" value={stats.clientes_fibra} icon={Activity} to="/clientes-fibra" />
@@ -141,6 +141,7 @@ export function DashboardPage() {
               label="Sinal Baixo"
               value={stats.onus_sinal_baixo}
               icon={Signal}
+              to="/sinal"
               tone={stats.onus_sinal_baixo > 0 ? 'warning' : 'default'}
             />
           </div>
@@ -155,28 +156,28 @@ export function DashboardPage() {
               label="ONUs sem MAC"
               value={health.onus_sem_mac}
               icon={ScanLine}
-              to="/onus/sem-mac"
+              to="/onus?situacao=sem-mac"
               tone={health.onus_sem_mac > 0 ? 'warning' : 'default'}
             />
             <StatCard
               label="Sem Cliente Fibra"
               value={health.onus_sem_cliente_fibra}
               icon={UserX}
-              to="/onus/sem-cliente"
+              to="/onus?situacao=sem-cliente"
               tone={health.onus_sem_cliente_fibra > 0 ? 'warning' : 'default'}
             />
             <StatCard
               label="Sinal entre -27 e -29"
               value={health.sinal_entre_27_e_29}
               icon={Signal}
-              to="/onus/sinal-alerta"
+              to="/sinal?faixa=alerta"
               tone={health.sinal_entre_27_e_29 > 0 ? 'warning' : 'default'}
             />
             <StatCard
               label="Sinal abaixo de -29"
               value={health.sinal_abaixo_29}
               icon={Signal}
-              to="/onus/sinal-baixo"
+              to="/sinal?faixa=critico"
               tone={health.sinal_abaixo_29 > 0 ? 'destructive' : 'default'}
             />
           </div>

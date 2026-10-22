@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Info, RotateCw, Trash2 } from 'lucide-react'
@@ -52,6 +52,10 @@ interface OnuListPageProps {
   emptyMessage?: string
   /** Mostra os dropdowns de Admin/Oper/Cliente Fibra - só faz sentido quando `filters` não já fixa esses campos. */
   showQuickFilters?: boolean
+  /** Conteúdo entre o cabeçalho e a tabela (ex.: as abas de situação). */
+  children?: ReactNode
+  /** Quando a página que usa a lista já tem o próprio cabeçalho. */
+  hideHeader?: boolean
 }
 
 export function OnuListPage({
@@ -61,6 +65,8 @@ export function OnuListPage({
   filters,
   emptyMessage,
   showQuickFilters,
+  children,
+  hideHeader,
 }: OnuListPageProps) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -73,8 +79,14 @@ export function OnuListPage({
   const { data: olts } = useOlts()
   const showOltFilter = showQuickFilters && (olts?.length ?? 0) > 1
 
+  // Filtro fixo da situação (ex.: oper_state=down) esconde o dropdown equivalente.
+  const fixo = (campo: string) => Boolean(filters?.[campo])
+  const quick: Record<string, string> = { admin_state: adminState, oper_state: operState, cliente_fibra: clienteFibra, olt }
   const combinedFilters = showQuickFilters
-    ? { ...filters, admin_state: adminState, oper_state: operState, cliente_fibra: clienteFibra, olt }
+    ? {
+        ...filters,
+        ...Object.fromEntries(Object.entries(quick).filter(([campo, valor]) => valor && !fixo(campo))),
+      }
     : filters
 
   const { data, isLoading, isFetching } = usePaginatedApi<Onu>({
@@ -195,7 +207,8 @@ export function OnuListPage({
 
   return (
     <div>
-      <PageHeader title={title} description={description} />
+      {!hideHeader && <PageHeader title={title} description={description} />}
+      {children}
 
       <DataTable
         columns={columns}
@@ -231,42 +244,48 @@ export function OnuListPage({
                   options={(olts ?? []).map((o) => ({ label: o.name, value: String(o.id) }))}
                 />
               )}
-              <SelectFilter
-                label="Admin"
-                value={adminState}
-                onChange={(v) => {
-                  setAdminState(v)
-                  setPage(1)
-                }}
-                options={[
-                  { label: 'up', value: 'up' },
-                  { label: 'down', value: 'down' },
-                ]}
-              />
-              <SelectFilter
-                label="Oper"
-                value={operState}
-                onChange={(v) => {
-                  setOperState(v)
-                  setPage(1)
-                }}
-                options={[
-                  { label: 'up', value: 'up' },
-                  { label: 'down', value: 'down' },
-                ]}
-              />
-              <SelectFilter
-                label="Cliente Fibra"
-                value={clienteFibra}
-                onChange={(v) => {
-                  setClienteFibra(v)
-                  setPage(1)
-                }}
-                options={[
-                  { label: 'Sim', value: 'true' },
-                  { label: 'Não', value: 'false' },
-                ]}
-              />
+              {!fixo('admin_state') && (
+                <SelectFilter
+                  label="Admin"
+                  value={adminState}
+                  onChange={(v) => {
+                    setAdminState(v)
+                    setPage(1)
+                  }}
+                  options={[
+                    { label: 'up', value: 'up' },
+                    { label: 'down', value: 'down' },
+                  ]}
+                />
+              )}
+              {!fixo('oper_state') && (
+                <SelectFilter
+                  label="Oper"
+                  value={operState}
+                  onChange={(v) => {
+                    setOperState(v)
+                    setPage(1)
+                  }}
+                  options={[
+                    { label: 'up', value: 'up' },
+                    { label: 'down', value: 'down' },
+                  ]}
+                />
+              )}
+              {!fixo('cliente_fibra') && (
+                <SelectFilter
+                  label="Cliente Fibra"
+                  value={clienteFibra}
+                  onChange={(v) => {
+                    setClienteFibra(v)
+                    setPage(1)
+                  }}
+                  options={[
+                    { label: 'Sim', value: 'true' },
+                    { label: 'Não', value: 'false' },
+                  ]}
+                />
+              )}
             </div>
           )
         }

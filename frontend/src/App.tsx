@@ -1,23 +1,17 @@
 import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, RequireAuth } from '@/lib/auth'
 import { ThemeProvider } from '@/lib/theme'
 import { ToastProvider } from '@/lib/toast'
 import { Layout } from '@/components/Layout'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
-import { AllOnusPage } from '@/pages/onus/AllOnusPage'
-import { DuplicatedOnusPage } from '@/pages/onus/DuplicatedOnusPage'
-import { OnusWithoutMacPage } from '@/pages/onus/OnusWithoutMacPage'
-import { OnusWithoutClientPage } from '@/pages/onus/OnusWithoutClientPage'
-import { OnusOfflinePage } from '@/pages/onus/OnusOfflinePage'
-import { OnusLowSignalPage } from '@/pages/onus/OnusLowSignalPage'
-import { OnusSignalWarningPage } from '@/pages/onus/OnusSignalWarningPage'
+import { OnusPage } from '@/pages/onus/OnusPage'
+import { SinalPage } from '@/pages/sinal/SinalPage'
 import { PortDetailPage } from '@/pages/onus/PortDetailPage'
 import { MacAddressesPage } from '@/pages/onus/MacAddressesPage'
 import { ClientesFibraPage } from '@/pages/ClientesFibraPage'
-import { FtthBoxesPage } from '@/pages/FtthBoxesPage'
 import { OltsPage } from '@/pages/OltsPage'
 import { PortasPage } from '@/pages/PortasPage'
 import { TemperatureAlertsPage } from '@/pages/TemperatureAlertsPage'
@@ -58,19 +52,21 @@ function App() {
                   <Route path="/" element={<DashboardPage />} />
 
                   {/* ONUs */}
-                  <Route path="/onus" element={<AllOnusPage />} />
-                  <Route path="/onus/duplicadas" element={<DuplicatedOnusPage />} />
-                  <Route path="/onus/sem-mac" element={<OnusWithoutMacPage />} />
-                  <Route path="/onus/sem-cliente" element={<OnusWithoutClientPage />} />
-                  <Route path="/onus/offline" element={<OnusOfflinePage />} />
-                  <Route path="/onus/sinal-baixo" element={<OnusLowSignalPage />} />
-                  <Route path="/onus/sinal-alerta" element={<OnusSignalWarningPage />} />
+                  <Route path="/onus" element={<OnusPage />} />
+                  <Route path="/sinal" element={<SinalPage />} />
+                  {/* Endereços antigos (favoritos/links): viraram filtros das páginas novas. */}
+                  <Route path="/onus/duplicadas" element={<Navigate to="/onus?situacao=duplicadas" replace />} />
+                  <Route path="/onus/sem-mac" element={<Navigate to="/onus?situacao=sem-mac" replace />} />
+                  <Route path="/onus/sem-cliente" element={<Navigate to="/onus?situacao=sem-cliente" replace />} />
+                  <Route path="/onus/offline" element={<Navigate to="/onus?situacao=offline" replace />} />
+                  <Route path="/onus/sinal-baixo" element={<Navigate to="/sinal?faixa=critico" replace />} />
+                  <Route path="/onus/sinal-alerta" element={<Navigate to="/sinal?faixa=alerta" replace />} />
                   <Route path="/onus/porta/:slot/:port" element={<PortDetailPage />} />
                   <Route path="/mac-addresses" element={<MacAddressesPage />} />
 
                   {/* Clientes & Fibra */}
                   <Route path="/clientes-fibra" element={<ClientesFibraPage />} />
-                  <Route path="/ftth-boxes" element={<FtthBoxesPage />} />
+                  <Route path="/ftth-boxes" element={<Navigate to="/ctos" replace />} />
                   <Route
                     path="/ctos"
                     element={
