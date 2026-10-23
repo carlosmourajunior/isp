@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Info, RotateCw, Trash2 } from 'lucide-react'
+import { Info, RefreshCw, RotateCw, Trash2 } from 'lucide-react'
 import { DataTable } from '@/components/DataTable'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ConfirmDialog'
@@ -12,6 +12,7 @@ import { useOnuActions } from '@/hooks/useOnuActions'
 import { useOlts } from '@/hooks/useOlts'
 import { signalStatus, statusStyles } from '@/lib/status'
 import type { Onu } from '@/types/api'
+import { AtualizarOnuDialog } from './AtualizarOnuDialog'
 
 /** `live` acrescenta o ponto pulsante (só faz sentido pro estado operacional, não admin). */
 function StateBadge({ state, live }: { state: string; live?: boolean }) {
@@ -56,6 +57,8 @@ interface OnuListPageProps {
   children?: ReactNode
   /** Quando a página que usa a lista já tem o próprio cabeçalho. */
   hideHeader?: boolean
+  /** Botões à direita do título. */
+  headerAction?: ReactNode
 }
 
 export function OnuListPage({
@@ -67,6 +70,7 @@ export function OnuListPage({
   showQuickFilters,
   children,
   hideHeader,
+  headerAction,
 }: OnuListPageProps) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -98,6 +102,7 @@ export function OnuListPage({
   })
   const { removeOnu, resetOnu } = useOnuActions()
 
+  const [atualizando, setAtualizando] = useState<Onu | null>(null)
   const removeDialog = useConfirmDialog<Onu>()
   const resetDialog = useConfirmDialog<Onu>()
 
@@ -183,6 +188,13 @@ export function OnuListPage({
                 <Info className="size-4" />
               </Link>
               <button
+                onClick={() => setAtualizando(onu)}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                title="Atualizar esta ONU (OLT ou IXC)"
+              >
+                <RefreshCw className="size-4" />
+              </button>
+              <button
                 onClick={() => resetDialog.open(onu)}
                 className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 title="Reiniciar ONU"
@@ -207,7 +219,7 @@ export function OnuListPage({
 
   return (
     <div>
-      {!hideHeader && <PageHeader title={title} description={description} />}
+      {!hideHeader && <PageHeader title={title} description={description} action={headerAction} />}
       {children}
 
       <DataTable
@@ -290,6 +302,8 @@ export function OnuListPage({
           )
         }
       />
+
+      <AtualizarOnuDialog onu={atualizando} onClose={() => setAtualizando(null)} />
 
       <ConfirmDialog
         open={resetDialog.isOpen}

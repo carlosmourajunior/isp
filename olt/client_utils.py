@@ -100,34 +100,7 @@ def update_clientes():
             data = response.json()
 
             for registro in data['registros']:
-                dados_reais = cliente_lookup.get(registro.get('id_contrato'))
-                vinculado = bool(dados_reais and dados_reais['nome'])
-                if vinculado:
-                    nome = dados_reais['nome']
-                    endereco = dados_reais['endereco']
-                else:
-                    nome = registro['nome']
-                    endereco = _formata_endereco(
-                        registro.get('endereco', ''),
-                        registro.get('numero', ''),
-                        registro.get('bairro', ''),
-                    )
-
-                cliente_data = {
-                    'mac': registro['mac'],
-                    'nome': nome,
-                    # "nome" em radpop_radio_cliente_fibra é o login PPPoE.
-                    'login': (registro.get('login') or registro.get('nome') or '')[:255],
-                    'status_contrato': dados_reais['status_contrato'] if vinculado else '',
-                    'status_internet': dados_reais['status_internet'] if vinculado else '',
-                    'id_contrato': registro.get('id_contrato', ''),
-                    'vinculado': vinculado,
-                    'latitude': registro.get('latitude', ''),
-                    'longitude': registro.get('longitude', ''),
-                    'endereco': endereco,
-                    'id_caixa_ftth': registro.get('id_caixa_ftth', ''),
-                    'is_active': True
-                }
+                cliente_data = _cliente_data(registro, cliente_lookup.get(registro.get('id_contrato')))
                 ClienteFibraIxc.objects.update_or_create(
                     mac=registro['mac'],
                     defaults=cliente_data
@@ -140,6 +113,88 @@ def update_clientes():
     marcar_clientes_fibra()
 
     logger.info("IXC: sincronização de clientes fibra concluída")
+
+
+def _cliente_data(registro, dados_reais):
+    """Registro de radpop_radio_cliente_fibra (+ nome/status do contrato) -> campos de ClienteFibraIxc."""
+    vinculado = bool(dados_reais and dados_reais['nome'])
+    if vinculado:
+        nome = dados_reais['nome']
+        endereco = dados_reais['endereco']
+    else:
+        nome = registro['nome']
+        endereco = _formata_endereco(
+            registro.get('endereco', ''),
+            registro.get('numero', ''),
+            registro.get('bairro', ''),
+        )
+    return {
+        'mac': registro['mac'],
+        'nome': nome,
+        # "nome" em radpop_radio_cliente_fibra é o login PPPoE.
+        'login': (registro.get('login') or registro.get('nome') or '')[:255],
+        'status_contrato': dados_reais['status_contrato'] if vinculado else '',
+        'status_internet': dados_reais['status_internet'] if vinculado else '',
+        'id_contrato': registro.get('id_contrato', ''),
+        'vinculado': vinculado,
+        'latitude': registro.get('latitude', ''),
+        'longitude': registro.get('longitude', ''),
+        'endereco': endereco,
+        'id_caixa_ftth': registro.get('id_caixa_ftth', ''),
+        'is_active': True
+    }
+
+
+def _dados_reais(contrato, cliente):
+    return {
+        'nome': cliente.get('razao', ''),
+        'endereco': _formata_endereco(
+            cliente.get('endereco', ''),
+            cliente.get('numero', ''),
+            cliente.get('complemento', ''),
+            cliente.get('bairro', ''),
+        ),
+        'status_contrato': contrato.get('status') or '',
+        'status_internet': contrato.get('status_internet') or '',
+    }
+
+
+def _ixc_buscar(recurso, campo, valor):
+    """Busca exata (campo = valor) num recurso do IXC. Só leitura."""
+    token = os.getenv('IXC_TOKEN', '').encode('utf-8')
+    payload = {'qtype': f'{recurso}.{campo}', 'query': str(valor), 'oper': '=', 'page': '1', 'rp': '20',
+               'sortname': f'{recurso}.id', 'sortorder': 'asc'}
+    headers = {'ixcsoft': 'listar', 'Content-Type': 'application/json',
+               'Authorization': f"Basic {base64.b64encode(token).decode('utf-8')}"}
+    r = requests.post(f"https://{os.getenv('IXC_HOST')}/webservice/v1/{recurso}", data=json.dumps(payload),
+                      headers=headers, timeout=30)
+    r.raise_for_status()
+    return r.json().get('registros') or []
+
+
+def atualizar_cliente_fibra_do_ixc(serial):
+    """Atualiza do IXC só o cliente fibra deste serial (sem esperar o sync completo).
+    Devolve {'encontrado', 'mensagem', 'cliente'}; erro de rede sobe como requests.RequestException."""
+    registros = _ixc_buscar('radpop_radio_cliente_fibra', 'mac', serial)
+    if not registros:
+        n = ClienteFibraIxc.objects.filter(mac=serial, is_active=True).update(is_active=False)
+        ONU.objects.filter(serial=serial).update(cliente_fibra=False)
+        extra = ' Registro local marcado como removido.' if n else ''
+        return {'encontrado': False, 'cliente': None,
+                'mensagem': f'Nenhum cliente fibra com mac={serial} no IXC.{extra}'}
+    registro = registros[0]
+    dados = None
+    if registro.get('id_contrato') not in (None, '', '0'):
+        contratos = _ixc_buscar('cliente_contrato', 'id', registro['id_contrato'])
+        if contratos and contratos[0].get('id_cliente'):
+            clientes = _ixc_buscar('cliente', 'id', contratos[0]['id_cliente'])
+            if clientes:
+                dados = _dados_reais(contratos[0], clientes[0])
+    cliente, _ = ClienteFibraIxc.objects.update_or_create(mac=registro['mac'], defaults=_cliente_data(registro, dados))
+    ONU.objects.filter(serial=serial).update(cliente_fibra=True)
+    aviso = f' Atenção: {len(registros)} registros com esse mac no IXC, usei o primeiro.' if len(registros) > 1 else ''
+    return {'encontrado': True, 'cliente': cliente,
+            'mensagem': f'Cliente fibra atualizado do IXC: {cliente.nome} ({cliente.login or "sem login"}).{aviso}'}
 
 
 def marcar_clientes_fibra():
@@ -184,18 +239,7 @@ def _build_cliente_lookup():
         if not id_contrato or not cliente:
             continue
 
-        endereco = _formata_endereco(
-            cliente.get('endereco', ''),
-            cliente.get('numero', ''),
-            cliente.get('complemento', ''),
-            cliente.get('bairro', ''),
-        )
-        lookup[id_contrato] = {
-            'nome': cliente.get('razao', ''),
-            'endereco': endereco,
-            'status_contrato': contrato.get('status') or '',
-            'status_internet': contrato.get('status_internet') or '',
-        }
+        lookup[id_contrato] = _dados_reais(contrato, cliente)
     return lookup
 
 

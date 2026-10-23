@@ -128,6 +128,27 @@ def parse_float(value):
         return None
 
 
+COUNT_RE = re.compile(r'count\s*:\s*(\d+)', re.IGNORECASE)
+
+
+def contagem_onts(output):
+    """Linha "ont count : N" do `show equipment ont status pon` -> N (None se não veio)."""
+    m = COUNT_RE.search(output or '')
+    return int(m.group(1)) if m else None
+
+
+def macs_do_fdb(output):
+    """`show vlan bridge-port-fdb` -> {(pon, position): mac}. Se a ONU tiver mais
+    de um MAC aprendido, fica o último (mesmo comportamento de antes)."""
+    resultado = {}
+    for line in (output or '').splitlines():
+        data = extract_olt_info(line)
+        if data:
+            parts = data['pon'].split('/')
+            resultado[(f"1/{'/'.join(parts[:3])}", int(parts[-1]))] = data['mac']
+    return resultado
+
+
 def parse_optics_output(output):
     """`show equipment ont optics` -> {(pon, position): (ont_rx, ont_tx)}.
 
@@ -222,12 +243,35 @@ class olt_connector():
         return old_values
 
     def update_all_ports(self):
-        for slot in range(1, self.olt.slot_count + 1):
-            for pon in range(17):
-                self.update_port(slot, pon)
+        """Lê todas as PONs numa conexão só (antes era uma conexão SSH por PON)."""
+        net_connect = self.connect()
+        resumo = {'criadas': 0, 'atualizadas': 0, 'removidas': 0, 'puladas': 0}
+        try:
+            for slot in range(1, self.olt.slot_count + 1):
+                for pon in range(17):
+                    pon_str = f"1/1/{slot}/{pon}"
+                    try:
+                        r = self._sync_pon(net_connect, pon_str)
+                    except Exception as e:
+                        logger.error(f"Falha ao atualizar PON {pon_str} ({self.olt.name}): {e}")
+                        resumo['puladas'] += 1
+                        # A sessão pode ter caído: reconecta e segue. As ONUs dessa PON ficam como estavam.
+                        try:
+                            self.disconnect(net_connect)
+                        except Exception:
+                            pass
+                        net_connect = self.connect()
+                        continue
+                    for k in ('criadas', 'atualizadas', 'removidas'):
+                        resumo[k] += r[k]
+                    resumo['puladas'] += 0 if r['lida'] else 1
+        finally:
+            self.disconnect(net_connect)
+        logger.info(f"ONUs {self.olt.name}: {resumo}")
+        return resumo
 
     def update_optics(self):
-        # update_port recria as ONUs, então isto precisa rodar depois dele.
+        # Roda depois do update_all_ports (ONU nova só existe depois dele).
         net_connect = self.connect()
         try:
             output = net_connect.send_command("show equipment ont optics", read_timeout=600)
@@ -244,17 +288,85 @@ class olt_connector():
         ONU.objects.bulk_update(onus, ['ont_rx_sig', 'ont_tx_sig'], batch_size=500)
 
     def update_port(self, slot, pon):
-        old_values = ONU.objects.filter(olt=self.olt, pon=f"1/1/{slot}/{pon}")
-        old_values.delete()
-        net_connect = self.connect()
-        command = f"show equipment ont status pon 1/1/{slot}/{pon}"
+        return self.atualizar_pon(f"1/1/{slot}/{pon}")
+
+    def atualizar_pon(self, pon_str, net_connect=None):
+        """Relê uma PON da OLT e sincroniza as ONUs dela (usado também pela
+        atualização individual de uma ONU)."""
+        propria = net_connect is None
+        net_connect = net_connect or self.connect()
         try:
-            output = net_connect.send_command(command)
-            self.update_values(output)
-        except Exception as e:
-            logger.error(f"Falha ao atualizar PON 1/1/{slot}/{pon} ({self.olt.name}): {e}")
+            return self._sync_pon(net_connect, pon_str)
         finally:
-            self.disconnect(net_connect)
+            if propria:
+                self.disconnect(net_connect)
+
+    def _sync_pon(self, net_connect, pon_str):
+        output = net_connect.send_command(f"show equipment ont status pon {pon_str}")
+        linhas = create_dict_from_result(output)
+        if linhas:
+            self.save_snapshots(linhas)
+        return self.reconciliar_pon(pon_str, linhas, contagem_onts(output))
+
+    def reconciliar_pon(self, pon_str, linhas, contagem):
+        """Sincroniza as ONUs de uma PON com o que a OLT respondeu, sem apagar tudo:
+
+        - posição que já existia: atualiza no lugar (mantém o id e o MAC);
+          se o serial mudou, é outra ONU naquela posição e o MAC/sinal da ONU velha é zerado;
+        - posição nova: cria;
+        - posição que sumiu: só remove quando a leitura está completa (a OLT informou
+          "count" e o número bate com o que foi lido). Saída vazia, cortada ou com erro
+          não apaga nada - as ONUs ficam como estavam até a próxima leitura boa.
+        """
+        r = {'pon': pon_str, 'lida': False, 'criadas': 0, 'atualizadas': 0, 'removidas': 0, 'aviso': ''}
+        if contagem is None and not linhas:
+            r['aviso'] = 'A OLT não devolveu a lista dessa PON - nada alterado.'
+            return r
+        completa = contagem is not None and contagem == len(linhas)
+        if not completa:
+            r['aviso'] = (f"Leitura incompleta ({len(linhas)} ONUs lidas, OLT informou {contagem}) - "
+                          f"atualizei as lidas, sem remover nenhuma.")
+            logger.warning(f"PON {pon_str} ({self.olt.name}): {r['aviso']}")
+        r['lida'] = True
+
+        existentes = {}
+        for onu in ONU.objects.filter(olt=self.olt, pon=pon_str).order_by('id'):
+            if onu.position in existentes:          # duplicata antiga na mesma posição
+                onu.delete()
+                continue
+            existentes[onu.position] = onu
+        seriais = {d['sernum'] for d in linhas}
+        clientes = set(ClienteFibraIxc.objects.filter(mac__in=seriais, is_active=True).values_list('mac', flat=True))
+
+        novas, alteradas = [], []
+        for d in linhas:
+            pos = int(d['position'])
+            onu = existentes.pop(pos, None)
+            if onu is None:
+                onu = ONU(olt=self.olt, pon=pon_str, position=pos, mac='')
+                novas.append(onu)
+            else:
+                if onu.serial != d['sernum']:
+                    onu.mac, onu.ont_rx_sig, onu.ont_tx_sig = '', None, None
+                alteradas.append(onu)
+            onu.serial = d['sernum']
+            onu.admin_state = d['admin_status']
+            onu.oper_state = d['oper_status']
+            onu.olt_rx_sig = parse_float(d['olt_rx_sig'])
+            onu.ont_olt = d['ont_olt']
+            onu.desc1 = d['desc1']
+            onu.desc2 = d['desc2']
+            onu.cliente_fibra = d['sernum'] in clientes
+
+        ONU.objects.bulk_create(novas, batch_size=500)
+        ONU.objects.bulk_update(alteradas, ['serial', 'admin_state', 'oper_state', 'olt_rx_sig', 'ont_olt', 'desc1',
+                                            'desc2', 'cliente_fibra', 'mac', 'ont_rx_sig', 'ont_tx_sig'],
+                                batch_size=500)
+        if completa and existentes:
+            ONU.objects.filter(id__in=[o.id for o in existentes.values()]).delete()
+            r['removidas'] = len(existentes)
+        r['criadas'], r['atualizadas'] = len(novas), len(alteradas)
+        return r
 
     def get_mac_values(self):
         net_connect = self.connect()
@@ -271,66 +383,50 @@ class olt_connector():
             self.disconnect(net_connect)
 
     def update_mac(self, output):
+        """Grava o MAC de cada ONU a partir da tabela de MACs da OLT. ONU que não
+        aparece na tabela (offline / sem tráfego) fica sem MAC, como sempre foi.
+        Se a leitura veio vazia (comando falhou/cortou), não mexe em nada."""
+        macs = macs_do_fdb(output)
+        if not macs:
+            logger.error(f"Tabela de MACs vazia ({self.olt.name}) - MACs mantidos como estavam.")
+            return 0
+        alteradas = []
+        for onu in ONU.objects.filter(olt=self.olt):
+            novo = macs.get((onu.pon, onu.position), '')
+            if (onu.mac or '') != novo:
+                onu.mac = novo
+                alteradas.append(onu)
+        ONU.objects.bulk_update(alteradas, ['mac'], batch_size=500)
+        logger.info(f"MAC {self.olt.name}: {len(macs)} ONUs na tabela, {len(alteradas)} alteradas")
+        return len(alteradas)
+
+    def mac_da_onu(self, pon_str, position, net_connect=None):
+        """MAC de uma ONU só. Tenta a bridge-port da ONU (mesmo comando da tela de
+        detalhe); se não vier nada, filtra a tabela inteira na própria OLT."""
+        propria = net_connect is None
+        net_connect = net_connect or self.connect()
         try:
-            if not output:
-                return
-            lines = output.strip().split('\n')
-            for line in lines:
-                try:
-                    data = extract_olt_info(line)
-                    if data:
-                        parts = data['pon'].split('/')
-                        pon = '/'.join(parts[:3])
-                        position = parts[-1]
-
-                        onu = ONU.objects.filter(
-                            olt=self.olt,
-                            pon=f"1/{pon}",
-                            position=position
-                        ).first()
-
-                        if onu:
-                            onu.mac = data['mac']
-                            onu.save()
-                except Exception as e:
-                    logger.debug(f"Falha ao processar linha de MAC '{line.strip()}': {e}")
-                    continue
-        except Exception as e:
-            logger.error(f"Falha ao processar saída de MACs: {e}")
+            for comando in (f"show vlan bridge-port-fdb {pon_str}/{position}/14/1",
+                            f"show vlan bridge-port-fdb | match exact:{pon_str}/{position}/"):
+                output = net_connect.send_command(comando, read_timeout=40)
+                mac = macs_do_fdb(output).get((pon_str, int(position)))
+                if mac:
+                    return mac, comando
+            return '', comando
+        finally:
+            if propria:
+                self.disconnect(net_connect)
 
     def update_values(self, output):
-        data_dict = {}
-        try:
-            data_dict = create_dict_from_result(output)
-        except Exception as e:
-            logger.error(f"Falha ao interpretar saída da OLT: {e}")
-
-        self.save_snapshots(data_dict)
-
-        for data in data_dict:
-            new_onu = ONU()
-            new_onu.olt = self.olt
-            # Casa só por serial - desc1 é um campo livre da OLT que não
-            # corresponde ao nome cadastrado no IXC (ver ONU.update_cliente_fibra_status).
-            new_onu.cliente_fibra = ClienteFibraIxc.objects.filter(mac=data['sernum'], is_active=True).exists()
-
-            new_onu.pon = data['pon']
-            new_onu.position = data['position']
-            new_onu.serial = data['sernum']
-            new_onu.admin_state = data['admin_status']
-            new_onu.oper_state = data['oper_status']
-            # Convert olt_rx_sig to float before saving
-            try:
-                new_onu.olt_rx_sig = float(data['olt_rx_sig'])
-            except (ValueError, TypeError):
-                new_onu.olt_rx_sig = None
-            new_onu.ont_olt = data['ont_olt']
-            new_onu.desc1 = data['desc1']
-            new_onu.desc2 = data['desc2']
-            new_onu.save()
+        """Compatibilidade: saída de uma PON -> reconcilia (ver reconciliar_pon)."""
+        linhas = create_dict_from_result(output)
+        if not linhas:
+            return None
+        self.save_snapshots(linhas)
+        return self.reconciliar_pon(linhas[0]['pon'], linhas, contagem_onts(output))
 
     def save_snapshots(self, data_dict):
-        # Histórico append-only: a tabela ONU é recriada a cada sync, isto
+        # Histórico append-only: a tabela ONU só guarda o estado atual, isto
         # é o que permite saber quem já esteve em cada PON. Falha aqui não
         # pode derrubar o sync principal.
         try:
