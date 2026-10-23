@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views, cto_views, health_views, ixc_correcoes_views, sinal_views, user_activity_views, vistoria_views
+from . import api_views, cto_views, health_views, ixc_correcoes_views, onu_atualizar_views, sinal_views, user_activity_views, vistoria_views
 
 app_name = 'api'
 
@@ -28,6 +28,8 @@ urlpatterns = [
     path('onus/', api_views.ONUListAPIView.as_view(), name='onu_list'),
     path('onus/<int:pk>/', api_views.ONUDetailAPIView.as_view(), name='onu_detail'),
     path('onus/stats/', api_views.onu_stats, name='onu_stats'),
+    # Atualização de uma ONU só, da OLT ou do IXC (olt/onu_atualizar_views.py)
+    path('onus/<int:pk>/atualizar/', onu_atualizar_views.onu_atualizar, name='onu_atualizar'),
     path('onus/pon/<str:pon>/', api_views.onu_by_pon, name='onu_by_pon'),
     path('onus/search/', api_views.onu_search, name='onu_search'),
     
@@ -78,6 +80,8 @@ urlpatterns = [
     # Sinal óptico: faixas e variação (olt/sinal_views.py)
     path('sinal/resumo/', sinal_views.sinal_resumo, name='sinal_resumo'),
     path('sinal/variacao/', sinal_views.sinal_variacao, name='sinal_variacao'),
+    path('sinal/caixas/', sinal_views.sinal_caixas, name='sinal_caixas'),
+    path('sinal/caixas/mapa/', sinal_views.sinal_caixas_mapa, name='sinal_caixas_mapa'),
 
     # Vistoria de CTO em campo (olt/vistoria_views.py)
     path('vistorias/', vistoria_views.vistoria_list, name='vistoria_list'),
