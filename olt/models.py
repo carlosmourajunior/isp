@@ -525,6 +525,15 @@ class Cto(models.Model):
     kmz_splitter = models.CharField(max_length=20, blank=True, default='', verbose_name="Splitter (KMZ)")
     kmz_descricao = models.TextField(blank=True, default='', verbose_name="Descrição no KMZ")
     kmz_match = models.CharField(max_length=20, blank=True, default='', verbose_name="Como casou com o KMZ")
+    # Topologia do projeto (olt/kmz_topologia.py): de qual 1:8 de distribuição a caixa sai.
+    kmz_ceo = models.CharField(max_length=80, blank=True, default='', db_index=True,
+                               verbose_name="Splitter de distribuição (CEO/CD)")
+    kmz_ceo_saida = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Saída no splitter da CEO")
+    kmz_alimentacao = models.CharField(max_length=80, blank=True, default='',
+                                       verbose_name="Fibra de alimentação da CEO (backbone)")
+    kmz_cabo = models.CharField(max_length=120, blank=True, default='', verbose_name="Cabo de distribuição")
+    kmz_topologia = models.CharField(max_length=10, blank=True, default='',
+                                     verbose_name="Como a topologia foi lida (texto/geometria)")
 
     # Ajustes feitos em campo (vistoria). Ampliar = instalar um splitter inteiro (4 ou 8
     # portas); inutilizar = porta que não pode ser usada (conector quebrado etc.).

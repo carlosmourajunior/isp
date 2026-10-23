@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardValue } from '@/components/ui/card'
 import { useOlts } from '@/hooks/useOlts'
 import { OnuListPage } from '@/pages/onus/OnuListPage'
+import { CaixasRuins } from './CaixasRuins'
 import type { SinalResumo, SinalVariacao, TipoVariacao, VariacaoItem } from '@/types/sinal'
 
 type Faixa = 'critico' | 'alerta' | 'bom'
@@ -77,7 +78,8 @@ function Abas<T extends string>({
 
 export function SinalPage() {
   const [params, setParams] = useSearchParams()
-  const aba = params.get('aba') === 'variacao' ? 'variacao' : 'faixas'
+  const abaParam = params.get('aba')
+  const aba = abaParam === 'variacao' || abaParam === 'caixas' ? abaParam : 'faixas'
   const faixa = (FAIXAS.find((f) => f.id === params.get('faixa'))?.id ?? 'critico') as Faixa
   const oltId = params.get('olt') ?? ''
 
@@ -146,9 +148,10 @@ export function SinalPage() {
           valor={aba}
           opcoes={[
             { id: 'faixas', label: `Lista: ${faixaAtual.label.toLowerCase()}` },
+            { id: 'caixas', label: 'Caixas com sinal ruim' },
             { id: 'variacao', label: 'Variação (logs)' },
           ]}
-          onChange={(v) => atualizar({ aba: v === 'variacao' ? 'variacao' : '' })}
+          onChange={(v) => atualizar({ aba: v === 'faixas' ? '' : v })}
         />
       </div>
 
@@ -163,6 +166,8 @@ export function SinalPage() {
           showQuickFilters
           emptyMessage={`Nenhuma ONU na faixa ${faixaAtual.label.toLowerCase()}.`}
         />
+      ) : aba === 'caixas' ? (
+        <CaixasRuins oltId={oltId} />
       ) : (
         <Variacao oltId={oltId} />
       )}

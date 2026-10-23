@@ -17,6 +17,7 @@ from django.db import transaction
 
 from olt.kmz import (haversine_m, iter_placemarks, match_ctos, nome_para_exibir, normalize_name, parse_cto_placemark,
                      read_kml_bytes)
+from olt.kmz_topologia import chave as chave_topologia, topologia
 from olt.models import Cto, Olt
 
 # Reimportação: caixa só-KMZ com mesmo nome até esta distância é a mesma caixa.
@@ -48,7 +49,11 @@ class Command(BaseCommand):
         if not ixc_ctos:
             raise CommandError("Nenhuma CTO do IXC no banco - rode antes: python manage.py sync_ctos_ixc")
 
-        kmz_ctos = [c for c in (parse_cto_placemark(p) for p in iter_placemarks(read_kml_bytes(options['arquivo']))) if c]
+        kml_bytes = read_kml_bytes(options['arquivo'])
+        kmz_ctos = [c for c in (parse_cto_placemark(p) for p in iter_placemarks(kml_bytes)) if c]
+        topo = topologia(kml_bytes, kmz_ctos)
+        for c in kmz_ctos:
+            c['topologia'] = topo.get(chave_topologia(c))
         matches = match_ctos(kmz_ctos, ixc_ctos)
 
         # Uma CTO do IXC casada com duas caixas do KMZ fica com a mais próxima.
@@ -67,6 +72,16 @@ class Command(BaseCommand):
         self.stdout.write(f"Casadas por ramal: {dict(sorted(Counter(k['ramal'] or '(sem ramal)' for k, _, _, _ in best.values()).items()))}")
         self.stdout.write(f"Só no KMZ por tipo: {dict(Counter(k['tipo'] for k in sem_par))}"
                           f" | sem nome no KMZ: {sum(1 for k in kmz_ctos if not k['name'])}")
+        com_topo = [k for k in kmz_ctos if k['topologia'] and k['tipo'] != 'CD']
+        self.stdout.write(f"Topologia (CEO de cada caixa): {len(com_topo)} de {sum(1 for k in kmz_ctos if k['tipo'] != 'CD')} "
+                          f"caixas | {dict(Counter(k['topologia']['metodo'] for k in com_topo))} | "
+                          f"{len({k['topologia']['ceo'] for k in com_topo})} splitters de distribuição")
+        if options['detalhe']:
+            por_ceo = {}
+            for k in com_topo:
+                por_ceo.setdefault(k['topologia']['ceo'], []).append(nome_para_exibir(k))
+            for ceo, nomes in sorted(por_ceo.items()):
+                self.stdout.write(f"  {ceo:<28} ({len(nomes)}): {', '.join(sorted(nomes))}")
         if duplicadas:
             self.stdout.write("Duplicadas (mesmo nome, mesma CTO do IXC, mais longe): "
                               + ', '.join(f"{k['name']} ({k['ramal'] or 'sem ramal'})" for k in duplicadas))
@@ -123,3 +138,9 @@ class Command(BaseCommand):
         cto.kmz_splitter = kmz['splitter']
         cto.kmz_descricao = kmz['description']
         cto.kmz_match = metodo
+        t = kmz.get('topologia') or {}
+        cto.kmz_ceo = (t.get('ceo') or '')[:80]
+        cto.kmz_ceo_saida = t.get('ceo_saida')
+        cto.kmz_alimentacao = (t.get('alimentacao') or '')[:80]
+        cto.kmz_cabo = (t.get('cabo') or '')[:120]
+        cto.kmz_topologia = t.get('metodo') or ''
