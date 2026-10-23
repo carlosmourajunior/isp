@@ -57,3 +57,82 @@ export interface SinalVariacao {
   grupos: VariacaoGrupo[]
   itens: VariacaoItem[]
 }
+
+export interface AchadoOnu {
+  serial: string
+  cliente: string
+  sinal: number
+  ont_rx: number | null
+  distancia: number | null
+}
+
+export interface AchadoCaixa {
+  nivel: 'backbone' | 'pon' | 'ceo' | 'ramal' | 'cabo' | 'cto' | 'clientes' | 'sem_caixa'
+  severidade: 'alta' | 'media' | 'baixa'
+  referencia: string
+  olt_id: number
+  olt_nome: string
+  pon: string
+  ramal: string
+  /** Splitter de distribuição (CEO/CD) do projeto. */
+  ceo?: string
+  /** Fibra de alimentação da CEO (backbone), ex.: "F.O.02 do CFOA_02". */
+  alimentacao?: string
+  cto: { id: number; descricao: string; splitter: string; portas: number | null } | null
+  clientes: number
+  ruins: number
+  mediana: number
+  pior: number
+  melhor: number
+  mediana_referencia: number | null
+  delta: number | null
+  delta_ajustado: number | null
+  esperado_splitter?: number
+  ajuste_distancia?: number
+  dispersao?: number
+  tendencia: { mediana_antes: number; variacao: number; texto: string } | null
+  diagnostico: string
+  onus: AchadoOnu[]
+}
+
+export interface SinalCaixas {
+  limiar: number
+  gerado_em: string
+  onts_analisadas: number
+  onts_ruins: number
+  contagem: Record<AchadoCaixa['nivel'], number>
+  achados: AchadoCaixa[]
+}
+
+export interface CaixaNoMapa {
+  id: number
+  descricao: string
+  lat: number
+  lon: number
+  ceo: string
+  ramal: string
+  pon: string
+  olt_id: number
+  clientes: number
+  ruins: number
+  mediana: number
+  pior: number
+}
+
+export interface SinalCaixasMapa {
+  limiar: number
+  gerado_em: string
+  caixas: CaixaNoMapa[]
+  achados: {
+    indice: number
+    nivel: AchadoCaixa['nivel']
+    severidade: AchadoCaixa['severidade']
+    referencia: string
+    pon: string
+    diagnostico: string
+    ruins: number
+    clientes: number
+    mediana: number
+    ctos: number[]
+  }[]
+}
