@@ -248,7 +248,7 @@ export function CtosPage() {
         </div>
       </div>
 
-      <div className={cn('grid gap-4', selectedId && 'xl:grid-cols-[minmax(0,1fr)_480px]')}>
+      <div className={cn('grid gap-4', selectedId && 'lg:grid-cols-[minmax(0,1fr)_minmax(520px,46%)]')}>
         <div className="min-w-0">
           {aba === 'mapa' &&
             (isLoading ? (

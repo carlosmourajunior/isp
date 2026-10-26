@@ -1,4 +1,4 @@
-import type { Contrato, PapelVistoria, PortaResultado } from '@/types/vistoria'
+import type { Contrato, PapelVistoria, PortaRegistro, PortaResultado } from '@/types/vistoria'
 
 type BadgeVariant = 'success' | 'warning' | 'destructive' | 'outline' | 'secondary'
 
@@ -23,4 +23,9 @@ export const papelVistoriaLabel: Record<PapelVistoria, string> = {
   possivel: 'Possível',
   suspeito: 'Cadastrado aqui, rede aponta outra',
   sem_ont: 'Cadastrado aqui, ONT não existe na OLT',
+}
+
+/** Registro feito antes da sessão atual da ficha (ainda não conferido agora). */
+export function ehAnterior(registro: PortaRegistro | undefined, sessaoIniciadaEm: string | null) {
+  return Boolean(registro && sessaoIniciadaEm && new Date(registro.registrado_em) < new Date(sessaoIniciadaEm))
 }

@@ -39,6 +39,16 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+# HTTPS atrás do proxy (Caddy, serviço "proxy" do docker-compose). O Caddy termina o TLS e
+# avisa o Django pelo X-Forwarded-Proto; sem isso o Django acha que a requisição é http.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+# Origens confiáveis para formulários (admin) em https, ex.: https://rede.exemplo.com.br
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+if os.getenv('HTTPS_ATIVO', '').lower() in ('1', 'true', 'sim'):
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 # Lista de IPs permitidos para acessar o sistema
 # Suporta IPs individuais e ranges CIDR (ex: '192.168.1.0/24')
 ALLOWED_IPS = [
@@ -69,6 +79,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+    'drf_spectacular',  # documentação OpenAPI/Swagger (/api/docs/)
     'django_rq',  # Move this before your apps
     # 'django_rq_scheduler',  # Comentado temporariamente
     'olt',
@@ -359,7 +370,42 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 50
+    'PAGE_SIZE': 50,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Documentação da API (drf-spectacular). Pública: /api/docs/ (Swagger) e /api/redoc/,
+# só com os endpoints liberados para parceiros (olt/api_parceiros_urls.py).
+# Interna (admin logado no /admin/): /api/docs/interno/, com todos os endpoints.
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'API da Rede Óptica',
+    'VERSION': '1.0.0',
+    'DESCRIPTION': (
+        'Consulta de ONUs, portas, clientes fibra e estado das OLTs.\n\n'
+        '**Acesso**\n\n'
+        '1. O IP de origem precisa estar liberado: envie ao provedor o(s) IP(s) público(s) de onde as '
+        'chamadas vão sair.\n'
+        '2. Faça login em `POST /api/auth/login/` com o usuário e a senha fornecidos. A resposta traz '
+        '`access` (vale 60 minutos) e `refresh` (vale 7 dias).\n'
+        '3. Envie o `access` em todas as chamadas: `Authorization: Bearer <access>`.\n'
+        '4. Quando o `access` expirar (HTTP 401), troque por um novo em `POST /api/auth/refresh/`. '
+        'O refresh é rotativo: guarde o `refresh` novo que vier na resposta.\n\n'
+        '**Listas** são paginadas (50 por página): `count`, `next`, `previous` e `results`; use `?page=N`.\n\n'
+        '**Sinal óptico** em dBm. Referência: bom acima de -27, alerta de -27 a -29, crítico abaixo de -29.\n\n'
+        'Nesta página, clique em **Authorize** e cole o `access` para testar as chamadas.'
+    ),
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': r'/api/',
+    'SERVERS': [{'url': u.strip()} for u in os.getenv('API_PUBLIC_URL', '').split(',') if u.strip()],
+    'SWAGGER_UI_SETTINGS': {'persistAuthorization': True, 'displayRequestDuration': True, 'filter': True},
+    'TAGS': [
+        {'name': 'Autenticação', 'description': 'Login e renovação do token JWT.'},
+        {'name': 'ONUs', 'description': 'ONUs/ONTs cadastradas nas OLTs, com estado e sinal óptico.'},
+        {'name': 'Portas', 'description': 'Ocupação das portas PON.'},
+        {'name': 'Clientes fibra', 'description': 'Cadastro de clientes fibra (serial da ONU).'},
+        {'name': 'OLT', 'description': 'Sistema, placas, temperaturas e SFPs das OLTs.'},
+    ],
 }
 
 # Simple JWT settings

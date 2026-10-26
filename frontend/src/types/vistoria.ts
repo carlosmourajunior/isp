@@ -54,6 +54,7 @@ export interface PortaRegistro {
   reconexao_confirmada: boolean
   observacao: string
   registrado_em: string
+  registrado_por: string
 }
 
 export interface VistoriaBasica {
@@ -63,6 +64,7 @@ export interface VistoriaBasica {
     descricao: string
     portas: number | null
     portas_base: number | null
+    portas_manual: number | null
     splitters_extras: number[]
     portas_inutilizadas: number[]
     ramal: string
@@ -74,7 +76,12 @@ export interface VistoriaBasica {
   observacao: string
   iniciada_em: string
   finalizada_em: string | null
+  /** Início da sessão atual da ficha; registros anteriores a isso vieram de vistorias passadas. */
+  sessao_iniciada_em: string | null
   resumo?: Partial<Record<PortaResultado, number>>
+  /** Só no POST /vistorias/: a caixa já tinha ficha e ela foi retomada. */
+  continuacao?: boolean
+  registros_anteriores?: number
 }
 
 export interface VistoriaDetalhe extends VistoriaBasica {

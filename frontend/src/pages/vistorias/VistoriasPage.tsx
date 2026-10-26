@@ -34,13 +34,21 @@ function NovaVistoria({ oltId }: { oltId: string }) {
   const iniciar = useMutation({
     mutationFn: async (ctoId: number) =>
       (await api.post<VistoriaBasica>('/vistorias/', { cto: ctoId, tecnico })).data,
-    onSuccess: (v) => navigate(`/vistorias/${v.id}`),
+    onSuccess: (v) => {
+      if (v.continuacao)
+        toast.success(
+          `Continuando a vistoria de ${v.cto.descricao}`,
+          `${v.registros_anteriores ?? 0} registro(s) já gravado(s) entram como ponto de partida.`,
+        )
+      navigate(`/vistorias/${v.id}`)
+    },
     onError: () => toast.error('Não foi possível iniciar a vistoria'),
   })
 
   return (
     <Card className="gap-3 px-4 py-4">
-      <div className="font-semibold">Nova vistoria</div>
+      <div className="font-semibold">Vistoriar uma caixa</div>
+      <div className="-mt-2 text-xs text-muted-foreground">Se a caixa já foi vistoriada, a vistoria continua de onde parou.</div>
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
