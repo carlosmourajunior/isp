@@ -34,31 +34,9 @@ class IPWhitelistMiddleware:
         return response
 
     def get_client_ip(self, request):
-        """
-        Obtém o IP real do cliente, considerando proxies e load balancers.
-        Em ambiente Docker, é comum ter múltiplos proxies.
-        """
-        # Lista de headers que podem conter o IP real do cliente
-        ip_headers = [
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_REAL_IP',
-            'HTTP_X_FORWARDED',
-            'HTTP_X_CLUSTER_CLIENT_IP',
-            'HTTP_FORWARDED_FOR',
-            'HTTP_FORWARDED',
-        ]
-        
-        for header in ip_headers:
-            ip_list = request.META.get(header)
-            if ip_list:
-                # Pega o primeiro IP da lista (IP original do cliente)
-                ip = ip_list.split(',')[0].strip()
-                print(f'IP original do cliente: {ip}')
-                if ip and ip != 'unknown':
-                    return ip
-        
-        # Fallback para REMOTE_ADDR
-        return request.META.get('REMOTE_ADDR', '')
+        """IP real do cliente; X-Forwarded-For só vale vindo do nosso proxy (isp/client_ip.py)."""
+        from isp.client_ip import ip_do_cliente
+        return ip_do_cliente(request)
 
     def get_allowed_ips(self):
         """

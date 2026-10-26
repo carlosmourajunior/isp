@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardCheck, Loader2, X } from 'lucide-react'
+import { useToast } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +11,8 @@ import { Card } from '@/components/ui/card'
 import { papelStyles, situacaoStyles } from '@/lib/ctoStatus'
 import { operStateStatus, statusStyles } from '@/lib/status'
 import type { CtoCliente, CtoDetail, CtoPapel } from '@/types/ctos'
+import type { VistoriaBasica } from '@/types/vistoria'
+import { EditorCaixa } from './EditorCaixa'
 
 interface CtoDetailPanelProps {
   ctoId: number
@@ -46,9 +51,14 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
     queryFn: async () => (await api.get<CtoDetail>(`/ctos/${ctoId}/`)).data,
   })
   const navigate = useNavigate()
+  const toast = useToast()
+  const [aba, setAba] = useState<'resumo' | 'editar'>('resumo')
   const iniciarVistoria = useMutation({
-    mutationFn: async () => (await api.post<{ id: number }>('/vistorias/', { cto: ctoId })).data,
-    onSuccess: (v) => navigate(`/vistorias/${v.id}`),
+    mutationFn: async () => (await api.post<VistoriaBasica>('/vistorias/', { cto: ctoId })).data,
+    onSuccess: (v) => {
+      if (v.continuacao) toast.success('Continuando a vistoria desta caixa')
+      navigate(`/vistorias/${v.id}`)
+    },
   })
 
   return (
@@ -71,9 +81,35 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
         </button>
       </div>
 
+      <div className="flex gap-1 border-b border-border px-4 pt-2" role="tablist">
+        {(
+          [
+            ['resumo', 'Resumo'],
+            ['editar', 'Editar caixa'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={aba === id}
+            onClick={() => setAba(id)}
+            className={cn(
+              '-mb-px border-b-2 px-3 py-1.5 text-sm',
+              aba === id ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {isLoading || !data ? (
         <div className="px-4 py-10 text-center text-muted-foreground">
           <Loader2 className="mx-auto size-5 animate-spin" />
+        </div>
+      ) : aba === 'editar' ? (
+        <div className="max-h-[calc(100vh-12rem)] overflow-y-auto px-4 py-4">
+          <EditorCaixa key={data.id} cto={data} />
         </div>
       ) : (
         <div className="flex flex-col gap-4 px-4 py-4">
@@ -111,7 +147,7 @@ export function CtoDetailPanel({ ctoId, onClose, onSelect }: CtoDetailPanelProps
             disabled={iniciarVistoria.isPending}
             onClick={() => iniciarVistoria.mutate()}
           >
-            <ClipboardCheck /> Iniciar vistoria desta caixa
+            <ClipboardCheck /> Vistoria de campo desta caixa
           </Button>
 
           {data.offline > 0 && (

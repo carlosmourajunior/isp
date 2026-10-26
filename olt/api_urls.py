@@ -69,6 +69,8 @@ urlpatterns = [
     path('ctos/<int:pk>/', cto_views.cto_detail, name='cto_detail'),
     path('ctos/<int:pk>/splitters/', cto_views.cto_splitters, name='cto_splitters'),
     path('ctos/<int:pk>/portas-inutilizadas/', cto_views.cto_porta_inutilizada, name='cto_porta_inutilizada'),
+    path('ctos/<int:pk>/capacidade/', cto_views.cto_capacidade, name='cto_capacidade'),
+    path('ctos/<int:pk>/ficha/', cto_views.cto_ficha, name='cto_ficha'),
     path('cto-inferencias/', cto_views.CtoInferenciaListAPIView.as_view(), name='cto_inferencia_list'),
     path('cto-inferencias/resumo/', cto_views.cto_inferencia_resumo, name='cto_inferencia_resumo'),
 

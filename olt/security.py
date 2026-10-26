@@ -64,26 +64,9 @@ def olt_admin_required(view_func):
 
 
 def get_client_ip(request):
-    """
-    Obtém o IP real do cliente
-    """
-    ip_headers = [
-        'HTTP_X_FORWARDED_FOR',
-        'HTTP_X_REAL_IP',
-        'HTTP_X_FORWARDED',
-        'HTTP_X_CLUSTER_CLIENT_IP',
-        'HTTP_FORWARDED_FOR',
-        'HTTP_FORWARDED',
-    ]
-    
-    for header in ip_headers:
-        ip_list = request.META.get(header)
-        if ip_list:
-            ip = ip_list.split(',')[0].strip()
-            if ip and ip != 'unknown':
-                return ip
-    
-    return request.META.get('REMOTE_ADDR', '')
+    """IP real do cliente; X-Forwarded-For só vale vindo do nosso proxy (isp/client_ip.py)."""
+    from isp.client_ip import ip_do_cliente
+    return ip_do_cliente(request)
 
 
 def is_frontend_access(client_ip, allowed_ips):

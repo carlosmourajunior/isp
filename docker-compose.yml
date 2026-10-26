@@ -43,7 +43,9 @@ services:
       - ./data/staticfiles:/code/staticfiles
       - ./data/logs:/code/logs
     ports:
-      - "8000:8000"
+      # Depois de migrar todo mundo para o HTTPS, troque no .env para WEB_PORT=127.0.0.1:8000
+      # (a API passa a ser acessível só pelo proxy).
+      - "${WEB_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -117,9 +119,32 @@ services:
     labels:
       - com.centurylinklabs.watchtower.enable=true
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - web
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # ==================== HTTPS (proxy reverso) ====================
+  # Caddy: emite e renova o certificado sozinho (Let's Encrypt). Só sobe com o
+  # profile "https" (COMPOSE_PROFILES=https no .env). Ver deploy/Caddyfile e DEPLOY.md.
+  proxy:
+    image: caddy:2.8
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+    depends_on:
+      - web
+      - frontend
     restart: unless-stopped
     networks:
       - app-network

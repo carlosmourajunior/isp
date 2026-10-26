@@ -17,6 +17,8 @@ Ajustes de campo (endpoints novos):
     POST   /api/ctos/<id>/splitters/           {portas: 4|8} adiciona um splitter
     DELETE /api/ctos/<id>/splitters/           desfaz o último splitter adicionado
     POST   /api/ctos/<id>/portas-inutilizadas/ {porta, inutilizada: true|false}
+    POST   /api/ctos/<id>/capacidade/          {portas: N | null} portas da caixa à mão (null = volta ao projeto)
+    POST   /api/ctos/<id>/ficha/               id da ficha (vistoria contínua) da caixa, para editar quem está nela
 """
 from collections import Counter, defaultdict
 
@@ -86,6 +88,8 @@ def _cto_basico(cto):
         'longitude': cto.longitude,
         'portas': cto.portas,
         'portas_base': cto.portas_base,
+        'portas_manual': cto.portas_manual,
+        'portas_projeto': cto.kmz_portas or cto.capacidade,
         'portas_uteis': cto.portas_uteis,
         'splitters_extras': cto.splitters_extras or [],
         'portas_inutilizadas': sorted(set(cto.portas_inutilizadas or [])),
@@ -271,7 +275,7 @@ SPLITTERS_PERMITIDOS = (4, 8)
 def _registrar_ajuste(cto, request):
     cto.ajustado_em = timezone.now()
     cto.ajustado_por = request.user.get_username()
-    cto.save(update_fields=['splitters_extras', 'portas_inutilizadas', 'ajustado_em', 'ajustado_por'])
+    cto.save(update_fields=['splitters_extras', 'portas_inutilizadas', 'portas_manual', 'ajustado_em', 'ajustado_por'])
 
 
 def _resposta_ajuste(cto):
@@ -325,3 +329,37 @@ def cto_porta_inutilizada(request, pk):
     cto.portas_inutilizadas = sorted(inutilizadas)
     _registrar_ajuste(cto, request)
     return _resposta_ajuste(cto)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cto_capacidade(request, pk):
+    """Define à mão quantas portas a caixa tem (sem contar splitters adicionados). null volta ao projeto/IXC."""
+    cto = get_object_or_404(Cto.objects.select_related('olt'), pk=pk)
+    bruto = request.data.get('portas')
+    if bruto in (None, '', 'null'):
+        cto.portas_manual = None
+    else:
+        try:
+            portas = int(bruto)
+        except (TypeError, ValueError):
+            portas = 0
+        if not 1 <= portas <= 64:
+            return Response({'error': 'Informe de 1 a 64 portas.'}, status=http_status.HTTP_400_BAD_REQUEST)
+        cto.portas_manual = portas
+    if cto.portas is not None:
+        cto.portas_inutilizadas = [p for p in (cto.portas_inutilizadas or []) if p <= cto.portas]
+    _registrar_ajuste(cto, request)
+    return _resposta_ajuste(cto)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cto_ficha(request, pk):
+    """Ficha (vistoria contínua) da caixa para o painel editar quem está em cada porta.
+    Não reabre a ficha como "em andamento" - isso é só ao iniciar vistoria de campo."""
+    from .ficha_cto import abrir_ficha
+
+    cto = get_object_or_404(Cto, pk=pk)
+    v, criada = abrir_ficha(cto, request.user.get_username(), reabrir=False)
+    return Response({'vistoria_id': v.id, 'criada': criada})

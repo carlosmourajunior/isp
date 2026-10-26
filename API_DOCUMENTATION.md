@@ -2,6 +2,12 @@
 
 Esta API permite acesso aos dados das ONTs (Optical Network Terminals) com autenticação JWT.
 
+> **Documentação interativa:** `https://<domínio>/api/docs/` (Swagger - dá para testar as chamadas
+> com o token), `https://<domínio>/api/redoc/` (leitura) e `https://<domínio>/api/schema/`
+> (OpenAPI, para importar no Postman/Insomnia). Esta página é o resumo em texto.
+>
+> O IP de origem das chamadas precisa estar liberado pelo provedor.
+
 ## Autenticação
 
 ### Obter Token JWT
@@ -292,28 +298,28 @@ Authorization: Bearer <access_token>
 
 ```bash
 # 1. Obter token
-curl -X POST http://177.22.126.77:8000/api/auth/login/ \
+curl -X POST https://<domínio>/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "password"}'
 
 # 2. Usar o token para acessar dados
-curl -X GET http://177.22.126.77:8000/api/onus/ \
+curl -X GET https://<domínio>/api/onus/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 3. Filtrar ONUs online
-curl -X GET "http://177.22.126.77:8000/api/onus/?oper_state=up" \
+curl -X GET "https://<domínio>/api/onus/?oper_state=up" \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 4. Obter informações do sistema OLT
-curl -X GET http://177.22.126.77:8000/api/olt/system-info/ \
+curl -X GET https://<domínio>/api/olt/system-info/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 5. Obter estatísticas completas da OLT
-curl -X GET http://177.22.126.77:8000/api/olt/system-stats/ \
+curl -X GET https://<domínio>/api/olt/system-stats/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 
 # 6. Atualizar dados do sistema OLT
-curl -X POST http://177.22.126.77:8000/api/olt/update-system-data/ \
+curl -X POST https://<domínio>/api/olt/update-system-data/ \
   -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 ```
 
@@ -323,7 +329,7 @@ curl -X POST http://177.22.126.77:8000/api/olt/update-system-data/ \
 import requests
 
 # 1. Obter token
-login_url = "http://177.22.126.77:8000/api/auth/login/"
+login_url = "https://<domínio>/api/auth/login/"
 login_data = {"username": "admin", "password": "password"}
 response = requests.post(login_url, json=login_data)
 tokens = response.json()
@@ -333,7 +339,7 @@ access_token = tokens['access']
 headers = {"Authorization": f"Bearer {access_token}"}
 
 # 3. Buscar ONUs
-onus_url = "http://177.22.126.77:8000/api/onus/"
+onus_url = "https://<domínio>/api/onus/"
 onus_response = requests.get(onus_url, headers=headers)
 onus_data = onus_response.json()
 
@@ -342,7 +348,7 @@ for onu in onus_data['results']:
     print(f"ONU {onu['serial']}: {onu['oper_state']}")
 
 # 4. Obter informações do sistema OLT
-system_url = "http://177.22.126.77:8000/api/olt/system-info/"
+system_url = "https://<domínio>/api/olt/system-info/"
 system_response = requests.get(system_url, headers=headers)
 system_data = system_response.json()
 
@@ -350,7 +356,7 @@ print(f"Versão OLT: {system_data['isam_release']}")
 print(f"Uptime: {system_data['uptime_days']} dias")
 
 # 5. Obter estatísticas completas da OLT
-stats_url = "http://177.22.126.77:8000/api/olt/system-stats/"
+stats_url = "https://<domínio>/api/olt/system-stats/"
 stats_response = requests.get(stats_url, headers=headers)
 stats_data = stats_response.json()
 
@@ -358,7 +364,7 @@ print(f"Slots operacionais: {stats_data['slots_stats']['operational_slots']}")
 print(f"Temperatura média: {stats_data['temperature_stats']['average_temperature']}°C")
 
 # 6. Atualizar dados do sistema OLT
-update_url = "http://177.22.126.77:8000/api/olt/update-system-data/"
+update_url = "https://<domínio>/api/olt/update-system-data/"
 update_response = requests.post(update_url, headers=headers)
 update_data = update_response.json()
 

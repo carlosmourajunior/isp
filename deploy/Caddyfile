@@ -1,0 +1,30 @@
+# HTTPS automático (Let's Encrypt) para o sistema todo, num domínio só:
+#   https://<DOMAIN>/api/...   -> Django (web:8000)  - API, documentação (/api/docs/)
+#   https://<DOMAIN>/admin/... -> Django
+#   https://<DOMAIN>/...       -> frontend React
+# O certificado é emitido e renovado sozinho; precisa do DNS do domínio apontando
+# para este servidor e das portas 80 e 443 abertas. Ver DEPLOY.md.
+{$DOMAIN} {
+	encode zstd gzip
+
+	@django path /api/* /admin/* /static/* /django-rq/*
+	handle @django {
+		reverse_proxy web:8000
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

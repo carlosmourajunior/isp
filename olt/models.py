@@ -537,6 +537,8 @@ class Cto(models.Model):
 
     # Ajustes feitos em campo (vistoria). Ampliar = instalar um splitter inteiro (4 ou 8
     # portas); inutilizar = porta que não pode ser usada (conector quebrado etc.).
+    # Portas da caixa definidas à mão (painel da CTO); quando preenchido vale sobre KMZ e IXC.
+    portas_manual = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Portas (ajuste manual)")
     splitters_extras = models.JSONField(default=list, blank=True, verbose_name="Splitters adicionados (portas de cada)")
     portas_inutilizadas = models.JSONField(default=list, blank=True, verbose_name="Portas inutilizadas")
     ajustado_em = models.DateTimeField(null=True, blank=True, verbose_name="Último ajuste em campo")
@@ -551,8 +553,8 @@ class Cto(models.Model):
 
     @property
     def portas_base(self):
-        """Portas do projeto: o KMZ prevalece sobre o IXC quando existe."""
-        return self.kmz_portas or self.capacidade
+        """Portas da caixa: ajuste manual > projeto (KMZ) > cadastro do IXC."""
+        return self.portas_manual or self.kmz_portas or self.capacidade
 
     @property
     def portas(self):
@@ -632,6 +634,9 @@ class Vistoria(models.Model):
     observacao = models.TextField(blank=True, default='')
     iniciada_em = models.DateTimeField(auto_now_add=True)
     finalizada_em = models.DateTimeField(null=True, blank=True)
+    # A vistoria é a ficha contínua da caixa: cada vez que é retomada começa uma sessão nova.
+    # Registros anteriores a este momento vieram de sessões passadas (olt/ficha_cto.py).
+    sessao_iniciada_em = models.DateTimeField(null=True, blank=True, verbose_name="Sessão atual iniciada em")
 
     class Meta:
         verbose_name = "Vistoria de CTO"
@@ -678,6 +683,7 @@ class VistoriaPorta(models.Model):
                                              verbose_name="Caixa no IXC na hora da vistoria")
     observacao = models.CharField(max_length=255, blank=True, default='')
     registrado_em = models.DateTimeField(auto_now=True)
+    registrado_por = models.CharField(max_length=150, blank=True, default='')
 
     class Meta:
         verbose_name = "Porta vistoriada"

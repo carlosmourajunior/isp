@@ -26,6 +26,10 @@ export interface Cto {
   /** Portas físicas: projeto + splitters adicionados em campo. */
   portas: number | null
   portas_base: number | null
+  /** Portas definidas à mão no painel (vale sobre projeto e IXC). */
+  portas_manual: number | null
+  /** Portas do projeto (KMZ) ou, sem projeto, do cadastro do IXC. */
+  portas_projeto: number | null
   /** Portas que podem receber cliente (físicas - inutilizadas). */
   portas_uteis: number | null
   splitters_extras: number[]

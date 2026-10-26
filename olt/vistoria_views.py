@@ -4,7 +4,8 @@ porta quem está ligado, identificando por etiqueta ou por desconexão (o
 alarme de "ONT inativa" chega pelo syslog em segundos).
 
 Endpoints novos (não alteram nenhum existente):
-    GET/POST /api/vistorias/                       listar / iniciar (body: {cto, tecnico})
+    GET/POST /api/vistorias/                       listar (uma ficha por caixa) / iniciar ou retomar a
+                                                   ficha da caixa (body: {cto, tecnico}) - olt/ficha_cto.py
     GET      /api/vistorias/<id>/                  vistoria + portas + candidatos da caixa
     POST     /api/vistorias/<id>/portas/           registrar (porta opcional; upsert por porta ou por serial)
     DELETE   /api/vistorias/<id>/portas/<porta>/   desfazer o registro de uma porta
@@ -32,6 +33,7 @@ from rest_framework.response import Response
 
 from .contrato import situacao_contrato
 from .cto_views import papel
+from .ficha_cto import abrir_ficha, consolidar, tirar_de_outras_caixas
 from .ixc_escrita import alterar_caixa, escrita_permitida
 from .verdade import caixa_no_ixc, correcao_pendente
 from .models import (ONU, ClienteFibraIxc, CorrecaoIxc, Cto, CtoInferencia, OntEvent, OntSnapshot, Vistoria,
@@ -121,6 +123,7 @@ def _vistoria_basico(v):
             'descricao': v.cto.descricao,
             'portas': v.cto.portas,
             'portas_base': v.cto.portas_base,
+            'portas_manual': v.cto.portas_manual,
             'splitters_extras': v.cto.splitters_extras or [],
             'portas_inutilizadas': sorted(set(v.cto.portas_inutilizadas or [])),
             'ramal': v.cto.ramal,
@@ -132,6 +135,7 @@ def _vistoria_basico(v):
         'observacao': v.observacao,
         'iniciada_em': v.iniciada_em,
         'finalizada_em': v.finalizada_em,
+        'sessao_iniciada_em': v.sessao_iniciada_em,
     }
 
 
@@ -148,6 +152,7 @@ def _porta_dict(p):
         'reconexao_confirmada': p.reconexao_confirmada,
         'observacao': p.observacao,
         'registrado_em': p.registrado_em,
+        'registrado_por': p.registrado_por,
     }
 
 
@@ -155,26 +160,28 @@ def _porta_dict(p):
 @permission_classes([IsAuthenticated])
 def vistoria_list(request):
     if request.method == 'POST':
+        # Uma ficha por caixa: se a caixa já foi vistoriada, retoma a mesma ficha.
         cto = get_object_or_404(Cto, pk=request.data.get('cto'))
-        olt_id = cto.olt_id
-        if olt_id is None:
-            # CTO sem OLT pelo KMZ (ex.: Ouro Fino): a OLT onde a inferência mais a encontrou.
-            mais_comum = Counter(CtoInferencia.objects.filter(Q(cto_provavel=cto) | Q(cto_cadastro=cto))
-                                 .values_list('olt_id', flat=True)).most_common(1)
-            olt_id = mais_comum[0][0] if mais_comum else None
-        v = Vistoria.objects.create(cto=cto, olt_id=olt_id, usuario=request.user.get_username(),
-                                    tecnico=(request.data.get('tecnico') or '')[:150])
-        return Response(_vistoria_basico(v), status=status.HTTP_201_CREATED)
+        v, criada = abrir_ficha(cto, request.user.get_username(), tecnico=request.data.get('tecnico') or '')
+        dados = _vistoria_basico(v)
+        dados['continuacao'] = not criada
+        dados['registros_anteriores'] = v.portas.count()
+        return Response(dados, status=status.HTTP_201_CREATED if criada else status.HTTP_200_OK)
 
     qs = Vistoria.objects.select_related('cto', 'olt').prefetch_related('portas')
     for campo in ('cto', 'olt'):
         if request.GET.get(campo):
             qs = qs.filter(**{f'{campo}_id': request.GET[campo]})
-    resultado = []
-    for v in qs[:200]:
+    resultado, vistas = [], set()
+    for v in qs[:400]:
+        if v.cto_id in vistas:       # caixa ainda não consolidada: mostra só a ficha mais recente
+            continue
+        vistas.add(v.cto_id)
         item = _vistoria_basico(v)
         item['resumo'] = dict(Counter(p.resultado for p in v.portas.all()))
         resultado.append(item)
+        if len(resultado) >= 200:
+            break
     return Response(resultado)
 
 
@@ -182,6 +189,10 @@ def vistoria_list(request):
 @permission_classes([IsAuthenticated])
 def vistoria_detail(request, pk):
     v = get_object_or_404(Vistoria.objects.select_related('cto', 'olt'), pk=pk)
+    principal = consolidar(v.cto)
+    if principal and principal.id != v.id:
+        # Esta era uma vistoria antiga da caixa: foi juntada na ficha.
+        return Response({'redirecionar_para': principal.id}, status=status.HTTP_409_CONFLICT)
     cto = v.cto
     agora = timezone.now()
 
@@ -266,6 +277,7 @@ def vistoria_porta_salvar(request, pk):
         'observacao': (request.data.get('observacao') or '')[:255],
         # O que o IXC dizia neste momento - se mudar depois, o IXC volta a valer.
         'caixa_ixc_no_registro': caixa_no_ixc(cliente) if serial else None,
+        'registrado_por': request.user.get_username()[:150],
     }
 
     if numero is not None:
@@ -283,6 +295,8 @@ def vistoria_porta_salvar(request, pk):
             registro.save()
     else:
         registro = VistoriaPorta.objects.create(vistoria=v, porta=None, **dados)
+    if serial:
+        tirar_de_outras_caixas(serial, v.cto)
     return Response(_porta_dict(registro))
 
 
