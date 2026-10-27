@@ -15,13 +15,15 @@ import type { Cto, CtoResumo, CtoSituacao } from '@/types/ctos'
 import { CtoMap } from './CtoMap'
 import { CtoDetailPanel } from './CtoDetailPanel'
 import { InferenciasTab } from './InferenciasTab'
+import { ForaDoIxcTab } from './ForaDoIxcTab'
 
-type Aba = 'mapa' | 'lista' | 'inferencias'
+type Aba = 'mapa' | 'lista' | 'inferencias' | 'fora'
 
 const abas: { id: Aba; label: string }[] = [
   { id: 'mapa', label: 'Mapa' },
   { id: 'lista', label: 'Lista de CTOs' },
   { id: 'inferencias', label: 'Clientes x CTO' },
+  { id: 'fora', label: 'Fora do IXC' },
 ]
 
 const situacaoOptions = (Object.keys(situacaoStyles) as CtoSituacao[]).map((s) => ({
@@ -239,7 +241,7 @@ export function CtosPage() {
             options={(olts ?? []).map((o) => ({ value: String(o.id), label: o.name }))}
             onChange={(v) => setManyParams({ olt: v, ramal: '', cto: '' })}
           />
-          {aba !== 'inferencias' && (
+          {(aba === 'mapa' || aba === 'lista') && (
             <>
               <SelectFilter label="Ramal" value={ramal} options={ramalOptions} onChange={(v) => setParam('ramal', v)} />
               <SelectFilter label="Situação" value={situacao} options={situacaoOptions} onChange={(v) => setParam('situacao', v)} />
@@ -282,6 +284,7 @@ export function CtosPage() {
           )}
 
           {aba === 'inferencias' && <InferenciasTab oltId={oltId} onSelectCto={selectCto} />}
+          {aba === 'fora' && <ForaDoIxcTab oltId={oltId} onSelectCto={selectCto} />}
         </div>
 
         {selectedId && (

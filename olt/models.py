@@ -735,3 +735,35 @@ class CorrecaoIxc(models.Model):
 
     def __str__(self):
         return f"{self.serial}: {self.caixa_antes or '-'} -> {self.caixa_depois or self.cto} ({self.status})"
+
+
+class CadastroCaixaIxc(models.Model):
+    """Caixa do projeto (KMZ) cadastrada no IXC pelo sistema (olt/ixc_caixas.py).
+    Guarda o que foi enviado e o que o IXC devolveu, para auditoria."""
+
+    STATUS_CHOICES = [
+        ('ok', 'Cadastrada'),
+        ('alerta', 'Cadastrada, conferir'),
+        ('erro', 'Falhou'),
+    ]
+
+    cto = models.ForeignKey('Cto', on_delete=models.SET_NULL, null=True, related_name='cadastros_ixc')
+    descricao = models.CharField(max_length=100)
+    ixc_id = models.CharField(max_length=50, blank=True, default='', verbose_name="id criado no IXC")
+    modelo_ixc_id = models.CharField(max_length=50, blank=True, default='',
+                                     verbose_name="Caixa do IXC usada como modelo (projeto, cidade...)")
+    usuario = models.CharField(max_length=150)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    mensagem = models.TextField(blank=True, default='')
+    registro_enviado = models.JSONField(default=dict, blank=True)
+    registro_lido = models.JSONField(default=dict, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Caixa cadastrada no IXC"
+        verbose_name_plural = "Caixas cadastradas no IXC"
+        ordering = ['-criado_em']
+
+    def __str__(self):
+        return f"{self.descricao} -> IXC {self.ixc_id or '-'} ({self.status})"
+
