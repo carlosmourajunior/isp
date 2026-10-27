@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views, cto_views, health_views, ixc_correcoes_views, onu_atualizar_views, sinal_views, user_activity_views, vistoria_views
+from . import api_views, cto_views, health_views, ixc_caixas_views, ixc_correcoes_views, onu_atualizar_views, sinal_views, user_activity_views, vistoria_views
 
 app_name = 'api'
 
@@ -66,6 +66,10 @@ urlpatterns = [
 
     # CTOs - inferência de ocupação (olt/cto_views.py)
     path('ctos/', cto_views.cto_list, name='cto_list'),
+    # Caixas do projeto que não estão no IXC (olt/ixc_caixas_views.py)
+    path('ctos/fora-do-ixc/', ixc_caixas_views.fora_do_ixc, name='ctos_fora_do_ixc'),
+    path('ctos/fora-do-ixc/cadastrar/', ixc_caixas_views.fora_do_ixc_cadastrar, name='ctos_fora_do_ixc_cadastrar'),
+    path('ctos/fora-do-ixc/vincular/', ixc_caixas_views.fora_do_ixc_vincular, name='ctos_fora_do_ixc_vincular'),
     path('ctos/<int:pk>/', cto_views.cto_detail, name='cto_detail'),
     path('ctos/<int:pk>/splitters/', cto_views.cto_splitters, name='cto_splitters'),
     path('ctos/<int:pk>/portas-inutilizadas/', cto_views.cto_porta_inutilizada, name='cto_porta_inutilizada'),

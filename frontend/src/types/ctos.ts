@@ -103,3 +103,37 @@ export interface CtoResumo {
   por_status: Record<InferenciaStatus, number>
   calculado_em: string | null
 }
+
+export interface CadastroCaixaLog {
+  id: number
+  cto_id: number | null
+  descricao: string
+  ixc_id: string
+  status: 'ok' | 'alerta' | 'erro'
+  mensagem: string
+  usuario: string
+  criado_em: string
+}
+
+export interface CaixaForaDoIxc {
+  id: number
+  descricao: string
+  nome_sugerido: string
+  tipo: string
+  ramal: string
+  olt_nome: string | null
+  latitude: number | null
+  longitude: number | null
+  portas: number | null
+  ceo: string
+  clientes_na_vistoria: number
+  modelo: { id: number; descricao: string; ixc_id: string; id_projeto: string; distancia_m: number } | null
+  duplicada: { id: number; descricao: string; ixc_id: string } | null
+  ultimo_cadastro: CadastroCaixaLog | null
+}
+
+export interface ForaDoIxcResposta {
+  caixas: CaixaForaDoIxc[]
+  pode_cadastrar: boolean
+  motivo: string
+}
