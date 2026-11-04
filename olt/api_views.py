@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import generics, filters, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -26,7 +28,8 @@ from .serializers import (
     OltSystemStatsSerializer
 )
 from .utils import OltSystemCollector, olt_connector
-from .security import frontend_only, olt_admin_required
+from .security import frontend_only, olt_admin_required, olt_operator_required, get_client_ip
+from .throttles import LoginRateThrottle
 from .scheduler import get_scheduler_status
 from .tasks import (
     update_port_occupation_task,
@@ -36,6 +39,8 @@ from .tasks import (
     comprehensive_update_task,
 )
 
+
+audit_logger = logging.getLogger('olt.user_activity')
 
 # Campos ordenáveis compartilhados por toda view baseada em ONU/ONUSerializer
 # (lista principal + duplicadas/MAC/sem-MAC) - mantém as 4 sincronizadas, já
@@ -50,6 +55,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Custom token view para adicionar informações extras no token
     """
+    throttle_classes = [LoginRateThrottle]
+
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         if response.status_code == 200:
@@ -696,10 +703,17 @@ def scheduler_status_api(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _audita_acao_olt(request, acao, pon, resultado):
+    """Trilha de quem mexeu em qual ONU (vai pro log user_activity)."""
+    audit_logger.info(
+        f"AUDIT: acao={acao} pon={pon} resultado={resultado} "
+        f"user={request.user.username} user_id={request.user.pk} ip={get_client_ip(request)}"
+    )
+
+
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
-@frontend_only
-@olt_admin_required
+@olt_operator_required
 def remove_onu_view(request, slot, port, position):
     """
     Remove uma ONU: comando na OLT real + remoção do registro no banco.
@@ -713,19 +727,20 @@ def remove_onu_view(request, slot, port, position):
     try:
         connector.remove_onu(pon)
     except Exception as e:
+        _audita_acao_olt(request, 'remover_onu', pon, f'erro: {e}')
         return Response(
             {'error': f'Erro ao remover ONU {pon}: {e}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
     deleted_count, _ = ONU.objects.filter(pon=f"1/1/{slot}/{port}", position=position).delete()
+    _audita_acao_olt(request, 'remover_onu', pon, 'ok')
     return Response({'message': f'ONU {pon} removida', 'deleted_from_db': deleted_count})
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@frontend_only
-@olt_admin_required
+@olt_operator_required
 def reset_onu_view(request, slot, port, position):
     """Reinicia uma ONU na OLT"""
     pon = f"1/1/{slot}/{port}/{position}"
@@ -734,11 +749,13 @@ def reset_onu_view(request, slot, port, position):
     try:
         connector.reset_onu(pon)
     except Exception as e:
+        _audita_acao_olt(request, 'reiniciar_onu', pon, f'erro: {e}')
         return Response(
             {'error': f'Erro ao reiniciar ONU {pon}: {e}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+    _audita_acao_olt(request, 'reiniciar_onu', pon, 'ok')
     return Response({'message': f'ONU {pon} reiniciada com sucesso'})
 
 

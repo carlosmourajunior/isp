@@ -39,6 +39,9 @@ class Olt(models.Model):
         verbose_name = "OLT"
         verbose_name_plural = "OLTs"
         ordering = ['name']
+        permissions = [
+            ('operar_olt', 'Pode remover e reiniciar ONUs na OLT'),
+        ]
 
     def __str__(self):
         return self.name

@@ -12,12 +12,14 @@ verdade neste ambiente).
 """
 from unittest.mock import patch, MagicMock
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
 
 from olt.models import ONU, Olt, ClienteFibraIxc
+from olt.throttles import LoginRateThrottle
 
 
 class AuthRequiredTests(APITestCase):
@@ -207,6 +209,69 @@ class OnuActionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         mock_connector.reset_onu.assert_called_once_with('1/1/1/1/5')
         self.assertTrue(ONU.objects.filter(pon='1/1/1/1', position=5).exists())
+
+    @patch('olt.api_views.olt_connector')
+    def test_remover_onu_nao_depende_do_ip_de_origem(self, mock_connector_cls):
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 5})
+
+        response = self.client.delete(url, REMOTE_ADDR='10.20.30.40')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch('olt.api_views.olt_connector')
+    def test_usuario_com_permissao_operar_olt_pode_remover_sem_ser_staff(self, mock_connector_cls):
+        operador = User.objects.create_user(username='operador_olt', password='senha-forte-123')
+        operador.user_permissions.add(Permission.objects.get(codename='operar_olt'))
+        self.client.force_authenticate(user=operador)
+        url = reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 5})
+
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(ONU.objects.filter(pon='1/1/1/1', position=5).exists())
+
+    @patch('olt.api_views.olt_connector')
+    def test_falha_na_olt_nao_apaga_a_onu_do_banco(self, mock_connector_cls):
+        mock_connector_cls.return_value.remove_onu.side_effect = RuntimeError('ssh caiu')
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 5})
+
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertTrue(ONU.objects.filter(pon='1/1/1/1', position=5).exists())
+
+    @patch('olt.api_views.olt_connector')
+    def test_remover_onu_registra_auditoria(self, mock_connector_cls):
+        self.client.force_authenticate(user=self.admin)
+        url = reverse('api:remove_onu', kwargs={'slot': 1, 'port': 1, 'position': 5})
+
+        with self.assertLogs('olt.user_activity', level='INFO') as logs:
+            self.client.delete(url)
+
+        saida = '\n'.join(logs.output)
+        self.assertIn('AUDIT: acao=remover_onu pon=1/1/1/1/5 resultado=ok user=admin_olt', saida)
+
+
+class LoginThrottleTests(APITestCase):
+    """O login limita tentativas por IP (olt.throttles.LoginRateThrottle)."""
+
+    @override_settings(CACHES={
+        'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+        'throttle': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'throttle-test'},
+    })
+    def test_excesso_de_tentativas_devolve_429(self):
+        User.objects.create_user(username='u', password='senha-forte-123')
+        url = reverse('api:token_obtain_pair')
+        dados = {'username': 'u', 'password': 'errada'}
+
+        with patch.dict(LoginRateThrottle.THROTTLE_RATES, {'login': '3/min'}):
+            codigos = [self.client.post(url, dados, REMOTE_ADDR='10.0.0.9').status_code for _ in range(5)]
+            outro_ip = self.client.post(url, dados, REMOTE_ADDR='10.0.0.10').status_code
+
+        self.assertEqual(codigos, [401, 401, 401, 429, 429])
+        self.assertEqual(outro_ip, 401)
 
 
 class ReadOnlyListTests(APITestCase):

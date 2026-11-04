@@ -145,6 +145,14 @@ staff/superuser.
 Em cima disso, por endpoint: `IsAuthenticated` (padrão global do DRF), e quando necessário
 `@frontend_only` (só IP interno) e/ou `@olt_admin_required` (staff/superuser).
 
+Remover e reiniciar ONU (`DELETE /api/olt/onus/.../` e `POST .../reset/`) **não** usam
+`@frontend_only`: o controle é por usuário via `@olt_operator_required` (staff, superuser ou
+permissão `olt.operar_olt` — dá pra conceder a um grupo "Operador OLT" no admin sem liberar
+staff), e cada chamada grava `AUDIT: ...` em `logs/user_activity.log`. O login
+(`/api/auth/login/`) tem limite de tentativas por IP (`LOGIN_THROTTLE_RATE`, padrão `10/min`,
+contador no Redis — alias de cache `throttle`). `onu_atualizar` continua com `@frontend_only`
+porque só exige estar autenticado (inclusive contas de parceiro).
+
 Senha de OLT no banco é sempre criptografada em repouso (`EncryptedCharField`), nunca texto
 puro — mesmo em dump/backup do Postgres.
 

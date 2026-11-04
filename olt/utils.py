@@ -462,6 +462,8 @@ class olt_connector():
             net_connect.read_channel()
         except Exception as e:
             logger.error(f"Falha ao remover ONT {pon}: {e}")
+            # Sem isso a API apagava a ONU do banco mesmo com a OLT tendo falhado.
+            raise
         finally:
             self.disconnect(net_connect)
 

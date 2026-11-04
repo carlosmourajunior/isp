@@ -8,6 +8,12 @@ interface OnuTarget {
   position: number
 }
 
+/** Mostra o motivo devolvido pela API (ex.: permissão, falha na OLT) em vez de uma mensagem genérica. */
+function motivoDoErro(err: unknown): string {
+  const data = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
+  return data?.message ?? data?.error ?? 'Verifique se você tem permissão para operar a OLT.'
+}
+
 /** Ações que mexem na OLT de verdade (remover/reiniciar ONU) - usadas nas listagens e no detalhe de porta. */
 export function useOnuActions() {
   const queryClient = useQueryClient()
@@ -25,13 +31,13 @@ export function useOnuActions() {
       toast.success('ONU removida com sucesso')
       invalidateOnuLists()
     },
-    onError: () => toast.error('Erro ao remover ONU', 'Verifique se você tem permissão de administrador.'),
+    onError: (err) => toast.error('Erro ao remover ONU', motivoDoErro(err)),
   })
 
   const resetOnu = useMutation({
     mutationFn: ({ slot, port, position }: OnuTarget) => api.post(`/olt/onus/${slot}/${port}/${position}/reset/`),
     onSuccess: () => toast.success('ONU reiniciada com sucesso'),
-    onError: () => toast.error('Erro ao reiniciar ONU', 'Verifique se você tem permissão de administrador.'),
+    onError: (err) => toast.error('Erro ao reiniciar ONU', motivoDoErro(err)),
   })
 
   return { removeOnu, resetOnu }

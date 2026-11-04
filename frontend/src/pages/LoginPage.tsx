@@ -26,8 +26,9 @@ export function LoginPage() {
       await login(username, password)
       const from = (location.state as { from?: Location })?.from?.pathname ?? '/'
       navigate(from, { replace: true })
-    } catch {
-      setError('Usuário ou senha inválidos.')
+    } catch (err) {
+      const tooMany = (err as { response?: { status?: number } })?.response?.status === 429
+      setError(tooMany ? 'Muitas tentativas de login. Aguarde um minuto e tente novamente.' : 'Usuário ou senha inválidos.')
     } finally {
       setIsSubmitting(false)
     }
