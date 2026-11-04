@@ -17,6 +17,9 @@ Este sistema implementa **múltiplas camadas de segurança** para proteger o ace
 ### 2. **Decoradores de Proteção**
 - **`@frontend_only`**: Permite apenas acesso via IPs internos
 - **`@olt_admin_required`**: Exige permissões de administrador
+- **`@olt_operator_required`**: staff, superuser ou permissão `olt.operar_olt`. Usado em
+  remover/reiniciar ONU (sem restrição de IP além da whitelist global), com auditoria
+  `AUDIT:` em `logs/user_activity.log`.
 
 ### 3. **Validação de IP de Origem**
 IPs permitidos para acesso direto à OLT:

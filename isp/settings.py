@@ -215,6 +215,17 @@ RQ_QUEUES = {
 }
 
 RQ_SHOW_ADMIN_LINK = True
+
+# O cache padrão (memória local) é por processo; o limite de tentativas de login
+# precisa valer entre os workers do gunicorn, então usa o Redis num alias próprio.
+CACHES = {
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+    'throttle': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': RQ_QUEUES['default']['URL'],
+    },
+}
+
 RQ = {
     'DEFAULT_RESULT_TTL': 86400,  # 24 horas em segundos
     'WORKERS_CLASS': 'rq.SimpleWorker',
@@ -371,6 +382,10 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
+    # Só o login usa throttle (olt.throttles.LoginRateThrottle); o resto da API não é limitado.
+    'DEFAULT_THROTTLE_RATES': {
+        'login': os.getenv('LOGIN_THROTTLE_RATE', '10/min'),
+    },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 

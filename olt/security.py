@@ -63,6 +63,34 @@ def olt_admin_required(view_func):
     return wrapper
 
 
+def olt_operator_required(view_func):
+    """
+    Libera ações destrutivas na OLT (remover/reiniciar ONU) para staff/superuser
+    ou para quem tem a permissão 'olt.operar_olt' (grupo "Operador OLT"), sem
+    precisar dar acesso ao admin Django. Não substitui olt_admin_required nos
+    endpoints de coleta/sistema.
+    """
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse({
+                'error': 'Autenticação requerida',
+                'message': 'Login necessário para acessar recursos da OLT',
+                'code': 'AUTH_REQUIRED'
+            }, status=401)
+
+        if not (request.user.is_staff or request.user.is_superuser or request.user.has_perm('olt.operar_olt')):
+            return JsonResponse({
+                'error': 'Permissão insuficiente',
+                'message': 'Apenas administradores ou operadores da OLT podem executar esta ação',
+                'code': 'ADMIN_REQUIRED'
+            }, status=403)
+
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
 def get_client_ip(request):
     """IP real do cliente; X-Forwarded-For só vale vindo do nosso proxy (isp/client_ip.py)."""
     from isp.client_ip import ip_do_cliente
