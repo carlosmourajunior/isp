@@ -1,3 +1,9 @@
+{
+	# CA do Let's Encrypt. Para testar sem gastar o limite de emissões, use o staging
+	# no .env: ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+	acme_ca {$ACME_CA}
+}
+
 # HTTPS automático (Let's Encrypt) para o sistema todo, num domínio só:
 #   https://<DOMAIN>/api/...   -> Django (web:8000)  - API, documentação (/api/docs/)
 #   https://<DOMAIN>/admin/... -> Django
@@ -17,7 +23,9 @@
 	}
 
 	header {
-		Strict-Transport-Security "max-age=31536000"
+		# Começa curto (HSTS_MAX_AGE=300) porque o navegador guarda e não dá para desfazer;
+		# depois de validar, suba para 31536000 no .env.
+		Strict-Transport-Security "max-age={$HSTS_MAX_AGE}"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server

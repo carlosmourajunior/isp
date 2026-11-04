@@ -41,6 +41,11 @@ Um domínio só: `https://<domínio>/api/...` vai para o Django, o resto para o 
    FRONTEND_URL=https://rede.exemplo.com.br
    API_PUBLIC_URL=https://rede.exemplo.com.br
    ```
+   Primeira vez, teste com o certificado de staging (não conta no limite do Let's Encrypt;
+   o navegador vai avisar que não é confiável, é esperado): `ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory`.
+   Quando `docker compose logs proxy` mostrar o certificado emitido, apague essa linha,
+   `docker compose up -d --force-recreate proxy` e confira o cadeado. Deixe `HSTS_MAX_AGE`
+   no padrão (300) até validar tudo; depois use `HSTS_MAX_AGE=31536000`.
 3. GitHub → Variables: `VITE_API_URL=https://rede.exemplo.com.br/api` e rode o build de novo
    (Actions → build-push → Run workflow), para o frontend chamar a API pelo https.
 4. `docker compose up -d` (sobe o `proxy`). Acompanhe a emissão: `docker compose logs -f proxy`.
