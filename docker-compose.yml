@@ -138,6 +138,8 @@ services:
       - "443:443/udp"
     environment:
       - DOMAIN=${DOMAIN:-localhost}
+      - ACME_CA=${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      - HSTS_MAX_AGE=${HSTS_MAX_AGE:-300}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy/data:/data
