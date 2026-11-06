@@ -1,0 +1,6 @@
+# SSH em sistemas sem /var/log/auth.log (Debian 12+ só com journald).
+source: journalctl
+journalctl_filter:
+  - "_SYSTEMD_UNIT=ssh.service"
+labels:
+  type: syslog

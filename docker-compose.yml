@@ -161,6 +161,13 @@ services:
     environment:
       # Docker recente recusa o cliente API antigo embutido no watchtower.
       - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.44}
+      # Aviso no Telegram a cada imagem nova aplicada (só atualizações, não falhas,
+      # para não repetir a cada minuto se o token do GHCR expirar). Sem a variável no
+      # .env, vai só para o log. Formato: telegram://TOKEN@telegram?chats=CHAT_ID
+      - WATCHTOWER_NOTIFICATION_URL=${WATCHTOWER_NOTIFICATION_URL:-logger://}
+      - WATCHTOWER_NOTIFICATION_REPORT=true
+      - WATCHTOWER_NO_STARTUP_MESSAGE=true
+      - 'WATCHTOWER_NOTIFICATION_TEMPLATE={{- if .Report -}}{{- range .Report.Updated -}}🔄 {{.Name}} atualizado para {{.ImageName}} ({{.CurrentImageID.ShortID}} → {{.LatestImageID.ShortID}}) {{ end -}}{{- end -}}'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DOCKER_CONFIG_JSON:-${HOME}/.docker/config.json}:/config.json:ro
