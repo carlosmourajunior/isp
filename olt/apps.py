@@ -12,6 +12,8 @@ class OltConfig(AppConfig):
         try:
             # Importa sinais para gerenciar cache de IPs
             import olt.signals
+            # Alertas de segurança no Telegram (falhas de login, login de admin)
+            import olt.sinais_seguranca  # noqa: F401
             
             # Executa tarefas apenas se não estivermos executando migrações
             import sys

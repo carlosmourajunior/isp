@@ -1,0 +1,14 @@
+# Modelo: o instalar-crowdsec.sh troca __TOKEN__, __CHAT__ e __ORIGEM__.
+type: http
+name: telegram
+log_level: info
+format: |
+  {
+    "chat_id": "__CHAT__",
+    "disable_web_page_preview": true,
+    "text": "{{range . -}}{{$alert := . -}}{{range .Decisions -}}🚫 [__ORIGEM__] {{.Value}} bloqueado por {{.Duration}}: {{.Scenario}}{{if $alert.Source.Cn}} ({{$alert.Source.Cn}}{{if $alert.Source.AsName}}, {{$alert.Source.AsName}}{{end}}){{end}}\n{{end -}}{{end -}}"
+  }
+url: https://api.telegram.org/bot__TOKEN__/sendMessage
+method: POST
+headers:
+  Content-Type: application/json

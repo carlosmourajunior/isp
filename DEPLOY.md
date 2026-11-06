@@ -53,6 +53,52 @@ Um domínio só: `https://<domínio>/api/...` vai para o Django, o resto para o 
 6. Quando os parceiros já estiverem usando o https, feche o acesso direto:
    `WEB_PORT=127.0.0.1:8000` e `FRONTEND_PORT=127.0.0.1:3000` no `.env` e `docker compose up -d`.
 
+## Monitoramento e alertas (Telegram)
+
+Três peças, todas mandando para o mesmo chat do Telegram:
+
+| O quê | Avisa quando | Onde |
+|---|---|---|
+| **CrowdSec** (no host) | varredura, força bruta no SSH ou no login, tentativa de explorar falha conhecida. **Bloqueia o IP por 4h** no firewall, inclusive nas portas do Docker | `deploy/seguranca/` |
+| **Django** | 5 falhas de login do mesmo IP em 10 min, login de admin, IP fora da lista insistindo (POST ou 30 requisições em 10 min) | `isp/alertas.py` |
+| **Watchtower** | uma imagem nova foi aplicada em produção | `docker-compose.yml` |
+
+### 1. Bot do Telegram
+1. No Telegram, fale com o **@BotFather** → `/newbot` → guarde o **token**.
+2. Crie um grupo (ex.: "Alertas servidores"), adicione o bot e mande qualquer mensagem no grupo.
+3. Descubra o id do grupo (número negativo):
+   `curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | grep -o '"chat":{"id":-[0-9]*'`
+
+### 2. Django e watchtower
+No `.env` do servidor:
+```
+TELEGRAM_BOT_TOKEN=<token>
+TELEGRAM_CHAT_ID=<id do grupo>
+ALERTA_ORIGEM=olt
+WATCHTOWER_NOTIFICATION_URL=telegram://<token>@telegram?chats=<id do grupo>
+```
+Depois: `docker compose up -d` (recria web e watchtower com as variáveis novas).
+
+### 3. CrowdSec (no host, uma vez por servidor)
+```
+cd /root/isp
+TELEGRAM_BOT_TOKEN=<token> TELEGRAM_CHAT_ID=<id> ALERTA_ORIGEM=olt \
+CROWDSEC_WHITELIST="177.22.126.0/24,<seu IP>,<IPs dos parceiros>" \
+bash deploy/seguranca/instalar-crowdsec.sh
+```
+- **Lista branca:** ponha seus IPs e os dos parceiros, para nunca serem bloqueados.
+- **Console (opcional, um painel para todos os servidores):** crie conta em app.crowdsec.net,
+  copie a chave de "enroll" e rode o script com `CROWDSEC_ENROLL_KEY=<chave>`. Aceite o servidor no console.
+- O mesmo script serve para os outros servidores (lê o SSH; o Caddy só se existir).
+
+Comandos do dia a dia:
+```
+cscli decisions list            # IPs bloqueados agora
+cscli alerts list               # o que foi detectado
+cscli decisions delete -i 1.2.3.4   # desbloquear um IP
+cscli metrics                   # o que está sendo lido
+```
+
 ## Documentação da API
 - Pública (para parceiros): `/api/docs/` (Swagger, dá para testar com o token), `/api/redoc/`
   (leitura) e `/api/schema/` (arquivo OpenAPI, para importar no Postman/Insomnia).

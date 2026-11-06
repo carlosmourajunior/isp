@@ -21,6 +21,7 @@ class IPWhitelistMiddleware:
         # Código executado para cada request antes da view ser chamada.
         
         if not self.is_ip_allowed(request):
+            self.alertar_bloqueio(request)
             return HttpResponseForbidden(
                 '<h1>Acesso Negado</h1>'
                 '<p>Seu IP não está autorizado a acessar este sistema.</p>'
@@ -32,6 +33,25 @@ class IPWhitelistMiddleware:
         # Código executado para cada request/response após a view ser chamada.
 
         return response
+
+    def alertar_bloqueio(self, request):
+        """
+        Avisa no Telegram quando um IP de fora da lista insiste: um POST (tentativa de
+        login/ação) ou muitas requisições seguidas. Varredura isolada de robô não gera
+        alerta (o CrowdSec cuida disso). No máximo um alerta por hora por IP.
+        """
+        try:
+            import os
+            from isp.alertas import alertar, contar
+            ip = self.get_client_ip(request)
+            n = contar(f'bloqueio:{ip}', 600)
+            limite = int(os.getenv('ALERTA_BLOQUEIOS_IP', '30'))
+            if request.method == 'POST' or n >= limite:
+                alertar(f'IP fora da lista bloqueado: {ip} ({n} requisições em 10 min, '
+                        f'última: {request.method} {request.path[:120]})',
+                        chave=f'bloqueio:{ip}', janela=3600)
+        except Exception:
+            pass
 
     def get_client_ip(self, request):
         """IP real do cliente; X-Forwarded-For só vale vindo do nosso proxy (isp/client_ip.py)."""

@@ -31,8 +31,9 @@
 		-Server
 	}
 
+	# JSON: é o formato que o CrowdSec lê (deploy/seguranca/). Ver com: docker compose logs proxy
 	log {
 		output stdout
-		format console
+		format json
 	}
 }

@@ -1,0 +1,6 @@
+# Log do Caddy (serviço "proxy" do docker-compose), lido direto do Docker.
+source: docker
+container_name_regexp:
+  - .*-proxy-\d+$
+labels:
+  type: caddy
