@@ -26,9 +26,10 @@ export interface Olt {
   name: string
   vendor: OltVendor
   device_type: string
-  host: string
-  username: string
-  ssh_port: number
+  // Dados de acesso ao equipamento: a API só os envia para administradores.
+  host?: string
+  username?: string
+  ssh_port?: number
   slot_count: number
   global_delay_factor: number
   verbose: boolean

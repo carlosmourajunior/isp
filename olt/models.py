@@ -262,14 +262,21 @@ class OltTemperature(models.Model):
     
     @property
     def status(self):
-        """Retorna o status da temperatura"""
+        """Retorna o status da temperatura.
+
+        Os quatro limites que a OLT informa formam uma escada crescente de temperaturas
+        (tca_low < tca_high <= shutdown_low < shutdown_high, ex.: 90/95/110/115): "low" e "high"
+        são o primeiro e o segundo patamar de cada par, não limites mínimo e máximo. Antes, o
+        status tratava os "low" como mínimos e devolvia CRITICAL_LOW para qualquer sensor
+        (ex.: 57 °C <= shutdown_low 110). Agora vale o patamar mais alto já atingido.
+        """
         if self.actual_temp >= self.shutdown_high:
             return "CRITICAL_HIGH"
-        elif self.actual_temp <= self.shutdown_low:
+        elif self.actual_temp >= self.shutdown_low:
             return "CRITICAL_LOW"
         elif self.actual_temp >= self.tca_high:
             return "WARNING_HIGH"
-        elif self.actual_temp <= self.tca_low:
+        elif self.actual_temp >= self.tca_low:
             return "WARNING_LOW"
         else:
             return "NORMAL"

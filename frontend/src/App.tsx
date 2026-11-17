@@ -9,6 +9,7 @@ import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { OnusPage } from '@/pages/onus/OnusPage'
 import { SinalPage } from '@/pages/sinal/SinalPage'
+import { DesconexoesPage } from '@/pages/desconexoes/DesconexoesPage'
 import { PortDetailPage } from '@/pages/onus/PortDetailPage'
 import { OltsPage } from '@/pages/OltsPage'
 import { PortasPage } from '@/pages/PortasPage'
@@ -52,6 +53,7 @@ function App() {
                   {/* ONUs */}
                   <Route path="/onus" element={<OnusPage />} />
                   <Route path="/sinal" element={<SinalPage />} />
+                  <Route path="/desconexoes" element={<DesconexoesPage />} />
                   {/* Endereços antigos (favoritos/links): viraram filtros das páginas novas. */}
                   <Route path="/onus/duplicadas" element={<Navigate to="/onus?situacao=duplicadas" replace />} />
                   <Route path="/onus/sem-mac" element={<Navigate to="/onus?situacao=sem-mac" replace />} />

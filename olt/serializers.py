@@ -30,6 +30,19 @@ class OltSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at']
 
+    # Como chegar na OLT (IP, usuário e porta SSH) só aparece para administradores: a lista de OLTs
+    # é aberta a qualquer usuário autenticado (popula o filtro de OLT das telas), mas o IP e o
+    # usuário de acesso ao equipamento não devem ir para parceiros nem para usuários comuns.
+    CAMPOS_DE_ACESSO = ('host', 'username', 'ssh_port')
+
+    def to_representation(self, instance):
+        dados = super().to_representation(instance)
+        usuario = getattr(self.context.get('request'), 'user', None)
+        if not (usuario and (usuario.is_staff or usuario.is_superuser)):
+            for campo in self.CAMPOS_DE_ACESSO:
+                dados.pop(campo, None)
+        return dados
+
     def update(self, instance, validated_data):
         # Senha em branco no formulário de edição = mantém a senha atual.
         if not validated_data.get('password'):
