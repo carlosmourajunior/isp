@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from . import api_views, cto_views, health_views, ixc_caixas_views, ixc_correcoes_views, onu_atualizar_views, sinal_views, user_activity_views, vistoria_views
+from . import api_views, cto_views, desconexoes_views, health_views, ixc_caixas_views, ixc_correcoes_views, onu_atualizar_views, sinal_views, user_activity_views, vistoria_views
 
 app_name = 'api'
 
@@ -30,7 +30,8 @@ urlpatterns = [
     path('onus/stats/', api_views.onu_stats, name='onu_stats'),
     # Atualização de uma ONU só, da OLT ou do IXC (olt/onu_atualizar_views.py)
     path('onus/<int:pk>/atualizar/', onu_atualizar_views.onu_atualizar, name='onu_atualizar'),
-    path('onus/pon/<str:pon>/', api_views.onu_by_pon, name='onu_by_pon'),
+    # `path` (e não `str`): a PON tem barras (1/1/1/5), que o `str` não aceita (dava sempre 404).
+    path('onus/pon/<path:pon>/', api_views.onu_by_pon, name='onu_by_pon'),
     path('onus/search/', api_views.onu_search, name='onu_search'),
     
     # Portas OLT
@@ -88,6 +89,10 @@ urlpatterns = [
     path('sinal/variacao/', sinal_views.sinal_variacao, name='sinal_variacao'),
     path('sinal/caixas/', sinal_views.sinal_caixas, name='sinal_caixas'),
     path('sinal/caixas/mapa/', sinal_views.sinal_caixas_mapa, name='sinal_caixas_mapa'),
+
+    # Desconexões: clientes que caem todo dia e ativos no IXC offline (olt/desconexoes_views.py)
+    path('desconexoes/recorrentes/', desconexoes_views.desconexoes_recorrentes, name='desconexoes_recorrentes'),
+    path('desconexoes/offline-ativos/', desconexoes_views.desconexoes_offline_ativos, name='desconexoes_offline_ativos'),
 
     # Vistoria de CTO em campo (olt/vistoria_views.py)
     path('vistorias/', vistoria_views.vistoria_list, name='vistoria_list'),

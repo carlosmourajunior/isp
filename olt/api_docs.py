@@ -65,6 +65,9 @@ def aplicar():
             OpenApiParameter('search', OpenApiTypes.STR, description='Busca em serial, MAC, descrição e PON.'),
             OpenApiParameter('ordering', OpenApiTypes.STR,
                              description='Campo de ordenação; prefixo `-` para decrescente. Ex.: `-olt_rx_sig`.'),
+            OpenApiParameter('pon', OpenApiTypes.STR,
+                             description='PON exata, `1/1/<slot>/<porta>` (ex.: `1/1/1/5`). A mesma PON existe em '
+                                         'cada OLT: combine com `olt`.'),
         ],
         responses={200: ONUSerializer(many=True), 401: NAO_AUTENTICADO},
     ))(api_views.ONUListAPIView)
@@ -75,6 +78,9 @@ def aplicar():
     ))(api_views.ONUDetailAPIView)
     extend_schema(
         tags=['ONUs'], summary='Estatísticas das ONUs',
+        description='Sem `olt`, soma **todas as OLTs** (e `slot_N` junta o mesmo slot de todas elas). '
+                    'Com `olt={id}`, só daquela OLT.',
+        parameters=[OLT_PARAM],
         responses={200: inline_serializer('OnuStats', {
             'total_onus': serializers.IntegerField(), 'onus_online': serializers.IntegerField(),
             'onus_offline': serializers.IntegerField(), 'clientes_fibra': serializers.IntegerField(),
@@ -89,8 +95,11 @@ def aplicar():
     )(api_views.onu_stats)
     extend_schema(
         tags=['ONUs'], summary='ONUs de uma PON',
-        description='`pon` no formato `1/1/<slot>/<porta>`, com as barras codificadas (`1%2F1%2F1%2F5`).',
-        parameters=[OpenApiParameter('pon', OpenApiTypes.STR, OpenApiParameter.PATH, description='Ex.: 1/1/1/5')],
+        description='`pon` no formato `1/1/<slot>/<porta>` (as barras podem ir codificadas, `1%2F1%2F1%2F5`). '
+                    'A mesma PON existe em cada OLT: sem `olt`, vêm as ONUs de todas elas. Para uma lista '
+                    'paginada, use `GET /api/onus/?pon=1/1/1/5&olt={id}`.',
+        parameters=[OpenApiParameter('pon', OpenApiTypes.STR, OpenApiParameter.PATH, description='Ex.: 1/1/1/5'),
+                    OLT_PARAM],
         responses={200: inline_serializer('OnusDaPon', {'pon': serializers.CharField(),
                                                         'total_onus': serializers.IntegerField(),
                                                         'onus': ONUSerializer(many=True)}),
@@ -98,8 +107,10 @@ def aplicar():
     )(api_views.onu_by_pon)
     extend_schema(
         tags=['ONUs'], summary='Buscar ONUs',
-        description='Busca (contém, sem diferenciar maiúsculas) em serial, MAC, descrições e PON. Não é paginada.',
-        parameters=[OpenApiParameter('q', OpenApiTypes.STR, required=True, description='Termo de busca.')],
+        description='Busca (contém, sem diferenciar maiúsculas) em serial, MAC, descrições e PON. Sem `olt`, em '
+                    'todas as OLTs. Não é paginada.',
+        parameters=[OpenApiParameter('q', OpenApiTypes.STR, required=True, description='Termo de busca.'),
+                    OLT_PARAM],
         responses={200: inline_serializer('BuscaOnus', {'query': serializers.CharField(),
                                                         'total_resultados': serializers.IntegerField(),
                                                         'resultados': ONUDetailSerializer(many=True)}),
@@ -120,14 +131,33 @@ def aplicar():
     # --------------------------------------------------------------------- OLT
     extend_schema_view(get=extend_schema(
         tags=['OLT'], summary='Informações do sistema da OLT',
-        description='Release, uptime e afins da OLT padrão (primeira ativa).',
+        description='Release, uptime e afins de uma OLT: a escolhida em `olt={id}` (404 se não existir) ou, sem '
+                    'o parâmetro, a OLT padrão (a ativa de menor id). Confira `olt` e `olt_name` na resposta.',
+        parameters=[OLT_PARAM],
     ))(api_views.OltSystemInfoAPIView)
-    extend_schema_view(get=extend_schema(tags=['OLT'], summary='Placas (slots)'))(api_views.OltSlotListAPIView)
-    extend_schema_view(get=extend_schema(tags=['OLT'], summary='Temperaturas'))(api_views.OltTemperatureListAPIView)
-    extend_schema_view(get=extend_schema(tags=['OLT'], summary='Diagnóstico dos SFPs'))(api_views.OltSfpDiagnosticsListAPIView)
+    extend_schema_view(get=extend_schema(
+        tags=['OLT'], summary='Placas (slots)',
+        description='Uma linha por placa de cada OLT. Filtre por OLT com `olt={id}`.',
+    ))(api_views.OltSlotListAPIView)
+    extend_schema_view(get=extend_schema(
+        tags=['OLT'], summary='Temperaturas',
+        description='Um registro por sensor de cada placa, em °C. **Para a temperatura de uma OLT use `olt={id}`.** '
+                    'Os quatro limites do sensor são uma escada crescente (`tca_low < tca_high <= shutdown_low < '
+                    'shutdown_high`) e `status` é o patamar mais alto já atingido: `NORMAL`, `WARNING_LOW`, '
+                    '`WARNING_HIGH`, `CRITICAL_LOW` ou `CRITICAL_HIGH` (shutdown). `is_critical` '
+                    '(`actual_temp >= tca_high`) e `is_warning` (`>= tca_high - 5`) usam o limite do sensor. '
+                    'Os endpoints de estatísticas e de alertas usam limites fixos (crítico 75 °C, aviso 70 °C).',
+    ))(api_views.OltTemperatureListAPIView)
+    extend_schema_view(get=extend_schema(
+        tags=['OLT'], summary='Diagnóstico dos SFPs',
+        description='Filtre por OLT com `olt={id}`. Vazio hoje: nenhuma rotina de coleta preenche esta tabela.',
+    ))(api_views.OltSfpDiagnosticsListAPIView)
     extend_schema(
         tags=['OLT'], summary='Estatísticas da OLT',
-        description='Resumo de placas e temperaturas de todas as OLTs, com as informações de sistema da OLT padrão.',
+        description='Placas e temperaturas ativas. Sem `olt`, **somadas de todas as OLTs**, com `system_info` e '
+                    '`last_updated` da OLT padrão; com `olt={id}`, tudo daquela OLT. Crítico a partir de 75 °C, '
+                    'aviso de 70 a 74 °C.',
+        parameters=[OLT_PARAM],
         responses={200: inline_serializer('OltStats', {
             'system_info': OltSystemInfoSerializer(allow_null=True),
             'slots_stats': inline_serializer('OltStatsSlots', {
@@ -146,6 +176,10 @@ def aplicar():
     )(api_views.olt_system_stats)
     extend_schema(
         tags=['OLT'], summary='Alertas de temperatura',
+        description='Sensores ativos com temperatura crítica (75 °C ou mais) ou de aviso (70 a 74 °C), limites '
+                    'fixos iguais para todos os sensores. Sem `olt`, de todas as OLTs (cada alerta traz `olt` e '
+                    '`olt_name`); com `olt={id}`, só daquela OLT.',
+        parameters=[OLT_PARAM],
         responses={200: inline_serializer('AlertasTemperatura', {
             'critical_alerts': OltTemperatureSerializer(many=True), 'warning_alerts': OltTemperatureSerializer(many=True),
             'critical_count': serializers.IntegerField(), 'warning_count': serializers.IntegerField(),

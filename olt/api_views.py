@@ -2,6 +2,7 @@ import logging
 
 from rest_framework import generics, filters, status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
@@ -49,6 +50,26 @@ ONU_ORDERING_FIELDS = [
     'pon', 'position', 'mac', 'serial', 'oper_state', 'admin_state',
     'olt_rx_sig', 'ont_rx_sig', 'ont_tx_sig', 'desc1', 'desc2', 'cliente_fibra', 'olt__name',
 ]
+
+# Limites FIXOS dos alertas de temperatura (system-stats e temperature-alerts), em °C, iguais para
+# todos os sensores. Os limites de cada sensor ficam em OltTemperature.tca_high/shutdown_*.
+TEMP_CRITICA = 75
+TEMP_AVISO = 70
+
+
+def _olt_id(request):
+    """`?olt=<id>` da requisição: o id (int) ou None quando não foi informado.
+
+    Usado pelos endpoints que antes somavam todas as OLTs; sem o parâmetro o comportamento é o de sempre.
+    Valor que não é número responde 400, como o filtro `olt` das listagens.
+    """
+    valor = request.GET.get('olt')
+    if valor in (None, ''):
+        return None
+    try:
+        return int(valor)
+    except ValueError:
+        raise ValidationError({'olt': 'Informe o id (número) da OLT.'})
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -126,33 +147,38 @@ class ClienteFibraListAPIView(generics.ListAPIView):
 @permission_classes([IsAuthenticated])
 def onu_stats(request):
     """
-    Estatísticas gerais das ONUs
+    Estatísticas gerais das ONUs. Sem `?olt=`, soma todas as OLTs.
     """
-    total_onus = ONU.objects.count()
-    onus_online = ONU.objects.filter(oper_state='up').count()
-    onus_offline = ONU.objects.filter(oper_state='down').count()
-    clientes_fibra = ONU.objects.filter(cliente_fibra=True).count()
-    
+    onus = ONU.objects.all()
+    olt_id = _olt_id(request)
+    if olt_id is not None:
+        onus = onus.filter(olt_id=olt_id)
+
+    total_onus = onus.count()
+    onus_online = onus.filter(oper_state='up').count()
+    onus_offline = onus.filter(oper_state='down').count()
+    clientes_fibra = onus.filter(cliente_fibra=True).count()
+
     # Estatísticas por slot - descobre os slots realmente usados a partir dos
     # PONs distintos em vez de supor um número fixo (OLTs diferentes têm
     # capacidades diferentes, ver Olt.slot_count).
     slots_presentes = set()
-    for pon in ONU.objects.values_list('pon', flat=True).distinct():
+    for pon in onus.values_list('pon', flat=True).distinct():
         partes = pon.split('/')
         if len(partes) >= 3 and partes[2].isdigit():
             slots_presentes.add(int(partes[2]))
 
     slot_stats = {}
     for slot in sorted(slots_presentes):
-        slot_onus = ONU.objects.filter(pon__contains=f'/1/{slot}/')
+        slot_onus = onus.filter(pon__contains=f'/1/{slot}/')
         slot_stats[f'slot_{slot}'] = {
             'total': slot_onus.count(),
             'online': slot_onus.filter(oper_state='up').count(),
             'offline': slot_onus.filter(oper_state='down').count()
         }
-    
+
     # ONUs com sinal baixo (menor que -25 dBm)
-    low_signal = ONU.objects.filter(olt_rx_sig__lt=-25.0).count()
+    low_signal = onus.filter(olt_rx_sig__lt=-25.0).count()
     
     return Response({
         'total_onus': total_onus,
@@ -169,12 +195,16 @@ def onu_stats(request):
 @permission_classes([IsAuthenticated])
 def onu_by_pon(request, pon):
     """
-    Lista ONUs de uma PON específica
+    Lista ONUs de uma PON específica (`1/1/<slot>/<porta>`). A mesma PON existe em cada OLT:
+    sem `?olt=` vêm as ONUs de todas elas.
     """
-    onus = ONU.objects.filter(pon=pon).order_by('position')
+    onus = ONU.objects.filter(pon=pon).order_by('olt_id', 'position')
+    olt_id = _olt_id(request)
+    if olt_id is not None:
+        onus = onus.filter(olt_id=olt_id)
     if not onus.exists():
         return Response(
-            {'error': f'Nenhuma ONU encontrada na PON {pon}'}, 
+            {'error': f'Nenhuma ONU encontrada na PON {pon}'},
             status=status.HTTP_404_NOT_FOUND
         )
     
@@ -204,7 +234,10 @@ def onu_search(request):
         Q(desc2__icontains=query) |
         Q(pon__icontains=query)
     ).order_by('pon', 'position')
-    
+    olt_id = _olt_id(request)
+    if olt_id is not None:
+        onus = onus.filter(olt_id=olt_id)
+
     serializer = ONUDetailSerializer(onus, many=True)
     return Response({
         'query': query,
@@ -278,14 +311,20 @@ class OltSystemInfoAPIView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        # Com múltiplas OLTs, retorna o registro da OLT padrão (primeira
-        # ativa) - mantém o contrato de antes pra quem consome esse
+        # `?olt=<id>` escolhe a OLT. Sem ele, retorna o registro da OLT padrão
+        # (primeira ativa) - mantém o contrato de antes pra quem consome esse
         # endpoint sem escolher uma OLT explicitamente.
         from .utils import get_default_olt
         from django.http import Http404
-        olt = get_default_olt()
-        if olt is None:
-            raise Http404('Nenhuma OLT ativa cadastrada')
+        olt_id = _olt_id(self.request)
+        if olt_id is not None:
+            olt = Olt.objects.filter(id=olt_id).first()
+            if olt is None:
+                raise Http404('OLT não encontrada')
+        else:
+            olt = get_default_olt()
+            if olt is None:
+                raise Http404('Nenhuma OLT ativa cadastrada')
         obj, created = OltSystemInfo.objects.get_or_create(olt=olt)
         return obj
 
@@ -370,32 +409,38 @@ def olt_system_stats(request):
     """
     Estatísticas completas do sistema OLT
     """
+    olt_id = _olt_id(request)
     try:
-        # Informações do sistema - com múltiplas OLTs, mostra a OLT padrão
-        # (primeira ativa); slots/temperaturas abaixo continuam agregando
+        # Informações do sistema: da OLT pedida em `?olt=`; sem ele, da OLT
+        # padrão (primeira ativa), enquanto slots/temperaturas abaixo somam
         # todas as OLTs (visão geral da rede).
         from .utils import get_default_olt
-        default_olt = get_default_olt()
-        system_info = OltSystemInfo.objects.filter(olt=default_olt).first() if default_olt else None
+        olt_alvo = Olt.objects.filter(id=olt_id).first() if olt_id is not None else get_default_olt()
+        system_info = OltSystemInfo.objects.filter(olt=olt_alvo).first() if olt_alvo else None
 
+        # Só sensores/placas ativos: o coletor desativa (sem apagar) os que sumiram da OLT.
+        slots = OltSlot.objects.filter(is_active=True)
+        temps = OltTemperature.objects.filter(is_active=True)
+        if olt_id is not None:
+            slots = slots.filter(olt_id=olt_id)
+            temps = temps.filter(olt_id=olt_id)
 
         # Estatísticas dos slots
-        total_slots = OltSlot.objects.count()
-        operational_slots = OltSlot.objects.filter(
-            enabled=True, 
-            availability='available', 
+        total_slots = slots.count()
+        operational_slots = slots.filter(
+            enabled=True,
+            availability='available',
             error_status='no-error'
         ).count()
         offline_slots = total_slots - operational_slots
-        
-        slots_by_type = OltSlot.objects.values('actual_type').annotate(
+
+        slots_by_type = slots.values('actual_type').annotate(
             count=Count('id')
         ).order_by('actual_type')
-        
+
         # Estatísticas de temperatura
-        temps = OltTemperature.objects.all()
-        critical_temps = temps.filter(actual_temp__gte=75).count()  # Temperatura crítica
-        warning_temps = temps.filter(actual_temp__gte=70, actual_temp__lt=75).count()
+        critical_temps = temps.filter(actual_temp__gte=TEMP_CRITICA).count()
+        warning_temps = temps.filter(actual_temp__gte=TEMP_AVISO, actual_temp__lt=TEMP_CRITICA).count()
         
         temp_stats = temps.aggregate(
             avg_temp=Avg('actual_temp'),
@@ -449,8 +494,13 @@ def update_olt_system_data(request):
     Atualiza dados do sistema OLT coletando da OLT
     ⚠️ ACESSO RESTRITO: Apenas via frontend interno e usuários admin
     """
+    # `?olt=<id>` escolhe a OLT a coletar; sem ele, a OLT padrão (como antes).
+    olt_id = _olt_id(request)
+    olt = Olt.objects.filter(id=olt_id).first() if olt_id is not None else None
+    if olt_id is not None and olt is None:
+        return Response({'error': 'OLT não encontrada'}, status=status.HTTP_404_NOT_FOUND)
     try:
-        collector = OltSystemCollector()
+        collector = OltSystemCollector(olt)
         result = collector.collect_all_system_data()
         
         if result:
@@ -484,10 +534,14 @@ def olt_temperature_alerts(request):
     """
     Lista temperaturas em estado de alerta
     """
+    olt_id = _olt_id(request)
     try:
-        # Temperaturas críticas e de aviso
-        critical_temps = OltTemperature.objects.filter(actual_temp__gte=75)
-        warning_temps = OltTemperature.objects.filter(actual_temp__gte=70, actual_temp__lt=75)
+        # Temperaturas críticas e de aviso (só sensores ativos; `?olt=` filtra por OLT)
+        temps = OltTemperature.objects.filter(is_active=True)
+        if olt_id is not None:
+            temps = temps.filter(olt_id=olt_id)
+        critical_temps = temps.filter(actual_temp__gte=TEMP_CRITICA)
+        warning_temps = temps.filter(actual_temp__gte=TEMP_AVISO, actual_temp__lt=TEMP_CRITICA)
         
         response_data = {
             'critical_alerts': OltTemperatureSerializer(critical_temps, many=True).data,
@@ -514,12 +568,16 @@ def olt_connection_status(request):
     """
     Verifica status da conexão com a OLT (sem conectar)
     """
+    # `?olt=` olha uma OLT só; sem ele, a coleta mais recente de qualquer uma.
+    olt_id = _olt_id(request)
     try:
         from django.utils import timezone
         from datetime import timedelta
-        
-        # Verificar última atualização dos dados
-        latest_system_info = OltSystemInfo.objects.order_by('-last_updated').first()
+
+        infos = OltSystemInfo.objects.all()
+        if olt_id is not None:
+            infos = infos.filter(olt_id=olt_id)
+        latest_system_info = infos.order_by('-last_updated').first()
         
         if latest_system_info:
             time_diff = timezone.now() - latest_system_info.last_updated

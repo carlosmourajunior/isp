@@ -51,10 +51,10 @@ function OltFormDialog({
             name: editing.name,
             vendor: editing.vendor,
             device_type: editing.device_type,
-            host: editing.host,
-            username: editing.username,
+            host: editing.host ?? '',
+            username: editing.username ?? '',
             password: '',
-            ssh_port: editing.ssh_port,
+            ssh_port: editing.ssh_port ?? 22,
             slot_count: editing.slot_count,
             is_active: editing.is_active,
           }
@@ -265,7 +265,14 @@ export function OltsPage() {
         id: 'host',
         header: 'Host',
         meta: { sortKey: 'host' },
-        cell: ({ row }) => <span className="font-data">{row.original.host}:{row.original.ssh_port}</span>,
+        cell: ({ row }) =>
+          row.original.host ? (
+            <span className="font-data">
+              {row.original.host}:{row.original.ssh_port}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
       },
       { accessorKey: 'slot_count', header: 'Slots', meta: { sortKey: 'slot_count' } },
       {

@@ -6,35 +6,46 @@ Esta API REST permite acesso aos dados das ONTs (Optical Network Terminals) com 
 
 ### 1. Inicializar o ambiente Docker
 ```bash
-# Construir e iniciar os containers
-docker-compose up -d
-
-# Executar migrações e criar superusuário
-docker-compose exec web python init_api.py
+cp .env.example .env          # ajuste os segredos
+docker compose up -d --build  # as migrações rodam na subida do container web
+docker compose exec web python manage.py createsuperuser
 ```
+Depois cadastre as OLTs (menu OLTs do frontend ou `/admin/`).
 
 ### 2. Testar a API
 ```bash
-# Testar endpoints básicos
-docker-compose exec web python test_api.py
+# Testes automatizados
+docker compose exec web python manage.py test olt
 
-# Ou testar externamente
-python test_api.py http://localhost:8000
+# Documentação interativa (Swagger), para testar as chamadas com o token
+http://localhost:8000/api/docs/
 ```
 
 ## 📋 Endpoints Disponíveis
 
-| Método | Endpoint | Descrição | Autenticação |
-|--------|----------|-----------|--------------|
-| POST | `/api/auth/login/` | Obter token JWT | ❌ |
-| POST | `/api/auth/refresh/` | Renovar token | ❌ |
-| GET | `/api/onus/` | Listar ONUs com filtros | ✅ |
-| GET | `/api/onus/{id}/` | Detalhes de uma ONU | ✅ |
-| GET | `/api/onus/stats/` | Estatísticas das ONUs | ✅ |
-| GET | `/api/onus/pon/{pon}/` | ONUs por PON específica | ✅ |
-| GET | `/api/onus/search/` | Busca avançada | ✅ |
-| GET | `/api/olt-users/` | Informações das portas | ✅ |
-| GET | `/api/clientes-fibra/` | Lista clientes fibra | ✅ |
+O sistema trabalha com **várias OLTs**: os registros trazem `olt` (id) e `olt_name`. A coluna
+"`?olt=`" mostra quais endpoints filtram por OLT; os demais somam todas as OLTs.
+
+| Método | Endpoint | Descrição | `?olt=` | Autenticação |
+|--------|----------|-----------|---------|--------------|
+| POST | `/api/auth/login/` | Obter token JWT | - | ❌ |
+| POST | `/api/auth/refresh/` | Renovar token | - | ❌ |
+| GET | `/api/onus/` | Listar ONUs com filtros | ✅ | ✅ |
+| GET | `/api/onus/{id}/` | Detalhes de uma ONU | - | ✅ |
+| GET | `/api/onus/stats/` | Estatísticas das ONUs (sem `?olt=`, soma todas as OLTs) | ✅ | ✅ |
+| GET | `/api/onus/pon/{pon}/` | ONUs de uma PON, ex.: `/api/onus/pon/1/1/1/5/?olt=2` | ✅ | ✅ |
+| GET | `/api/onus/search/` | Busca avançada | ✅ | ✅ |
+| GET | `/api/olt-users/` | Ocupação das portas | ✅ | ✅ |
+| GET | `/api/clientes-fibra/` | Lista clientes fibra | - | ✅ |
+| GET | `/api/olt/system-info/` | Versão e uptime (sem `?olt=`, a OLT padrão) | ✅ | ✅ |
+| GET | `/api/olt/slots/` | Placas (slots) | ✅ | ✅ |
+| GET | `/api/olt/temperatures/` | Temperaturas por sensor | ✅ | ✅ |
+| GET | `/api/olt/sfp-diagnostics/` | Diagnóstico de SFPs (vazio hoje) | ✅ | ✅ |
+| GET | `/api/olt/system-stats/` | Resumo de placas e temperaturas (sem `?olt=`, soma todas as OLTs) | ✅ | ✅ |
+| GET | `/api/olt/temperature-alerts/` | Alertas de temperatura (crítico ≥ 75 °C, aviso 70-74 °C) | ✅ | ✅ |
+
+Detalhes, exemplos e limitações de cada um em `API_DOCUMENTATION.md`. Endpoints usados só pelo
+frontend (OLTs, tarefas, CTOs, vistorias, sinal, desconexões...) não fazem parte do contrato de parceiros.
 
 ## 🔐 Autenticação
 
@@ -66,6 +77,8 @@ onus = requests.get('http://localhost:8000/api/onus/', headers=headers)
 ## 🔍 Filtros e Busca
 
 ### Filtros Disponíveis para ONUs
+- `olt`: Id da OLT
+- `pon`: PON exata (`1/1/<slot>/<porta>`); combine com `olt`, pois a mesma PON existe em cada OLT
 - `oper_state`: Status operacional (up/down)
 - `admin_state`: Status administrativo  
 - `cliente_fibra`: Filtrar clientes fibra (true/false)
@@ -84,28 +97,35 @@ GET /api/onus/?search=FHTT12345
 # Clientes fibra ordenados por sinal
 GET /api/onus/?cliente_fibra=true&ordering=-olt_rx_sig
 
-# Paginação
+# ONUs offline de uma OLT
+GET /api/onus/?olt=2&oper_state=down
+
+# Paginação (50 por página)
 GET /api/onus/?page=2
+
+# Temperaturas de uma OLT
+GET /api/olt/temperatures/?olt=2
 ```
 
 ## 📊 Estatísticas
 
-O endpoint `/api/onus/stats/` retorna:
+O endpoint `/api/onus/stats/` soma **todas as OLTs** (use `?olt={id}` para uma só) e retorna:
 
 ```json
 {
-    "total_onus": 150,
-    "onus_online": 142,
-    "onus_offline": 8,
-    "clientes_fibra": 98,
-    "onus_sinal_baixo": 5,
+    "total_onus": 2577,
+    "onus_online": 2343,
+    "onus_offline": 234,
+    "clientes_fibra": 2572,
+    "onus_sinal_baixo": 714,
     "estatisticas_por_slot": {
-        "slot_1": {"total": 75, "online": 71, "offline": 4},
-        "slot_2": {"total": 75, "online": 71, "offline": 4}
+        "slot_1": {"total": 1211, "online": 1123, "offline": 88},
+        "slot_2": {"total": 1129, "online": 1012, "offline": 117}
     },
-    "percentual_online": 94.67
+    "percentual_online": 90.92
 }
 ```
+As chaves `slot_N` são dinâmicas e juntam o mesmo slot de todas as OLTs.
 
 ## 🛠️ Desenvolvimento
 
@@ -146,20 +166,24 @@ path('meu-endpoint/', api_views.meu_endpoint, name='meu_endpoint'),
 
 ### Variáveis de Ambiente (.env)
 ```env
-# Banco de dados
-POSTGRES_DB=postgres
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
-
-# Redis
-REDIS_PORT=6380
-
 # Django
 SECRET_KEY=sua-chave-secreta
 DEBUG=True
+ALLOWED_HOSTS=*
+
+# Banco de dados
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_HOST=db
+DB_PORT=5432
+
+# Redis (a mesma senha deve constar na REDIS_URL)
+REDIS_PASSWORD=troque-esta-senha
+REDIS_URL=redis://:troque-esta-senha@redis:6379/0
 ```
+Lista completa (e-mail, segurança, frontend) em `.env.example`. As credenciais das OLTs não ficam no
+`.env`: são cadastradas por OLT no sistema (senha guardada criptografada).
 
 ### Configurações JWT (settings.py)
 ```python
@@ -232,5 +256,6 @@ docker-compose logs -f web
 
 Para dúvidas ou problemas, consulte:
 - 📖 Documentação completa: `API_DOCUMENTATION.md`
-- 🧪 Testes: Execute `python test_api.py`
+- 🧪 Testes: `docker compose exec web python manage.py test olt`
+- 🔎 Swagger: `/api/docs/` (parceiros) e `/api/docs/interno/` (todos os endpoints, admin logado)
 - 🐛 Issues: Abra uma issue no repositório

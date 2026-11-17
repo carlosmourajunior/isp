@@ -12,6 +12,7 @@ import {
   X,
   MapPin,
   ClipboardCheck,
+  WifiOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -37,6 +38,7 @@ const navGroups: NavGroup[] = [
     items: [
       { to: '/onus', label: 'ONUs', icon: Router, end: true },
       { to: '/sinal', label: 'Sinal óptico', icon: Signal },
+      { to: '/desconexoes', label: 'Desconexões', icon: WifiOff },
     ],
   },
   {

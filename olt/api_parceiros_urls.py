@@ -16,7 +16,7 @@ _parceiros = [
     path('onus/', api_views.ONUListAPIView.as_view()),
     path('onus/<int:pk>/', api_views.ONUDetailAPIView.as_view()),
     path('onus/stats/', api_views.onu_stats),
-    path('onus/pon/<str:pon>/', api_views.onu_by_pon),
+    path('onus/pon/<path:pon>/', api_views.onu_by_pon),
     path('onus/search/', api_views.onu_search),
     path('olt-users/', api_views.OltUsersListAPIView.as_view()),
     path('clientes-fibra/', api_views.ClienteFibraListAPIView.as_view()),
