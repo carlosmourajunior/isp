@@ -132,30 +132,36 @@ def recorrentes(olt_id=None, janela=JANELA_PADRAO, min_dias=MIN_DIAS_PADRAO):
     linhas = (
         eventos.filter(serial__in=serials)
         .order_by('occurred_at')
-        .values_list('olt_id', 'serial', 'occurred_at', 'event_type', 'is_clear')
+        .values_list('olt_id', 'serial', 'occurred_at', 'event_type', 'is_clear', 'pon', 'position')
     )
-    for olt, serial, quando, tipo, fim in linhas:
+    for olt, serial, quando, tipo, fim, pon, posicao in linhas:
         if (olt, serial) in chaves:
-            por_chave[(olt, serial)].append((quando, tipo, fim))
+            por_chave[(olt, serial)].append((quando, tipo, fim, pon, posicao))
 
     clientes = _clientes_por_serial(serials)
-    onus = {(o.olt_id, o.serial): o for o in ONU.objects.filter(serial__in=serials).select_related('olt')}
+    onus_por_posicao, onus_por_serial = {}, {}
+    for o in ONU.objects.filter(serial__in=serials).select_related('olt'):
+        onus_por_posicao[(o.olt_id, o.serial, o.pon, o.position)] = o
+        onus_por_serial.setdefault((o.olt_id, o.serial), o)
 
     itens = []
     for c in candidatos:
         chave = (c['olt_id'], c['serial'])
         tipos, horas, duracoes, pendente = Counter(), Counter(), [], {}
-        ultima = None
-        for quando, tipo, fim in por_chave[chave]:
+        ultima, ultima_posicao = None, None
+        for quando, tipo, fim, pon, posicao in por_chave[chave]:
             if not fim:
                 tipos[tipo] += 1
                 horas[quando.astimezone(TZ).hour] += 1
                 pendente[tipo] = quando
-                ultima = quando
+                ultima, ultima_posicao = quando, (pon, posicao)
             elif tipo in pendente:
                 duracoes.append((quando - pendente.pop(tipo)).total_seconds() / 60)
         causa, noturno = _perfil(tipos, horas)
-        onu = onus.get(chave)
+        # Seriais repetidos em mais de uma posição da OLT: mostra a posição que de fato gera os
+        # eventos (a outra costuma ser um cadastro fantasma), não a que a tabela devolver primeiro.
+        onu = onus_por_posicao.get((c['olt_id'], c['serial'], *ultima_posicao)) if ultima_posicao else None
+        onu = onu or onus_por_serial.get(chave)
         itens.append({
             'olt_id': c['olt_id'],
             'olt_nome': onu.olt.name if onu and onu.olt else '',
@@ -201,33 +207,54 @@ def offline_ativos(olt_id=None, dias_offline=DIAS_OFFLINE_PADRAO, incluir_sem_co
         return incluir_sem_contrato
 
     candidatas = [o for o in onus if elegivel(clientes.get(o.serial))]
-    serials = {o.serial for o in candidatas}
+
+    # O mesmo serial pode estar cadastrado em mais de uma posição da OLT (cadastro fantasma de uma
+    # ONU trocada de lugar). Se alguma posição está online, o cliente está online: ignora o fantasma.
+    online_em_outra_posicao = set(
+        ONU.objects.filter(serial__in={o.serial for o in candidatas}, oper_state__iexact='up')
+        .values_list('serial', flat=True)
+    )
+    por_serial = defaultdict(list)
+    for o in candidatas:
+        if o.serial not in online_em_outra_posicao:
+            por_serial[o.serial].append(o)
+    serials = set(por_serial)
 
     historico_inicio = OntSnapshot.objects.aggregate(m=Min('taken_at'))['m']
-    ultimo_up = {}
-    ultimo_evento = {}
+    ultimo_up, ultimo_retorno, ultimo_evento = {}, {}, {}
     if serials:
         ultimo_up = dict(
             OntSnapshot.objects.filter(serial__in=serials, oper_state__iexact='up')
             .values('serial').annotate(t=Max('taken_at')).values_list('serial', 't')
         )
-        for serial, quando, tipo in (
+        # A coleta periódica só vê o estado de tempos em tempos: uma ONU que cai e volta entre
+        # duas coletas aparece sempre "down" nela. O evento "ONT voltou" (alarme encerrado) do
+        # syslog prova que a ONU esteve online naquele momento.
+        ultimo_retorno = dict(
+            OntEvent.objects.filter(serial__in=serials, event_type__in=TIPOS_QUEDA, is_clear=True)
+            .values('serial').annotate(t=Max('occurred_at')).values_list('serial', 't')
+        )
+        for serial, quando, tipo, olt, pon, posicao in (
             OntEvent.objects.filter(serial__in=serials, event_type__in=TIPOS_QUEDA, is_clear=False)
             .order_by('serial', '-occurred_at').distinct('serial')
-            .values_list('serial', 'occurred_at', 'event_type')
+            .values_list('serial', 'occurred_at', 'event_type', 'olt_id', 'pon', 'position')
         ):
-            ultimo_evento[serial] = (quando, tipo)
+            ultimo_evento[serial] = (quando, tipo, olt, pon, posicao)
 
     itens = []
-    for o in candidatas:
-        up = ultimo_up.get(o.serial)
-        referencia = up or historico_inicio
+    for serial, linhas in por_serial.items():
+        evento = ultimo_evento.get(serial)
+        # Em serial repetido, mostra a posição que gera os eventos.
+        o = next((x for x in linhas if evento and (x.olt_id, x.pon, x.position) == evento[2:]), None) \
+            or sorted(linhas, key=lambda x: (x.olt_id or 0, x.pon, x.position))[0]
+        up, retorno = ultimo_up.get(serial), ultimo_retorno.get(serial)
+        ultimo_online = max((t for t in (up, retorno) if t), default=None)
+        referencia = ultimo_online or historico_inicio
         if referencia is None:
             continue
         dias = (agora - referencia).total_seconds() / 86400
         if dias < dias_offline:
             continue
-        evento = ultimo_evento.get(o.serial)
         if evento is None:
             causa, causa_rotulo = 'sem_evento', 'Sem evento nos logs (caiu antes do histórico)'
         elif evento[1] == OntEvent.TYPE_DYING_GASP:
@@ -243,10 +270,12 @@ def offline_ativos(olt_id=None, dias_offline=DIAS_OFFLINE_PADRAO, incluir_sem_co
             'estado_atual': o.oper_state,
             'admin_state': o.admin_state,
             **_cliente_dict(clientes[o.serial]),
+            'posicoes_duplicadas': len(linhas) if len(linhas) > 1 else 0,
             'dias_offline': round(dias, 1),
             # Sem nenhum "up" no histórico: os dias são um mínimo (desde o início dos registros).
-            'dias_minimo': up is None,
-            'ultimo_online': _iso(up),
+            'dias_minimo': ultimo_online is None,
+            'ultimo_online': _iso(ultimo_online),
+            'ultimo_online_origem': None if ultimo_online is None else ('coleta' if ultimo_online == up else 'log'),
             'ultima_queda': _iso(evento[0]) if evento else None,
             'ultima_queda_tipo': evento[1] if evento else None,
             'causa': causa,

@@ -391,11 +391,12 @@ function AbaOffline({ oltId }: { oltId: string }) {
           onClick={() =>
             baixarCsv(
               'desconexoes-offline-ativos.csv',
-              ['Cliente', 'Login', 'Serial', 'OLT', 'PON', 'Contrato IXC', 'Internet IXC', 'Dias offline', 'Dias é mínimo', 'Último online', 'Última queda', 'Causa provável', 'Admin OLT', 'Endereço'],
+              ['Cliente', 'Login', 'Serial', 'OLT', 'PON', 'Contrato IXC', 'Internet IXC', 'Dias offline', 'Dias é mínimo', 'Último online', 'Última queda', 'Causa provável', 'Admin OLT', 'Endereço', 'Posições com o mesmo serial'],
               itens.map((i) => [
                 i.cliente_nome, i.login, i.serial, i.olt_nome, i.pon ? `${i.pon}/${i.position}` : '',
                 i.status_contrato, i.status_internet, i.dias_offline, i.dias_minimo ? 'sim' : 'não',
                 dataHora(i.ultimo_online), dataHora(i.ultima_queda), i.causa_rotulo, i.admin_state, i.endereco,
+                i.posicoes_duplicadas || '',
               ]),
             )
           }
@@ -416,9 +417,11 @@ function AbaOffline({ oltId }: { oltId: string }) {
 
       {data && (
         <p className="text-xs text-muted-foreground">
-          Só entram clientes com contrato e internet ativos no IXC cuja ONU está offline agora. Os dias contam desde a
-          última coleta com a ONU online; "≥" indica que ela não aparece online em nenhuma coleta desde{' '}
-          {dataHora(data.historico_desde)} (início do histórico).
+          Só entram clientes com contrato e internet ativos no IXC cuja ONU está offline agora. Os dias contam desde
+          o último momento em que a ONU esteve online: uma coleta com a ONU online ou um evento "ONT voltou" no log
+          da OLT (o que for mais recente). "≥" indica que ela não aparece online em nada desde{' '}
+          {dataHora(data.historico_desde)} (início do histórico). Serial cadastrado em mais de uma posição da OLT
+          aparece uma vez só, e some da lista se alguma das posições estiver online.
         </p>
       )}
 
@@ -459,10 +462,16 @@ function AbaOffline({ oltId }: { oltId: string }) {
                     <div className="text-xs text-amber-600">admin: {i.admin_state}</div>
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs whitespace-nowrap">{dataHora(i.ultimo_online)}</td>
+                <td className="px-3 py-2 text-xs whitespace-nowrap">
+                  {dataHora(i.ultimo_online)}
+                  {i.ultimo_online_origem === 'log' && <div className="text-muted-foreground">pelo log da OLT</div>}
+                </td>
                 <td className="px-3 py-2 text-xs whitespace-nowrap">{dataHora(i.ultima_queda)}</td>
                 <td className="px-3 py-2">
                   <Badge variant={CAUSAS[i.causa].variant}>{CAUSAS[i.causa].label}</Badge>
+                  {i.posicoes_duplicadas > 0 && (
+                    <div className="mt-0.5 text-xs text-amber-600">serial em {i.posicoes_duplicadas} posições</div>
+                  )}
                 </td>
                 <td className="max-w-xs px-3 py-2 text-xs text-muted-foreground">{i.endereco || '—'}</td>
               </tr>
