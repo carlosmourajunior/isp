@@ -108,6 +108,61 @@ class DesconexoesTests(APITestCase):
         self.assertTrue(r['itens'][0]['dias_minimo'])
         self.assertEqual(r['itens'][0]['causa'], 'sem_evento')
 
+    def test_onu_que_pisca_e_volta_entre_coletas_nao_conta_como_offline_ha_dias(self):
+        """Todas as coletas dizem "down" (a ONU só volta por poucos minutos), mas o log da OLT
+        registra "ONT voltou" hoje: ela esteve online hoje."""
+        self.onu('PISCA', oper='down')
+        self.cliente('PISCA', 'Cliente que pisca')
+        for d in range(1, 12):
+            self.snapshot('PISCA', self.agora - timedelta(days=d), 'down')
+        self.queda('PISCA', self.agora - timedelta(hours=3), tipo=OntEvent.TYPE_INATIVA, duracao_min=30)
+
+        r = self.client.get('/api/desconexoes/offline-ativos/?dias_offline=5').json()
+        self.assertEqual(r['total'], 0)
+
+    def test_retorno_no_log_define_o_ultimo_online_quando_e_mais_recente_que_a_coleta(self):
+        self.onu('VOLTOU', oper='down')
+        self.cliente('VOLTOU', 'Voltou pelo log')
+        self.snapshot('VOLTOU', self.agora - timedelta(days=20), 'up')
+        self.queda('VOLTOU', self.agora - timedelta(days=9), tipo=OntEvent.TYPE_INATIVA, duracao_min=60)
+
+        item = self.client.get('/api/desconexoes/offline-ativos/?dias_offline=5').json()['itens'][0]
+        self.assertEqual(item['ultimo_online_origem'], 'log')
+        self.assertAlmostEqual(item['dias_offline'], 8.96, delta=0.1)   # 9 dias menos a hora offline
+
+    def test_serial_duplicado_com_uma_posicao_online_nao_aparece(self):
+        self.onu('DUP_OK', pos=1, oper='up')
+        self.onu('DUP_OK', pos=2, oper='down')       # cadastro fantasma
+        self.cliente('DUP_OK', 'Online em outra posição')
+        self.snapshot('DUP_OK', self.agora - timedelta(days=15), 'down')
+        r = self.client.get('/api/desconexoes/offline-ativos/?dias_offline=5').json()
+        self.assertEqual(r['total'], 0)
+
+    def test_serial_duplicado_todo_offline_vira_uma_linha_na_posicao_dos_eventos(self):
+        self.onu('DUP_OFF', pos=1, oper='down')
+        self.onu('DUP_OFF', pos=2, oper='down')
+        self.cliente('DUP_OFF', 'Duas posições')
+        self.snapshot('DUP_OFF', self.agora - timedelta(days=12), 'up')
+        # O evento é da posição 2 (queda().position é sempre 1; ajusta para a 2).
+        self.queda('DUP_OFF', self.agora - timedelta(days=12), tipo=OntEvent.TYPE_INATIVA)
+        OntEvent.objects.filter(serial='DUP_OFF').update(position=2)
+
+        r = self.client.get('/api/desconexoes/offline-ativos/?dias_offline=5').json()
+        self.assertEqual(r['total'], 1)
+        item = r['itens'][0]
+        self.assertEqual((item['position'], item['posicoes_duplicadas']), (2, 2))
+
+    def test_recorrentes_mostra_a_posicao_que_gera_os_eventos(self):
+        self.onu('FANTASMA', pos=1, oper='down')       # a tabela devolveria esta primeiro
+        self.onu('FANTASMA', pos=7, oper='up')
+        base = self.agora.replace(hour=15, minute=0, second=0, microsecond=0)
+        for d in range(1, 8):
+            self.queda('FANTASMA', base - timedelta(days=d), tipo=OntEvent.TYPE_INATIVA)
+        OntEvent.objects.filter(serial='FANTASMA').update(position=7)
+
+        item = self.client.get('/api/desconexoes/recorrentes/?janela=10&min_dias=5').json()['itens'][0]
+        self.assertEqual((item['position'], item['estado_atual']), (7, 'up'))
+
     def test_offline_sem_contrato_so_com_opcao(self):
         self.onu('PROVISIONADO', oper='down')
         self.cliente('PROVISIONADO', 'Sem contrato', contrato='', internet='', vinculado=False)

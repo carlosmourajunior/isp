@@ -34,7 +34,11 @@ export interface ItemOffline extends ItemBase {
   admin_state: string | null
   dias_offline: number
   dias_minimo: boolean
+  /** Serial cadastrado em mais de uma posição da OLT: quantas (0 = não é duplicado). */
+  posicoes_duplicadas: number
   ultimo_online: string | null
+  /** 'coleta' = visto online numa coleta; 'log' = evento "ONT voltou" do syslog. */
+  ultimo_online_origem: 'coleta' | 'log' | null
   ultima_queda_tipo: string | null
 }
 
